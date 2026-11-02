@@ -61,9 +61,24 @@ function readState() {
   return Object.assign({ answers }, (typeof readAusencias === 'function' && readAusencias()) || {});
 }
 
+// Estado para GUARDAR borrador: igual que readState() pero leyendo las
+// ausencias aunque la tarjeta esté oculta por la paginación (solo se muestra
+// en la última sección). Así el autoguardado no pierde el slider de
+// probabilidad ni las casillas votadas a mitad del cuestionario. Para el
+// ENVÍO se sigue usando readState()/collectAnswers(), que sí exige que la
+// tarjeta esté visible (el voto emite desde la página donde se ve).
+function readStateForDraft() {
+  const st = readState();
+  if (!st.ausencias_predichas && typeof readAusenciasForzado === 'function') {
+    const aus = readAusenciasForzado();
+    if (aus) Object.assign(st, aus);
+  }
+  return st;
+}
+
 function saveDraft() {
   if (!user) return;
-  try { localStorage.setItem(LS_DRAFT(user.eid), JSON.stringify(readState())); } catch (e) {}
+  try { localStorage.setItem(LS_DRAFT(user.eid), JSON.stringify(readStateForDraft())); } catch (e) {}
 }
 
 function restoreDraft() {

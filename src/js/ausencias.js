@@ -34,6 +34,23 @@ function readAusencias() {
   };
 }
 
+// Versión «siempre» del anterior: lee los controles aunque la tarjeta esté
+// oculta por la paginación por secciones. Los borradores (saveDraft) la usan
+// para no perder el slider ni las casillas cuando el usuario guarda mientras
+// está en una sección intermedia; el envío al servidor sigue usando
+// readAusencias(), de modo que las predicciones solo viajan desde la última
+// sección, donde realmente se votan.
+function readAusenciasForzado() {
+  const card = $('ausencias-card');
+  if (!card) return null;
+  const slider = $('aus-prob-slider');
+  if (!slider) return null;
+  return {
+    ausencias_predichas:    readAusCandidatos(),
+    prob_asistencia_propia: +slider.value,
+  };
+}
+
 function writeAusencias(d) {
   if (!d) return;
   if (Array.isArray(d.ausencias_predichas)) {
