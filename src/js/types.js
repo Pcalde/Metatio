@@ -641,6 +641,7 @@ function optKmFromSchema(op) {
 }
 
 const TOGGLES_DISP = [
+  ['noSe', 'No sé mi disponibilidad (cuenta según tu probabilidad de asistir)'],
   ['irYVenir',       'Plan de ir y venir en el día (sin dormir fuera)'],
   ['soloFinde',      'Solo puedo fines de semana'],
   ['meDaIgual',      'Me da igual entre semana o fin de semana'],
