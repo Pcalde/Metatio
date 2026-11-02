@@ -620,7 +620,7 @@ function _secHasAnswer(raw, tipo) {
   if (tipo === 'textarea') return true;
   if (Array.isArray(raw)) return raw.length > 0;
   if (tipo === 'disponibilidad') {
-    return !!(raw.rangos && raw.rangos.length) || !!raw.soloFinde || !!raw.meDaIgual ||
+    return !!(raw.rangos && raw.rangos.length) || !!raw.soloFinde || !!raw.meDaIgual || !!raw.noSe ||
            !!raw.preferirPuente || !!raw.irYVenir || (raw.diasMax != null && raw.diasMax !== 5);
   }
   if (tipo === 'horarios') {
