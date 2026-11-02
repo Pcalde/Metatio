@@ -378,6 +378,21 @@ function secHeaderPara(nombre) {
     _secNormNombre(q.config.seccion || q.label) === key) || null;
 }
 
+// ¿Es la última sección NAVEGABLE del esquema? Las secciones «no aplican»
+// (_secOculta: su marca tiene una condición sin cumplir, o no tienen ninguna
+// pregunta visible) quedan tachadas en el raíl y no son accesibles; si la
+// tarjeta de ausencias se anclara a secs[secs.length-1] y esa última fuese
+// una de ellas, nadie podría llegar nunca a ella. Por eso el cierre del
+// cuestionario se ancla siempre a la última sección REALMENTE visitable.
+function _esUltimaSecionNavegable(sec, secs, answers) {
+  const st = answers || readState().answers;
+  for (let i = secs.length - 1; i >= 0; i--) {
+    if (_secPrimeraVisible(secs[i], st) >= 0) return secs[i] === sec;
+  }
+  // Ninguna sección navegable: nada es «la última» (se muestra todo).
+  return false;
+}
+
 // Índice de la primera pregunta visible de una sección (acepta objeto o nombre).
 // Envuelve _secPrimeraVisible para uso desde forms.js (lista de gestión).
 function secPrimeraVisibleDe(secOrNombre, answers) {
@@ -491,11 +506,17 @@ function prevSection() {
 // Tarjetas «meta» del cuestionario que viven FUERA de #questions-container:
 // participantes (intro) y ausencias/predicciones (cierre). Se muestran u
 // ocultan según la sección activa: Participantes solo en la primera sección
-// (hace de intro) y Ausencias solo en la última. Con una sola sección ambas
-// van en esa misma página.
-function _applyMetaCardVisibility(cur, secs) {
-  const isFirstSec = !secs.length || cur === secs[0];
-  const isLastSec  = !secs.length || cur === secs[secs.length - 1];
+// (hace de intro) y Ausencias solo en la última NAVEGABLE (las secciones que
+// «no aplican» quedan tachadas e inaccesibles, así que el cierre no puede
+// anclarse a ellas o nadie vería nunca las probabilidades). Con una sola
+// sección ambas van en esa misma página.
+function _applyMetaCardVisibility(cur, secs, answers) {
+  const st = answers || readState().answers;
+  let firstNav = null, lastNav = null;
+  for (const s of secs) { if (_secPrimeraVisible(s, st) >= 0) { if (!firstNav) firstNav = s; lastNav = s; } }
+  const hasNav = !!lastNav;
+  const isFirstSec = !hasNav || cur === firstNav;
+  const isLastSec  = !hasNav || cur === lastNav;
   const participCard = $('participants-card');
   if (participCard) participCard.style.display = isFirstSec ? '' : 'none';
   const ausCard = $('ausencias-card');
@@ -518,7 +539,7 @@ function applySectionPaging() {
   const st = readState().answers;
   const secs = seccionesDelEsquema();
   const cur = _secDeIdx(SEC_ESTADO.idx, secs) || secs[0];
-  _applyMetaCardVisibility(cur, secs);
+  _applyMetaCardVisibility(cur, secs, st);
   let activeIds = null;
   if (cur) {
     // Preguntas visibles de la sección + su tarjeta «marca» SIEMPRE que el
@@ -652,7 +673,10 @@ function renderRail() {
       `<span class="sec-rail-label">${esc(sec.titulo)}</span>` +
       (allHidden ? '<span class="sec-rail-na">no aplica</span>' : '');
     main.title = allHidden ? sec.titulo + ' — no aplica con las respuestas actuales' : sec.titulo;
-    main.addEventListener('click', () => {
+    // Las secciones «no aplican» no son navegables: la ficha entera queda
+    // inerte (antes el clic sí saltaba a una sección sin contenido visible).
+    if (allHidden) { main.disabled = true; main.style.cursor = 'default'; }
+    else main.addEventListener('click', () => {
       const idx = _secPrimeraVisible(sec, st);
       if (idx >= 0) goToSection(idx);
     });
