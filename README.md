@@ -195,3 +195,44 @@ $\Delta_v = \hat{\rho} - \hat{\rho}_{\bar{v}}$.
 1. Copia tus credenciales de Supabase en `src/js/config.js`.
 2. Sirve el repositorio estático (p. ej. `python3 -m http.server`) y abre `index.html`.
 3. Para el análisis por lotes: `pip install pandas numpy scipy plotly && python analizador_viaje.py`.
+
+## Requisitos
+
+### Aplicación web
+- Navegador moderno con soporte de módulos ES.
+- [Supabase](https://supabase.com) (Postgres + API) para la persistencia y el tiempo real.
+- Leaflet para el mapa de destinos (cargado desde CDN en `index.html`).
+
+### Analizador por lotes
+- Python ≥ 3.10.
+- Paquetes: `pandas`, `numpy`, `scipy` (con `optimize.milp`), `plotly`.
+
+## Configuración
+
+| Parámetro | Archivo | Descripción |
+|---|---|---|
+| `SUPABASE_URL` / `SUPABASE_KEY` | `src/js/config.js` | Credenciales del proyecto Supabase |
+| `POLL_INTERVAL` / `POLL_FAST_INTERVAL` | `src/js/config.js` | Periodos de sondeo (vista encuesta / consenso-debate) |
+| `SHEET_ID` | `analizador_viaje.py` | ID de la hoja de Google Sheets con las respuestas |
+| `UMBRAL_HORA_SOLAPE` | motor PLE | Umbral $\theta$ de solape horario (R7) |
+
+La clave publicada (`sb_publishable_…`) es de solo lectura/anon; no expongas service keys en el cliente.
+
+## Desarrollo
+
+```bash
+# Servir la SPA en local
+python3 -m http.server 8000
+# → abrir http://localhost:8000/index.html
+
+# Ejecutar el análisis por lotes
+pip install pandas numpy scipy plotly
+python analizador_viaje.py
+```
+
+El esquema de base de datos está en `src/sql/schema.sql` y debe aplicarse en un proyecto
+Supabase antes de usar la aplicación.
+
+## Licencia
+
+Creative Commons CC0 1.0 Universal (ver `LICENSE`).
