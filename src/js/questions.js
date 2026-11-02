@@ -51,7 +51,7 @@ function buildQuestionCard(q, idx) {
 
   const mkMove = (txt, title, dir) => {
   const b = document.createElement('button');
-  b.type = 'button'; b.className = 'btn-icon-subtle'; b.title = title; b.textContent = txt;
+  b.type = 'button'; b.className = 'btn-icon-subtle'; b.title = title; b.innerHTML = txt;
   b.addEventListener('click', () => moverPregunta(q.id, dir));
   return b;
   };
