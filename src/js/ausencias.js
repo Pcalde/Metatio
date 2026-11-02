@@ -22,9 +22,12 @@ function readAusCandidatos() {
   return [...document.querySelectorAll('#aus-respondentes-list .aus-check:checked')].map(i => i.value);
 }
 
-// null si la sección está oculta
+// null si la tarjeta no está visible en este momento (solo se muestra en la
+// última sección; ver applySectionPaging en secciones.js). Se comprueba
+// `offsetParent`, que es 0 tanto con display:none como con ancestros ocultos.
 function readAusencias() {
-  if ($('ausencias-card').style.display === 'none') return null;
+  const card = $('ausencias-card');
+  if (!card || card.style.display === 'none' || card.offsetParent === null) return null;
   return {
     ausencias_predichas:    readAusCandidatos(),
     prob_asistencia_propia: +$('aus-prob-slider').value,
@@ -53,12 +56,9 @@ function buildAusList(marcados) {
     const txt = document.createElement('span'); txt.textContent = r.nombre;
     lbl.append(inp, chk, txt);
 
-    if (r.prob_asistencia != null) {
-      const prob = document.createElement('span');
-      prob.style.cssText = 'margin-left:auto;font-size:0.78rem;color:var(--muted)';
-      prob.textContent = r.prob_asistencia + '% (su est.)';
-      lbl.append(prob);
-    }
+    // No se muestra la estimación de asistencia de cada persona al votar:
+    // conocerla condicionaría el voto. La probabilidad sigue usándose en
+    // segundo plano para las simulaciones (getEffectiveProb / Monte Carlo).
     inp.addEventListener('change', triggerSave);
     item.appendChild(lbl);
     list.appendChild(item);
@@ -67,8 +67,22 @@ function buildAusList(marcados) {
 
 function renderAusencias() {
   const card = $('ausencias-card');
-  if (respondentes.length === 0) { card.style.display = 'none'; return; }
-  card.style.display = 'block';
+  if (!card) return;
+  if (respondentes.length === 0) {
+    // Sin respondentes la tarjeta nunca debe verse: forzar display:none, ya
+    // que applySectionPaging usa '' (heredado del CSS) para «visible».
+    card.dataset.available = '0';
+    card.style.display = 'none';
+    return;
+  }
+  card.dataset.available = '1';
+  // La visibilidad real la decide applySectionPaging() (solo última sección).
+  // Si aún no existe (p. ej. modo distinto de encuesta), mostrarla aquí.
+  if (typeof applySectionPaging === 'function') {
+    try { applySectionPaging(); } catch (e) { card.style.display = 'block'; }
+  } else {
+    card.style.display = 'block';
+  }
 
   const sig = JSON.stringify(respondentes.map(r => [r.nombre, r.prob_asistencia]));
   if (sig !== ausListSig) {
