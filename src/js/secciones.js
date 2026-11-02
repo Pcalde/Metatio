@@ -324,24 +324,36 @@ function secRazonOculta(q, answers) {
   return `porque «${src.label}» ${cond.no ? 'no ' : ''}${cond.op === 'igual' ? 'es' : 'no incluye'} «${valTxt}»`;
 }
 
-// Avisa a la tarjeta ACTIVA de que sus respuestas no se enviarán (está oculta
-// por condición). Se re-evalúa en cada cambio vía refreshSecciones().
+// Avisa a las tarjetas ACTIVAS (las visibles en pantalla) de que sus respuestas
+// no se enviarán (están ocultas por condición). Se re-evalúa en cada cambio
+// vía refreshSecciones().
 function updateHiddenNotice() {
   const container = $('questions-container');
   if (!container) return;
   [...container.querySelectorAll(':scope > .card[data-qid]')].forEach(card => {
     card.querySelectorAll('.sec-hidden-notice').forEach(n => n.remove());
   });
-  const q = schema[SEC_ESTADO.idx];
-  if (!q || esVisible(q)) return;
-  const card = cardFor(q.id);
-  if (!card) return;
-  const n = div('sec-hidden-notice');
-  n.innerHTML = '<i class="fa-solid fa-eye-slash" aria-hidden="true"></i> <b>No aplica</b> con tus respuestas actuales ' +
-    esc(secRazonOculta(q)) + '. Tus cambios se guardan, pero no se envían al grupo.';
-  const controls = card.querySelector('.options-list');
-  if (controls && controls.parentElement === card) card.insertBefore(n, controls);
-  else card.appendChild(n);
+  // La sección activa puede contener VARIAS preguntas ocultas: el aviso debe
+  // pintarse en todas las que estén en pantalla (antes solo se ponía en la del
+  // índice activo y las demás quedaban sin explicación).
+  const st = readState().answers;
+  const cur = _secDeIdx(SEC_ESTADO.idx, seccionesDelEsquema());
+  const targets = cur ? _secItemsVisibles(cur, st).map(it => it.q) : [];
+  if (!targets.some(q => !esVisible(q, st))) {
+    const q = schema[SEC_ESTADO.idx];
+    if (q && !esVisible(q, st)) targets.push(q);
+  }
+  targets.forEach(q => {
+    if (esVisible(q, st)) return;
+    const card = cardFor(q.id);
+    if (!card || card.querySelector('.sec-hidden-notice')) return;
+    const n = div('sec-hidden-notice');
+    n.innerHTML = '<i class="fa-solid fa-eye-slash" aria-hidden="true"></i> <b>No aplica</b> con tus respuestas actuales ' +
+      esc(secRazonOculta(q, st)) + '. Tus cambios se guardan, pero no se envían al grupo.';
+    const controls = card.querySelector('.options-list');
+    if (controls && controls.parentElement === card) card.insertBefore(n, controls);
+    else card.appendChild(n);
+  });
 }
 
 // Preguntas visibles (referencias reales de `schema`, con su índice original).
@@ -673,23 +685,48 @@ function renderRail() {
       `<span class="sec-rail-label">${esc(sec.titulo)}</span>` +
       (allHidden ? '<span class="sec-rail-na">no aplica</span>' : '');
     main.title = allHidden ? sec.titulo + ' — no aplica con las respuestas actuales' : sec.titulo;
-    // Las secciones «no aplican» no son navegables: la ficha entera queda
-    // inerte (antes el clic sí saltaba a una sección sin contenido visible).
-    if (allHidden) { main.disabled = true; main.style.cursor = 'default'; }
-    else main.addEventListener('click', () => {
-      const idx = _secPrimeraVisible(sec, st);
-      if (idx >= 0) goToSection(idx);
-    });
+    // Las secciones «no aplican» no son navegables: la ficha principal queda
+    // inerte (antes el clic sí saltaba a una sección sin contenido visible),
+    // pero el botón «gestionar» de al lado SIGUE ACTIVO: es la única vía para
+    // quitar la condición, renombrar o eliminar una sección tachada. Si también
+    // se desactivara, esas secciones quedarían atrapadas en el raíl para
+    // siempre (ni reversibles ni borrables).
+    if (allHidden) {
+      // La ficha NO se deshabilita con `disabled` (los botones deshabilitados
+      // no emiten eventos: ni clic, ni doble clic, ni focus → la sección
+      // tachada quedaba totalmente inerte e irrevertible). Se marca con
+      // aria-disabled y un flag: sigue aceptando el doble clic de atajo y los
+      // lectores de pantalla la reportan como «no disponible».
+      main.disabled = false;
+      main.setAttribute('aria-disabled', 'true');
+      main.dataset.noAplica = '1';
+      main.style.cursor = 'default';
+      // Doble clic sobre la ficha → directamente a «quitar condición».
+      main.addEventListener('dblclick', () => {
+        const h = _secMarcaConCondicion(sec);
+        if (h) _secQuitarCondicion(h);
+      });
+    } else {
+      main.addEventListener('click', () => {
+        const idx = _secPrimeraVisible(sec, st);
+        if (idx >= 0) goToSection(idx);
+      });
+    }
     b.appendChild(main);
 
-    // Botón «gestionar sección» (menú inline bajo la ficha).
+    // Botón «gestionar sección» (menú inline bajo la ficha). En las secciones
+    // «no aplica» sustituye al título como única interacción posible, así que
+    // nunca debe quedar deshabilitado ni oculto por opacidad heredada.
     const tool = document.createElement('button');
     tool.type = 'button';
     tool.className = 'sec-rail-tool sec-rail-manage';
+    tool.disabled = false;
+    tool.style.opacity = '1';
     tool.innerHTML = '<i class="fa-solid fa-folder-open" aria-hidden="true"></i>';
     tool.title = 'Gestionar sección «' + sec.titulo + '»';
     tool.setAttribute('aria-label', 'Gestionar sección ' + sec.titulo);
     tool.addEventListener('click', e => {
+      e.preventDefault();
       e.stopPropagation();
       toggleSecManageMenu(b, sec);
     });
@@ -785,6 +822,13 @@ function toggleSecManageMenu(host, sec) {
   mk('<i class="fa-solid fa-pen" aria-hidden="true"></i> Renombrar sección', '', (it, p) => _secAbrirRenombrar(host, sec, it, p));
   mk('<i class="fa-solid fa-plus" aria-hidden="true"></i> Añadir pregunta aquí', '', () => { _secCerrarMenu(); abrirAddPreguntaEnSeccion(sec.nombre || ''); });
   if (sec.nombre) mk('<i class="fa-solid fa-code-branch" aria-hidden="true"></i> Condición de la sección', '', (it, p) => _secAbrirCondicion(host, sec, it, p));
+  // Sección tachada («no aplica»): acceso directo para volver a mostrarla sin
+  // tener que reabrir el editor de condiciones.
+  const marcaCond = _secMarcaConCondicion(sec);
+  if (marcaCond) {
+    mk('<i class="fa-solid fa-eye" aria-hidden="true"></i> Volver a aplicar (quitar condición)', 'ok',
+      (it, p) => _secQuitarCondicion(marcaCond, it));
+  }
   mk('<i class="fa-solid fa-trash" aria-hidden="true"></i> Eliminar sección', 'danger', (it, p) => _secAbrirEliminar(host, sec, it, p));
   host.appendChild(panel);
   _secManageOpen = { host, panel };
@@ -797,6 +841,38 @@ document.addEventListener('click', e => {
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') _secCerrarMenu();
 });
+
+// Marca (encabezado) de una sección si tiene una condición «mostrarSi» puesta;
+// null en otro caso. Es la causa típica de que la sección quede tachada.
+function _secMarcaConCondicion(sec) {
+  if (!sec || !sec.nombre) return null;
+  const h = secHeaderPara(sec.nombre);
+  return (h && h.config && h.config.mostrarSi && h.config.mostrarSi.qid) ? h : null;
+}
+
+// Quita la condición de visibilidad a la marca de una sección: la sección deja
+// de estar tachada y vuelve a ser navegable/borrable. Optimista + edit_pregunta.
+async function _secQuitarCondicion(h, btn) {
+  if (!user) { showStatus('Inicia sesión para editar secciones', 'err'); return false; }
+  if (btn) { btn.disabled = true; btn.textContent = 'Quitando…'; }
+  const cfg = Object.assign({}, h.config || {});
+  delete cfg.mostrarSi;
+  try {
+    await apiAuth({ action: 'edit_pregunta', eid: user.eid, nombre: user.nombre,
+                    pinHash: user.pinHash, questionId: h.id, label: h.label, config: cfg });
+    h.config = cfg;
+    lastRaw = '';
+    _secCerrarMenu();
+    pollOnce();
+    refreshSecciones();
+    showStatus(`Sección «${h.label}» visible otra vez (se quitó su condición).`, 'ok', 5000);
+    return true;
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-eye" aria-hidden="true"></i> Volver a aplicar (quitar condición)'; }
+    showStatus('No se pudo quitar la condición: ' + e.message, 'err');
+    return false;
+  }
+}
 
 // Renombrar: replica el nuevo nombre en config.seccion de TODAS sus preguntas
 // (vía edit_pregunta) y renombra también la tarjeta «marca».
@@ -853,6 +929,7 @@ function _secAbrirEliminar(host, sec, btnItem, panel) {
     e.stopPropagation(); _secCerrarMenu();
   });
   box.querySelector('.sec-rd-ok').addEventListener('click', async e => {
+    e.preventDefault();
     e.stopPropagation();
     const okBtn = box.querySelector('.sec-rd-ok');
     okBtn.disabled = true; okBtn.textContent = 'Eliminando…';
@@ -913,10 +990,28 @@ async function eliminarSeccion(nombre) {
   if (!user) { showStatus('Inicia sesión para eliminar secciones', 'err'); return false; }
   nombre = String(nombre || '').trim();
   if (!nombre) return false;
+  const key = _secNormNombre(nombre);
+  // Preguntas de la sección: por config.seccion, y también las sueltas que
+  // solo están agrupadas por SU PROPIA etiqueta (secciones implícitas del
+  // raíl sin nombre explícito). Sin esto, una sección tachada «vacía» no
+  // encontraba nada que borrar y el botón parecía no hacer nada.
   const preguntas = schema.filter(q =>
     q.config && !_esMarcaDeSeccion(q, nombre) &&
-    _secNormNombre(q.config.seccion || '') === _secNormNombre(nombre));
-  const marcas = schema.filter(q => _esMarcaDeSeccion(q, nombre));
+    (_secNormNombre(q.config.seccion || '') === key ||
+     (!(q.config.seccion || '').trim() && !(q.config.esEncabezado) && _secNormNombre(q.label) === key)));
+  let marcas = schema.filter(q => _esMarcaDeSeccion(q, nombre));
+  if (!marcas.length) {
+    // Marca cuyo nombre difiere ligeramente (p. ej. tras renombrar a medias):
+    // cualquier encabezado cuya sección o etiqueta coincida en normalizado.
+    marcas = schema.filter(q => q.config && q.config.esEncabezado &&
+      (_secNormNombre(q.config.seccion || '') === key || _secNormNombre(q.label) === key));
+  }
+  if (!preguntas.length && !marcas.length) {
+    _secCerrarMenu();
+    refreshSecciones();
+    showStatus(`No se encontró ninguna pregunta ni marca de la sección «${nombre}». Revisa el raíl.`, 'err', 7000);
+    return false;
+  }
   let errs = 0;
   // 1) Las preguntas pasan a «Sin sección» ANTES de borrar la marca, para que
   //    en ningún momento queden huérfanas de un grupo que ya no existe.
@@ -1244,6 +1339,10 @@ function renderSecManageList() {
   const st = readState().answers;
   secs.forEach((sec, i) => {
     const row = div('sec-manage-item');
+    const noAplica = _secOculta(sec, st) ||
+      (_secItemsVisibles(sec, st).length === 0 &&
+       sec.items.some(it => !(it.q.config && it.q.config.esEncabezado)));
+    if (noAplica) row.classList.add('not-applicable');
     const nPreg = sec.items.filter(it => !(it.q.config && it.q.config.esEncabezado)).length;
     const nom = sec.nombre || sec.titulo;
     const meta = document.createElement('span');
@@ -1251,6 +1350,7 @@ function renderSecManageList() {
     meta.innerHTML =
       `<span class="sec-manage-num">${String(i + 1).padStart(2, '0')}</span>` +
       `<button type="button" class="sec-manage-nombre" title="Ir a esta sección">${esc(sec.titulo)}</button>` +
+      (noAplica ? '<span class="sec-rail-na">no aplica</span> ' : '') +
       `<span class="sec-manage-count">${nPreg} preg. · ${_secItemsVisibles(sec, st).length} visibles</span>`;
     meta.querySelector('.sec-manage-nombre').addEventListener('click', () => {
       const idx = _secPrimeraVisible(sec, st);
@@ -1262,12 +1362,18 @@ function renderSecManageList() {
       const b = document.createElement('button');
       b.type = 'button'; b.className = 'sec-rail-tool' + (cls ? ' ' + cls : '');
       b.innerHTML = txt; b.title = title;
-      b.addEventListener('click', e => { e.stopPropagation(); fn(b, row); });
+      b.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); fn(b, row); });
       tools.appendChild(b);
       return b;
     };
     mk('<i class="fa-solid fa-pen" aria-hidden="true"></i>', 'Renombrar sección «' + sec.titulo + '»', '', (b, row) => secManageAbrirRename(row, sec));
     mk('<i class="fa-solid fa-plus" aria-hidden="true"></i>', 'Añadir pregunta en «' + sec.titulo + '»', '', () => abrirAddPreguntaEnSeccion(nom));
+    // Sección tachada: acceso directo para quitar la condición que la oculta.
+    const marcaCond = _secMarcaConCondicion(sec);
+    if (marcaCond) {
+      mk('<i class="fa-solid fa-eye" aria-hidden="true"></i>', 'Quitar la condición y volver a aplicar «' + sec.titulo + '»', 'sec-rail-unhide',
+        (b) => _secQuitarCondicion(marcaCond, b));
+    }
     mk('<i class="fa-solid fa-trash" aria-hidden="true"></i>', 'Eliminar sección «' + sec.titulo + '»', 'sec-rail-delete', (b, row) => secManageAbrirDelete(row, sec));
 
     row.append(meta, tools);
