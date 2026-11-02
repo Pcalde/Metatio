@@ -49,3 +49,23 @@ function renderParticipants() {
   }));
 }
 
+function textoRecordatorio() {
+  const votaron = new Set((respuestas || []).map(r => String(r.nombre).toLowerCase()));
+  const faltan = (respondentes || []).map(r => r.nombre).filter(n => !votaron.has(n.toLowerCase()));
+  const sinDebate = schema.filter(q => !(q.config && q.config.esEncabezado) && (q.opciones || []).length &&
+                                       !proscontras.some(p => p.qid === q.id)).length;
+  const link = location.origin + location.pathname + '?e=' + encodeURIComponent(user.eid);
+  return `${encuestaTitulo}: ` +
+    (faltan.length ? `faltan por votar ${faltan.join(', ')}. ` : 'ya hemos votado todos. ') +
+    (sinDebate ? `Hay ${sinDebate} preguntas sin ningún pro/contra y se pueden proponer opciones nuevas. ` : '') +
+    `Entrad aquí: ${link}`;
+}
+document.addEventListener('DOMContentLoaded', () => {
+  const copy = $('btn-recordatorio-copy'), wa = $('btn-recordatorio-wa');
+  if (copy) copy.addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(textoRecordatorio()); showStatus('Recordatorio copiado', 'ok', 2500); }
+    catch (e) { showStatus('No se pudo copiar', 'err'); }
+  });
+  if (wa) wa.addEventListener('click', () =>
+    window.open('https://wa.me/?text=' + encodeURIComponent(textoRecordatorio()), '_blank', 'noopener'));
+});

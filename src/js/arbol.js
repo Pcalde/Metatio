@@ -50,7 +50,7 @@
     const ids = new Set(preguntas.map(q => q.id));
     const hijos = new Map(), raices = new Set();
     preguntas.forEach(q => {
-      const c = q.config && q.config.mostrarSi;
+      const c = condEfectiva(q);
       if (c && c.qid && c.qid !== q.id && ids.has(c.qid)) {
         if (!hijos.has(c.qid)) hijos.set(c.qid, []);
         hijos.get(c.qid).push(q);
@@ -59,7 +59,7 @@
     // opciones que abren ramas (para marcarlas con un icono)
     const abre = new Map();
     preguntas.forEach(q => {
-      const c = q.config && q.config.mostrarSi;
+      const c = condEfectiva(q);
       if (!c || !c.qid || c.no) return;
       valoresDe(c).forEach(v => {
         const k = c.qid + '\u0000' + v;
@@ -86,7 +86,7 @@
     }).join('');
 
     const ramas = (ctx.hijos.get(q.id) || []).map(k => {
-      const c = k.config.mostrarSi;
+      const c = condEfectiva(k)
       const sub = gente.filter(r => cumple(extractAnswer(r.answers || {}, q), c));
       return `<li class="arbol-rama">` +
         `<div class="arbol-rama-label"><i class="fa-solid fa-code-branch" aria-hidden="true"></i> ${esc(textoCond(c))}` +
@@ -181,3 +181,10 @@
     document.addEventListener('keydown', e => { if (e.key === 'Escape') cerrar(); });
   });
 })();
+
+function condEfectiva(q) {
+  const own = q.config && q.config.mostrarSi;
+  if (own && own.qid) return own;
+  const h = typeof _condDeSeccion === 'function' ? _condDeSeccion(q) : null;
+  return h ? h.config.mostrarSi : null;
+}

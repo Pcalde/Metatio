@@ -79,6 +79,7 @@ function _secDeIdx(idx, secs) {
 
 // Índice de la primera pregunta visible de una sección (o -1).
 function _secPrimeraVisible(sec, answers) {
+  if (_secOculta(sec, answers)) return -1;
   const vis = _secItemsVisibles(sec, answers);
   if (vis.length) return vis[0].i;
   if (sec.encabezadoIdx >= 0) return sec.encabezadoIdx;
@@ -278,13 +279,23 @@ function _condMatch(raw, op, valor) {
   }
 }
 
+function _condDeSeccion(q) {
+  const cfg = (q && q.config) || {};
+  if (cfg.esEncabezado || !cfg.seccion) return null;
+  const h = secHeaderPara(cfg.seccion);
+  return (h && h.config && h.config.mostrarSi && h.config.mostrarSi.qid) ? h : null;
+}
+
 // ¿Visible según su condición y el borrador de respuestas actual?
 // Las cadenas circulares o condiciones rotas se tratan como "visible"
 // (fallback seguro: no ocultar contenido por un error de datos).
 function esVisible(q, answers) {
+  const st0 = answers || readState().answers;
+  const hSec = _condDeSeccion(q);
+  if (hSec && !esVisible(hSec, st0)) return false;     // toda la sección oculta
   const cond = q && q.config && q.config.mostrarSi;
   if (!cond || !cond.qid) return true;
-  const st = answers || readState().answers;
+  const st = st0;                                      
   const guard = st.__guard || (st.__guard = new Set());
   if (guard.has(q.id)) return true;
   guard.add(q.id);
@@ -565,6 +576,11 @@ function _secHasAnswer(raw, tipo) {
   return String(raw).length > 0;
 }
 
+function _secOculta(sec, answers) {
+  const h = sec.encabezadoIdx >= 0 ? schema[sec.encabezadoIdx] : null;
+  return !!(h && h.config && h.config.mostrarSi && !esVisible(h, answers));
+}
+
 // ── Raíl de secciones ───────────────────────────────────────────────────────
 // El raíl pinta SECCIONES (agrupaciones de config.seccion), no preguntas:
 // cada entrada muestra el título de la sección, su estado global (check si
@@ -590,7 +606,8 @@ function renderRail() {
   let shownNum = 0;
   secs.forEach((sec, si) => {
     const items = _secItemsVisibles(sec, st);
-    const allHidden = sec.items.length > 0 && items.length === 0 && sec.encabezadoIdx < 0;
+    const allHidden = _secOculta(sec, st) ||
+      (items.length === 0 && sec.items.some(it => !(it.q.config && it.q.config.esEncabezado)));
     const answered = items.length > 0 && items.every(it => _secHasAnswer(st[it.q.id], it.q.tipo));
     const active = cur === sec;
     if (!allHidden) shownNum++;
@@ -672,6 +689,40 @@ function _secCerrarMenu() {
   }
 }
 
+async function _secAbrirCondicion(host, sec, btnItem, panel) {
+  let h = secHeaderPara(sec.nombre);
+  if (!h) { await crearSeccion(sec.nombre); h = secHeaderPara(sec.nombre); }
+  if (!h) { showStatus('No se pudo preparar la sección', 'err'); return; }
+  panel.innerHTML = '';
+  const box = div('sec-rail-cond'), edHost = div('cond-editor-host');
+  const ed = buildCondEditor(edHost, schema, h.id, h.config && h.config.mostrarSi);
+  const row = div('sec-rail-del-actions');
+  row.innerHTML = '<button type="button" class="btn-pc sec-cd-cancel">Cancelar</button>' +
+                  '<button type="button" class="btn-propose sec-cd-ok">Guardar</button>';
+  box.append(edHost, row); panel.appendChild(box);
+  row.querySelector('.sec-cd-cancel').addEventListener('click', e => { e.stopPropagation(); _secCerrarMenu(); });
+  row.querySelector('.sec-cd-ok').addEventListener('click', async e => {
+    e.stopPropagation();
+    const cond = ed.read();
+    if (cond) {
+      const err = validarMostrarSi(cond, schema, h.id);
+      if (err) { showStatus(err, 'err', 6000); return; }
+      const src = schema.find(x => x.id === cond.qid);
+      if (_secNormNombre(src && src.config && src.config.seccion) === _secNormNombre(sec.nombre)) {
+        showStatus('La condición no puede depender de una pregunta de la misma sección.', 'err', 6000); return;
+      }
+    }
+    const cfg = Object.assign({}, h.config || {});
+    if (cond) cfg.mostrarSi = cond; else delete cfg.mostrarSi;
+    try {
+      await apiAuth({ action: 'edit_pregunta', eid: user.eid, nombre: user.nombre,
+                      pinHash: user.pinHash, questionId: h.id, label: h.label, config: cfg });
+      h.config = cfg; lastRaw = ''; pollOnce(); _secCerrarMenu(); refreshSecciones();
+      showStatus(cond ? 'Condición de la sección guardada.' : 'Sección sin condición.', 'ok', 4000);
+    } catch (err) { showStatus('No se pudo guardar: ' + err.message, 'err'); }
+  });
+}
+
 function toggleSecManageMenu(host, sec) {
   const yaAbierto = _secManageOpen && _secManageOpen.host === host;
   _secCerrarMenu();
@@ -689,6 +740,7 @@ function toggleSecManageMenu(host, sec) {
   };
   mk('<i class="fa-solid fa-pen" aria-hidden="true"></i> Renombrar sección', '', (it, p) => _secAbrirRenombrar(host, sec, it, p));
   mk('<i class="fa-solid fa-plus" aria-hidden="true"></i> Añadir pregunta aquí', '', () => { _secCerrarMenu(); abrirAddPreguntaEnSeccion(sec.nombre || ''); });
+  if (sec.nombre) mk('<i class="fa-solid fa-code-branch" aria-hidden="true"></i> Condición de la sección', '', (it, p) => _secAbrirCondicion(host, sec, it, p));
   mk('<i class="fa-solid fa-trash" aria-hidden="true"></i> Eliminar sección', 'danger', (it, p) => _secAbrirEliminar(host, sec, it, p));
   host.appendChild(panel);
   _secManageOpen = { host, panel };
@@ -1000,7 +1052,7 @@ function renderBottomBar() {
   // Secciones navegables = las que tienen al menos una tarjeta para mostrar
   // (preguntas visibles o la propia marca de encabezado).
   const navSecs = secs.filter(s => s.items.some(it =>
-    !it.q.config?.esEncabezado ? esVisible(it.q, st) : true));
+    !it.q.config?.esEncabezado ? esVisible(it.q, st) : !_secOculta(s, st)));
   const total = Math.max(navSecs.length, 1);
   let pos = Math.max(1, navSecs.indexOf(cur) + 1);
   const label = $('sec-pos');
@@ -1107,6 +1159,11 @@ function initSecciones() {
   if (next) next.addEventListener('click', nextSection);
   // El envío (#sec-submit) se enlaza en bindSubmit() (answers.js), que es el
   // dueño del flujo; aquí solo la navegación y el ajuste de información.
+  const fab = $('sec-rail-fab'), bk = $('sec-rail-backdrop'), rail = $('sec-rail');
+  const setRail = open => { if (!rail) return; rail.classList.toggle('open', open); if (bk) bk.hidden = !open; };
+  if (fab)  fab.addEventListener('click', () => setRail(!rail.classList.contains('open')));
+  if (bk)   bk.addEventListener('click', () => setRail(false));
+  if (rail) rail.addEventListener('click', e => { if (e.target.closest('.sec-rail-main, .sec-rail-subitem')) setRail(false); });
 
   const sel = $('sec-groupinfo-mode');
   if (sel) {
