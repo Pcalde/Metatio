@@ -177,6 +177,9 @@
       <button type="button" class="mode-tab side-menu-action" id="btn-map-modal">
         <span><i class="fa-solid fa-map-location-dot" aria-hidden="true"></i> Ver mapa</span>
       </button>
+      <button type="button" class="mode-tab side-menu-action" id="btn-arbol-modal">
+        <span><i class="fa-solid fa-sitemap" aria-hidden="true"></i> Árbol de ramas</span>
+      </button>
       <button type="button" class="mode-tab side-menu-action" id="btn-account-modal">
         <span><i class="fa-solid fa-user-gear" aria-hidden="true"></i> Mi cuenta</span>
       </button>
@@ -388,6 +391,16 @@
     </div>
   </div>
 
+  <div class="map-modal-backdrop" id="arbol-modal-backdrop" hidden style="display:none !important">
+    <div class="map-modal" role="dialog" aria-modal="true" aria-label="Árbol del cuestionario">
+      <div class="map-modal-head">
+        <strong><i class="fa-solid fa-sitemap" aria-hidden="true"></i> Árbol del cuestionario</strong>
+        <button type="button" class="map-modal-close" id="arbol-modal-close" aria-label="Cerrar">✕</button>
+      </div>
+      <div class="map-modal-body" id="arbol-body"></div>
+    </div>
+  </div>
+
   <!-- -- VISTA 3: CONSENSO, FACTIBILIDAD Y REFORMULARIO ----------------- -->
   <div class="wide-wrap" id="view-consensus" style="display:none">
     <div id="consensus-container" style="display:flex;flex-direction:column;gap:20px"></div>
@@ -414,10 +427,8 @@
 <script src="src/js/forms.js?v=4"></script>
 <script src="src/js/answers.js?v=2"></script>
 <script src="src/js/reformulario.js?v=2"></script>
-<!-- Cuestionario por secciones (raíl, barra inferior, condiciones «mostrarSi»):
-     módulo con funciones EXPLÍCITAS llamado desde main.js y enterSurvey().
-     Sin monkeypatching; sustituye al antiguo wizard.js. -->
 <script src="src/js/secciones.js?v=14"></script>
+<script src="src/js/arbol.js"></script>
 <script src="src/js/mapa.js"></script>
 <script src="src/js/cuenta.js"></script>
 <script src="src/js/debate.js"></script>
