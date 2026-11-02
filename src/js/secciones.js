@@ -682,7 +682,7 @@ function toggleSecManageMenu(host, sec) {
     const it = document.createElement('button');
     it.type = 'button';
     it.className = 'sec-rail-menu-item' + (cls ? ' ' + cls : '');
-    it.textContent = label;
+    it.innerHTML = label;
     it.addEventListener('click', e => { e.stopPropagation(); fn(it, panel); });
     panel.appendChild(it);
     return it;
