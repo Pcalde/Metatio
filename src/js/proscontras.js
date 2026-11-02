@@ -30,7 +30,7 @@ function buildPCRow(e) {
   const row = div('pc-entry pc-' + est);
   const btn = (cls, txt, title, fn) => {
     const b = document.createElement('button');
-    b.type = 'button'; b.className = cls; b.textContent = txt; b.title = title;
+    b.type = 'button'; b.className = cls; b.innerHTML = txt; b.title = title;
     b.disabled = !e.id;                       // aún sin id (guardándose)
     b.addEventListener('click', fn);
     return b;
