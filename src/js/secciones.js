@@ -488,17 +488,37 @@ function prevSection() {
   }
 }
 
+// Tarjetas «meta» del cuestionario que viven FUERA de #questions-container:
+// participantes (intro) y ausencias/predicciones (cierre). Se muestran u
+// ocultan según la sección activa: Participantes solo en la primera sección
+// (hace de intro) y Ausencias solo en la última. Con una sola sección ambas
+// van en esa misma página.
+function _applyMetaCardVisibility(cur, secs) {
+  const isFirstSec = !secs.length || cur === secs[0];
+  const isLastSec  = !secs.length || cur === secs[secs.length - 1];
+  const participCard = $('participants-card');
+  if (participCard) participCard.style.display = isFirstSec ? '' : 'none';
+  const ausCard = $('ausencias-card');
+  if (ausCard) {
+    // Sin respondentes la tarjeta nunca debe verse (dataset disponible lo fija
+    // renderAusencias); con datos, solo aparece al final del cuestionario.
+    if (ausCard.dataset.available === '0') ausCard.style.display = 'none';
+    else ausCard.style.display = isLastSec ? 'block' : 'none';
+  }
+}
+
 // Muestra TODAS las tarjetas visibles de la sección activa; el resto queda
 // oculta (display:none). La sección activa es la que contiene la pregunta en
 // SEC_ESTADO.idx.
 function applySectionPaging() {
   const container = $('questions-container');
   if (!container) return;
-  if (!schema.length) { renderRail(); renderBottomBar(); return; }
+  if (!schema.length) { _applyMetaCardVisibility(null, []); renderRail(); renderBottomBar(); return; }
   secClampIndex();
   const st = readState().answers;
   const secs = seccionesDelEsquema();
   const cur = _secDeIdx(SEC_ESTADO.idx, secs) || secs[0];
+  _applyMetaCardVisibility(cur, secs);
   let activeIds = null;
   if (cur) {
     // Preguntas visibles de la sección + su tarjeta «marca» SIEMPRE que el

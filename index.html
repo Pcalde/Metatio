@@ -266,6 +266,14 @@
             <input type="text" id="add-q-seccion-nombre" maxlength="60"
                    placeholder="Nombre de la sección nueva…" style="display:none;margin-top:6px">
           </div>
+          <!-- Posición: el desplegable lo rellena forms.js con las preguntas
+               existentes; «Al final» es el comportamiento histórico. -->
+          <div class="add-q-field" id="add-q-pos-wrap">
+            <label>Posición en el cuestionario</label>
+            <select id="add-q-pos">
+              <option value="">Al final (predeterminado)</option>
+            </select>
+          </div>
           <div id="add-q-opciones-wrap" class="add-q-field">
             <label>Opciones iniciales</label>
             <div class="add-q-opts-container" id="add-q-opts-container">
@@ -339,6 +347,12 @@
               <button class="btn-add-q-opt" type="button" id="btn-add-sec-q-opt">+ Opción</button>
             </div>
           </details>
+          <div class="add-q-field">
+            <label>Posición de la sección</label>
+            <select id="add-sec-pos">
+              <option value="">Al final (predeterminado)</option>
+            </select>
+          </div>
           <button class="btn-propose" type="button" id="btn-submit-new-sec">Crear sección <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></button>
         </div>
         <div class="sec-manage-list" id="sec-manage-list"></div>
@@ -431,11 +445,11 @@
 <script src="src/js/types.js?v=4"></script>
 <script src="src/js/questions.js?v=5"></script>
 <script src="src/js/proscontras.js"></script>
-<script src="src/js/ausencias.js"></script>
+<script src="src/js/ausencias.js?v=2"></script>
 <script src="src/js/forms.js?v=4"></script>
-<script src="src/js/answers.js?v=2"></script>
+<script src="src/js/answers.js?v=3"></script>
 <script src="src/js/reformulario.js?v=2"></script>
-<script src="src/js/secciones.js?v=14"></script>
+<script src="src/js/secciones.js?v=15"></script>
 <script src="src/js/arbol.js"></script>
 <script src="src/js/mapa.js"></script>
 <script src="src/js/cuenta.js"></script>

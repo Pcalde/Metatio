@@ -99,6 +99,7 @@
       `<span class="arbol-tipo">${esc(TIPOS_TXT[q.tipo] || q.tipo)}</span>` +
       (q.tipo !== 'textarea' ? `<span class="arbol-n">${nResp}/${gente.length} responden</span>` : '') +
       `<button type="button" class="sec-rail-tool arbol-go" data-idx="${idx}" title="Ir a esta pregunta"><i class="fa-solid fa-arrow-right" aria-hidden="true"></i></button>` +
+      `<button type="button" class="sec-rail-tool arbol-branch" data-idx="${idx}" title="Crear una pregunta condicionada a esta"><i class="fa-solid fa-plus" aria-hidden="true"></i></button>` +
       `</summary>` +
       (opts ? `<div class="arbol-opts">${opts}</div>` : '') +
       (ramas ? `<ul class="arbol-hijos">${ramas}</ul>` : '') +
@@ -147,6 +148,21 @@
       cerrar();
       if (typeof switchMode === 'function') switchMode('survey');
       if (typeof goToSection === 'function') goToSection(parseInt(b.dataset.idx, 10));
+    }));
+    // Botón «+» de cada nodo: crear una rama (pregunta condicionada a esta)
+    // desde el propio árbol. Delega en forms.js, que abre el formulario de
+    // pregunta nueva pre-rellenado (sección, condición y posición heredadas).
+    host.querySelectorAll('.arbol-branch').forEach(b => b.addEventListener('click', e => {
+      e.preventDefault(); e.stopPropagation();
+      const q = schema[parseInt(b.dataset.idx, 10)];
+      if (!q) return;
+      cerrar();
+      if (typeof switchMode === 'function') switchMode('survey');
+      if (typeof abrirAddPreguntaCondicionado === 'function') {
+        abrirAddPreguntaCondicionado(q);
+      } else if (typeof goToSection === 'function') {
+        goToSection(parseInt(b.dataset.idx, 10));
+      }
     }));
   }
 
