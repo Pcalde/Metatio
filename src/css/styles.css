@@ -1062,3 +1062,45 @@ body.map-modal-open { overflow: hidden; }
   max-height: 200px;
   overflow-y: auto;
 }
+
+/* ── Ficha del raíl: botón principal + gestionar + sublista ── */
+.sec-rail-item { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; padding: 6px; cursor: default; }
+.sec-rail-main {
+  flex: 1 1 0; min-width: 0; display: grid; grid-template-columns: 18px 24px minmax(0, 1fr);
+  align-items: baseline; gap: 8px; text-align: left; border: 0; background: transparent;
+  color: inherit; font: inherit; cursor: pointer; padding: 4px; border-radius: 8px;
+}
+.sec-rail-sub { flex-basis: 100%; padding-left: 34px; display: flex; flex-direction: column; gap: 2px; }
+.sec-rail-tool {
+  flex: none; width: 28px; height: 28px; border: 1px solid transparent; background: transparent;
+  border-radius: 6px; color: var(--muted); cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.sec-rail-tool:hover { background: var(--card); border-color: var(--border); color: var(--ink); }
+.sec-rail-delete:hover { color: var(--accent); border-color: var(--accent); background: #fdf0ec; }
+
+/* Menú inline de gestionar sección */
+.sec-rail-menu, .sec-rail-rename-form, .sec-rail-del-confirm { flex-basis: 100%; }
+.sec-rail-menu { display: flex; flex-direction: column; gap: 2px; background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 6px; }
+.sec-rail-menu-item { text-align: left; border: 0; background: transparent; padding: 8px 10px; border-radius: 6px; cursor: pointer; font: inherit; font-size: .8rem; color: var(--ink); }
+.sec-rail-menu-item:hover { background: var(--bg); }
+.sec-rail-menu-item.danger { color: var(--accent); }
+.sec-rail-rename-form { display: flex; gap: 6px; flex-wrap: wrap; }
+.sec-rail-rename-form input[type=text] { flex: 1 1 140px; min-width: 0; padding: 7px 10px; font-size: .85rem; }
+.sec-rail-del-confirm { display: flex; flex-direction: column; gap: 8px; font-size: .8rem; background: #fdf0ec; border: 1px solid #f3c6b8; border-radius: 8px; padding: 10px; }
+.sec-rail-del-actions { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; }
+
+/* Lista de gestión de secciones (#sec-manage-list) */
+.sec-manage-list { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
+.sec-manage-item { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); }
+.sec-manage-meta { display: flex; align-items: baseline; gap: 10px; flex: 1 1 200px; min-width: 0; }
+.sec-manage-num { font-size: .72rem; color: var(--muted); }
+.sec-manage-nombre { border: 0; background: none; font: inherit; font-weight: 600; cursor: pointer; text-align: left; color: var(--ink); }
+.sec-manage-count { color: var(--muted); font-size: .75rem; white-space: nowrap; }
+.sec-manage-tools { display: flex; gap: 4px; }
+.sec-manage-item .sec-rail-rename-form, .sec-manage-item .sec-rail-del-confirm { flex-basis: 100%; }
+.sec-manage-empty { color: var(--muted); font-size: .85rem; font-style: italic; }
+
+@media (max-width: 760px) {
+  .sec-rail-main { display: flex; align-items: center; gap: 6px; }
+}
