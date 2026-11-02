@@ -136,6 +136,30 @@ function aqSeccionElegida() {
   return sel.value;
 }
 
+// Desplegable «Posición en el cuestionario»: permite insertar la pregunta
+// nueva ANTES de cualquiera de las existentes (o al final, predeterminado).
+function rebindAddQPosition() {
+  const sel = $('add-q-pos');
+  if (!sel) return;
+  const qs = schema.filter(q => !(q.config && q.config.esEncabezado));
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">Al final (predeterminado)</option>' +
+    qs.map(q => `<option value="${esc(q.id)}">Antes de: ${esc(q.label)}</option>`).join('');
+  if (cur && [...sel.options].some(o => o.value === cur)) sel.value = cur;
+}
+
+// Desplegable «Posición de la sección» del formulario de secciones: la marca
+// y su primera pregunta se mueven justo antes de la sección elegida.
+function rebindAddSecPosition() {
+  const sel = $('add-sec-pos');
+  if (!sel) return;
+  const secs = (typeof seccionesDelEsquema === 'function') ? seccionesDelEsquema() : [];
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">Al final (predeterminado)</option>' +
+    secs.map(s => `<option value="${esc(s.nombre || s.titulo)}">Antes de la sección: ${esc(s.titulo)}</option>`).join('');
+  if (cur && [...sel.options].some(o => o.value === cur)) sel.value = cur;
+}
+
 function resetAddQuestionForm() {
   $('add-q-label').value = '';
   const cont = $('add-q-opts-container');
@@ -145,8 +169,56 @@ function resetAddQuestionForm() {
   $('aq-dur').value = 3;
   $('add-q-desc').value = '';
   rebindAddQSeccion(); // desplegable de secciones al día
+  rebindAddQPosition(); // desplegable de posición al día
   rebindAddQCond(); // editor de condición limpio (sobre el esquema actual)
 }
+
+// ── RAMIFICACIÓN DESDE EL ÁRBOL ─────────────────────────────────────────────
+// Abre el formulario de pregunta nueva PRE-RELLENADO para crear una rama:
+// hereda la sección del padre, deja la condición «mostrar si…» apuntando a
+// la pregunta origen (todas sus opciones) y sugiere la posición inmediata
+// posterior al padre. Lo invoca arbol.js desde el botón «+» de cada nodo.
+function abrirAddPreguntaCondicionado(parentQ) {
+  const f = $('add-q-form'), t = $('btn-toggle-add-q');
+  if (!t || !f || !parentQ) return;
+  if (!f.classList.contains('open')) t.click();
+
+  // Sección heredada del padre
+  if (parentQ.config && parentQ.config.seccion) {
+    const sel = $('add-q-seccion');
+    if (sel) {
+      const key = _secNormNombre(parentQ.config.seccion);
+      const op = [...sel.options].find(o => _secNormNombre(o.value) === key);
+      if (op) { sel.value = op.value; if (typeof syncAddQSeccionField === 'function') syncAddQSeccionField(); }
+    }
+  }
+
+  // Condición pre-rellenada: «mostrar si el padre incluye alguna de sus opciones»
+  const condHost = $('add-q-cond-host');
+  if (condHost && typeof buildCondEditor === 'function') {
+    const allVals = (parentQ.opciones || []).map(o => optVal(parentQ, o));
+    const init = {
+      qid: parentQ.id,
+      op: allVals.length > 1 ? 'alguno' : 'incluye',
+      valor: allVals.length > 1 ? allVals : (allVals[0] || ''),
+    };
+    const ed = buildCondEditor(condHost, schema, null, init);
+    condHost._getCond = ed.read;
+  }
+
+  // Posición: por defecto justo después del padre (= antes de la siguiente)
+  const posSel = $('add-q-pos');
+  if (posSel) {
+    const pIdx = schema.indexOf(parentQ);
+    const nextQ = (pIdx >= 0 && pIdx + 1 < schema.length) ? schema[pIdx + 1] : null;
+    if (nextQ && [...posSel.options].some(o => o.value === nextQ.id)) posSel.value = nextQ.id;
+  }
+
+  f.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  setTimeout(() => $('add-q-label')?.focus(), 250);
+  showStatus(`Creando ramificación de «${parentQ.label}»`, 'info', 4000);
+}
+window.abrirAddPreguntaCondicionado = abrirAddPreguntaCondicionado;
 
 // Reconstruye el editor «mostrar solo si…» del formulario de pregunta nueva.
 // Sin `currentQid`: la pregunta se añadirá al final, así que puede depender
@@ -192,21 +264,9 @@ async function submitNewQuestion() {
   const desc = $('add-q-desc').value.trim();
   if (desc) config.descripcion = desc;
 
-  // Condición «mostrar solo si…» del editor de #add-q-cond-host. La pregunta
-  // nueva se añade AL FINAL del orden, así que cualquier fuente existente es
-  // "anterior" y la validación anti-ciclos pasa con beforeIdx = schema.length.
-  const condHost = $('add-q-cond-host');
-  if (condHost && typeof condHost._getCond === 'function') {
-    const cond = condHost._getCond();
-    if (cond) {
-      const errCond = typeof validarMostrarSi === 'function'
-        ? validarMostrarSi(cond, schema, null, schema.length) : null;
-      if (errCond) { showStatus(errCond, 'err', 6000); return; }
-      config.mostrarSi = cond;
-    }
-  }
-
-  const pregunta = { id, tipo, label, opciones, config };
+  // ── Posición elegida: '' = al final (comportamiento histórico); si no,
+  // la pregunta se inserta ANTES de esa pregunta del esquema. ──────────────
+  const beforeQid = ($('add-q-pos')?.value) || '';
   // Sección elegida en el desplegable (o nombre nuevo escrito a mano). La
   // tarjeta «marca» de una sección nueva se crea aquí mismo si no existe.
   const secElegida = aqSeccionElegida();
@@ -218,25 +278,54 @@ async function submitNewQuestion() {
     }
   }
 
-  // Optimista, con rollback. Insertar AL FINAL del esquema, pero justo después
-  // de la última tarjeta visible de su sección (si la tiene), para que DOM y
-  // esquema coincidan hasta que llegue el orden definitivo del servidor.
-  schema.push(pregunta);
-  const card = buildQuestionCard(pregunta, schema.length - 1);
-  const contQ = $('questions-container');
-  if (card && contQ) {
-    let beforeEl = null;
+  // Índice de inserción: antes de `beforeQid`; si no se eligió posición pero
+  // sí una sección existente, justo tras la última pregunta de esa sección;
+  // en cualquier otro caso, al final del esquema.
+  function _calcInsertAt(arr) {
+    if (beforeQid) {
+      const j = arr.findIndex(q => q.id === beforeQid);
+      if (j >= 0) return j;
+    }
     if (secElegida) {
-      for (let j = schema.length - 2; j >= 0; j--) {
-        const x = schema[j];
-        if (!x.config || x.config.esEncabezado) continue;
-        if (String(x.config.seccion || '').trim().toLowerCase() !==
-            secElegida.trim().toLowerCase()) continue;
-        const c = cardFor(x.id);
-        if (c && c.parentElement === contQ) { beforeEl = c; break; }
+      for (let j = arr.length - 1; j >= 0; j--) {
+        const x = arr[j];
+        if (x.config && x.config.esEncabezado) continue;
+        if (String(x.config?.seccion || '').trim().toLowerCase() === secElegida.trim().toLowerCase()) return j + 1;
       }
     }
-    if (beforeEl) beforeEl.after(card); else contQ.appendChild(card);
+    return arr.length;
+  }
+
+  const pregunta = { id, tipo, label, opciones, config };
+
+  // Condición «mostrar solo si…» del editor de #add-q-cond-host. Se valida
+  // sobre el esquema «virtual» con la pregunta ya colocada en su posición:
+  // así la regla anti-ciclos («la fuente debe ir antes») se respeta también
+  // cuando la pregunta nueva se inserta en medio del cuestionario.
+  const condHost = $('add-q-cond-host');
+  if (condHost && typeof condHost._getCond === 'function') {
+    const cond = condHost._getCond();
+    if (cond) {
+      const insertAtV = _calcInsertAt(schema);
+      const virtual = [...schema.slice(0, insertAtV), pregunta, ...schema.slice(insertAtV)];
+      const errCond = typeof validarMostrarSi === 'function'
+        ? validarMostrarSi(cond, virtual, pregunta.id) : null;
+      if (errCond) { showStatus(errCond, 'err', 6000); return; }
+      config.mostrarSi = cond;
+    }
+  }
+
+  // Optimista, con rollback. Insertar en la posición calculada para que DOM
+  // y esquema coincidan hasta que llegue el orden definitivo del servidor.
+  const insertAt = _calcInsertAt(schema);
+  schema.splice(insertAt, 0, pregunta);
+  const card = buildQuestionCard(pregunta, insertAt);
+  const contQ = $('questions-container');
+  if (card && contQ) {
+    const refCard = beforeQid ? cardFor(beforeQid) : null;
+    if (refCard && refCard.parentElement === contQ) refCard.before(card);
+    else contQ.appendChild(card);
+    renumberCards();
   }
   $('add-q-form').classList.remove('open');
   resetAddQuestionForm();
@@ -245,9 +334,24 @@ async function submitNewQuestion() {
 
   try {
     await apiPost({ action: 'add_pregunta', eid: user.eid, nombre: user.nombre, pinHash: user.pinHash, pregunta });
+    // El servidor asigna siempre la posición final; si el usuario eligió otra
+    // (o una sección intermedia), persistimos el orden completo del esquema.
+    let reorderErr = null;
+    if (beforeQid || secElegida) {
+      try {
+        await apiPost({ action: 'reordenar_preguntas', eid: user.eid, nombre: user.nombre,
+                        pinHash: user.pinHash, ids: schema.map(q => q.id) });
+      } catch (eReord) {
+        // La pregunta ya existe en el servidor (al final); solo falla la
+        // posición. No hacemos rollback de la creación: avisamos y alineamos
+        // el DOM con el orden real tras el sondeo.
+        reorderErr = eReord;
+      }
+    }
     // Refresca el snapshot (incluida la posición inicial asignada por SQL).
     lastRaw = '';
     await pollOnce();
+    if (reorderErr) showStatus('La pregunta se creó al final del cuestionario; no se pudo colocar en la posición elegida: ' + reorderErr.message, 'err', 7000);
   } catch (e) {
     if (card) card.remove();
     const i = schema.indexOf(pregunta);
@@ -290,6 +394,10 @@ async function submitNewSection() {
     primera = { id: slug + '_' + Date.now().toString(36), tipo, label: qLabel, opciones, config };
   }
 
+  // Posición elegida: mover la marca (y su primera pregunta) delante de la
+  // sección seleccionada en vez de dejarlas al final del cuestionario.
+  const beforeSec = ($('add-sec-pos')?.value) || '';
+
   try {
     await crearSeccion(nombre);            // crea la marca (optimista + add_pregunta)
     if (primera) {
@@ -309,6 +417,51 @@ async function submitNewSection() {
     } else {
       showStatus(`Sección «${nombre}» creada`, 'ok', 3000);
     }
+
+    // ── Colocar la sección en la posición pedida («antes de X») ───────────
+    if (beforeSec && typeof seccionesDelEsquema === 'function') {
+      const secs = seccionesDelEsquema();
+      const targetSec = secs.find(s => _secNormNombre(s.nombre || s.titulo) === _secNormNombre(beforeSec));
+      const marca = secHeaderPara(nombre);
+      if (targetSec && marca) {
+        const anchorIdx = targetSec.encabezadoIdx >= 0
+          ? targetSec.encabezadoIdx
+          : (targetSec.items[0]?.i ?? schema.length);
+        schema.splice(schema.indexOf(marca), 1);
+        schema.splice(Math.min(anchorIdx, schema.length), 0, marca);
+        if (primera && schema.includes(primera)) {
+          schema.splice(schema.indexOf(primera), 1);
+          schema.splice(schema.indexOf(marca) + 1, 0, primera);
+        }
+        // Reubica las tarjetas DOM en el nuevo orden del esquema (el sondeo
+        // nunca reordena; solo añade/quitan tarjetas).
+        const contQ = $('questions-container');
+        if (contQ) {
+          let ref = null;
+          for (let j = schema.indexOf(marca) + 1; j < schema.length; j++) {
+            const c = cardFor(schema[j].id);
+            if (c && c.parentElement === contQ) { ref = c; break; }
+          }
+          const marcaCard = cardFor(marca.id);
+          if (marcaCard && marcaCard.parentElement === contQ) {
+            if (ref) ref.before(marcaCard); else contQ.appendChild(marcaCard);
+          }
+          if (primera) {
+            const pCard = cardFor(primera.id);
+            const mCard = cardFor(marca.id);
+            if (pCard && pCard.parentElement === contQ && mCard) {
+              if (ref) ref.before(pCard); else mCard.after(pCard);
+            }
+          }
+          renumberCards();
+        }
+        try {
+          await apiPost({ action: 'reordenar_preguntas', eid: user.eid, nombre: user.nombre,
+                          pinHash: user.pinHash, ids: schema.map(q => q.id) });
+        } catch (e3) { console.warn('reordenar secciones:', e3); }
+      }
+    }
+
     // Limpiar el formulario y cerrar la tarjeta de creación.
     $('add-sec-nombre').value = '';
     $('add-sec-q-label').value = '';
@@ -330,16 +483,21 @@ function bindForms() {
     const f = $('add-q-form');
     const opening = !f.classList.contains('open');
     f.classList.toggle('open');
-    // Al abrir, el desplegable de secciones y el editor de condición se
-    // pintan con el esquema actual.
-    if (opening) { rebindAddQSeccion(); rebindAddQCond(); }
+    // Al abrir, los desplegables de secciones/posición y el editor de
+    // condición se pintan con el esquema actual.
+    if (opening) { rebindAddQSeccion(); rebindAddQPosition(); rebindAddQCond(); }
   });
   $('btn-submit-new-q').addEventListener('click', submitNewQuestion);
 
   // ── Tarjeta «Secciones del cuestionario» (#add-section-card) ──
   const btnToggleSec = $('btn-toggle-add-sec');
   if (btnToggleSec) {
-    btnToggleSec.addEventListener('click', () => $('add-sec-form').classList.toggle('open'));
+    btnToggleSec.addEventListener('click', () => {
+      const f = $('add-sec-form');
+      const opening = !f.classList.contains('open');
+      f.classList.toggle('open');
+      if (opening) rebindAddSecPosition(); // desplegable de posición al día
+    });
   }
   const btnSubmitSec = $('btn-submit-new-sec');
   if (btnSubmitSec) btnSubmitSec.addEventListener('click', submitNewSection);
