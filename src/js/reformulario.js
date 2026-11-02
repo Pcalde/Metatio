@@ -174,6 +174,22 @@ function buildModelData() {
   const viajeros = [];
   const allDatesSet = new Set();
 
+  const _expand = (a, b) => {
+      const out = []; if (!a || !b || b < a) return out;
+      const cur = new Date(a + 'T00:00:00Z'), end = new Date(b + 'T00:00:00Z');
+      for (let g = 0; cur <= end && g < 180; g++, cur.setUTCDate(cur.getUTCDate() + 1))
+        out.push(cur.toISOString().slice(0, 10));
+      return out;
+    };
+  const fechasGlobal = new Set();
+    respuestas.forEach(r => {
+      const d = qDisp ? extractAnswer(r.answers || {}, qDisp) : null;
+      if (d && d.noSe) return;
+      ((d && d.rangos) || []).forEach(rg => _expand(rg.desde, rg.hasta).forEach(f => fechasGlobal.add(f)));
+      const h = qHor ? extractAnswer(r.answers || {}, qHor) : null;
+      if (h && Array.isArray(h.disponibilidades)) for (const f of dispToMap(h.disponibilidades).keys()) fechasGlobal.add(f);
+    });
+    
   respuestas.forEach(r => {
     const ans = r.answers || {};
     const disp = qDisp ? extractAnswer(ans, qDisp) : null;
@@ -189,6 +205,15 @@ function buildModelData() {
     const meDaIgual = !!(disp && disp.meDaIgual);
     const prefPuente = !!(disp && disp.preferirPuente);
     const rangos = (disp && Array.isArray(disp.rangos)) ? disp.rangos : (ans.rangosFechas || []);
+
+    let forzarFechas = null;
+    if (disp && disp.noSe) {
+      const pAns = ans.prob_asistencia_propia;
+      const pResp = (respondentes.find(x => x.nombre.toLowerCase() === r.nombre.toLowerCase()) || {}).prob_asistencia;
+      const p = (pAns != null ? pAns : (pResp != null ? pResp : 80)) / 100;
+      if (p <= 0.5 || !fechasGlobal.size) return;   // "a nada": fuera del modelo
+      forzarFechas = new Set(fechasGlobal);          // "a todo"
+    }
 
     // ── CRUCE DE FUENTES: fechas de disponibilidad + franjas de horarios ──
     // Antes se usaban las fechas SOLO si existían; si alguien rellenaba horarios
@@ -213,8 +238,8 @@ function buildModelData() {
       for (const f of dispToMap(hor.disponibilidades).keys()) horFechas.add(f);
     }
 
-    let conjuntoFechas = new Set([...rangoSet, ...horFechas]);
-    if (rangoSet.size && horFechas.size) {
+    let conjuntoFechas = forzarFechas || new Set([...rangoSet, ...horFechas]);
+    if (!forzarFechas && rangoSet.size && horFechas.size) {
       const inter = new Set([...rangoSet].filter(f => horFechas.has(f)));
       if (inter.size) conjuntoFechas = inter; // ambas fuentes rellenas y compatibles → cruce estricto
     }
