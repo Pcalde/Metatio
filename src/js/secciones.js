@@ -1168,7 +1168,7 @@ function renderSecManageList() {
     const mk = (txt, title, cls, fn) => {
       const b = document.createElement('button');
       b.type = 'button'; b.className = 'sec-rail-tool' + (cls ? ' ' + cls : '');
-      b.textContent = txt; b.title = title;
+      b.innerHTML = txt; b.title = title;
       b.addEventListener('click', e => { e.stopPropagation(); fn(b, row); });
       tools.appendChild(b);
       return b;
