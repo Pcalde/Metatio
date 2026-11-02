@@ -618,6 +618,18 @@ body.map-modal-open { overflow: hidden; }
    navegable), pero «gestionar» sigue activo para poder editar/renombrar. */
 .sec-rail-main[disabled] { cursor: default; }
 .sec-rail-main[disabled]:hover { background: transparent; }
+/* Los controles de una sección tachada se mantienen AL 100 % de opacidad y
+   totalmente operativos (quitar condición / renombrar / eliminar): si heredan
+   el .5 del contenedor parecen deshabilitados y nadie puede ya ni revertirla
+   ni borrarla. */
+.sec-rail-item.not-applicable > .sec-rail-tool,
+.sec-rail-item.not-applicable .sec-rail-menu,
+.sec-rail-item.not-applicable .sec-rail-rename-form,
+.sec-rail-item.not-applicable .sec-rail-del-confirm { opacity: 1; }
+.sec-rail-item.not-applicable .sec-rail-tool:hover { background: var(--card); border-color: var(--border); color: var(--ink); }
+.sec-rail-menu-item.ok { color: var(--accent2); }
+.sec-rail-unhide { color: var(--accent2); }
+.sec-rail-unhide:hover { color: var(--accent2); border-color: var(--accent2); background: var(--bg); }
 .sec-rail-status { font-size: .72rem; color: var(--accent2); }
 .sec-rail-item.not-applicable .sec-rail-status { color: var(--muted); }
 .sec-rail-num {
@@ -1163,6 +1175,11 @@ body.map-modal-open { overflow: hidden; }
 /* Lista de gestión de secciones (#sec-manage-list) */
 .sec-manage-list { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
 .sec-manage-item { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); }
+/* Sección tachada en la lista de gestión: el título se marca como «no aplica»,
+   pero las herramientas (renombrar / quitar condición / eliminar) siguen al
+   100 % visibles y operativas. */
+.sec-manage-item.not-applicable .sec-manage-nombre { text-decoration: line-through; color: var(--muted); }
+.sec-manage-item.not-applicable .sec-manage-tools { opacity: 1; }
 .sec-manage-meta { display: flex; align-items: baseline; gap: 10px; flex: 1 1 200px; min-width: 0; }
 .sec-manage-num { font-size: .72rem; color: var(--muted); }
 .sec-manage-nombre { border: 0; background: none; font: inherit; font-weight: 600; cursor: pointer; text-align: left; color: var(--ink); }
