@@ -130,10 +130,10 @@
   </div>
 </div>
 
-<!-- ═══════════════════════════ SURVEY & POST-SURVEY ═════════════════════ -->
+<!-- =========================== SURVEY & POST-SURVEY ===================== -->
 <div id="survey-screen" style="display:none">
   <header>
-    <h1>Cuestionario de <em>vacas</em></h1>
+    <h1>Cuestionario de <span class="eid" id="utag-eid"></span></h1>
     <div class="user-tag" id="user-tag">
       <span id="utag-nombre">-</span>
       <span class="eid" id="utag-eid"></span>
@@ -143,7 +143,7 @@
     </div>
   </header>
 
-  <!-- NAVEGACIí“N LATERAL DESPLEGABLE (hamburguesa) -->
+  <!-- NAVEGACIÓN LATERAL DESPLEGABLE (hamburguesa) -->
   <div class="side-nav" id="side-nav">
     <button type="button" class="side-nav-toggle" id="side-nav-toggle" aria-label="Abrir menú" aria-expanded="false">
       <span class="hamburger"></span>
@@ -221,7 +221,7 @@
     <!-- RAíL DE SECCIONES: siempre visible a la izquierda (chips horizontales
          en pantallas estrechas). Lo rellena renderRail() en secciones.js. -->
     <nav id="sec-rail" class="sec-rail" aria-label="Secciones del cuestionario"></nav>
-
+    <div class="sec-rail-backdrop" id="sec-rail-backdrop" hidden></div>
     <!-- COLUMNA PRINCIPAL: una sola sección visible cada vez (máx. 720 px) -->
     <main class="sec-main">
       <!-- Resumen inicial: solo se muestra en la portada del cuestionario. -->
@@ -229,6 +229,10 @@
         <div class="card-title"><span class="num"><i class="fa-solid fa-users" aria-hidden="true"></i></span> Participantes y votantes</div>
         <p class="participants-note">Personas registradas en el viaje y quiénes ya han enviado su respuesta.</p>
         <div id="participants-list" class="participants-list" aria-live="polite"></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
+          <button type="button" class="btn-pc" id="btn-recordatorio-copy"><i class="fa-solid fa-copy" aria-hidden="true"></i> Copiar recordatorio</button>
+          <button type="button" class="btn-pc" id="btn-recordatorio-wa"><i class="fa-brands fa-whatsapp" aria-hidden="true"></i> Enviar por WhatsApp</button>
+        </div>
       </section>
 
       <div id="questions-container" style="display:flex;flex-direction:column;gap:24px"></div>
@@ -365,6 +369,10 @@
     <div class="sec-nav" id="sec-nav">
       <div class="sec-progress" aria-hidden="true"><span class="sec-bar-fill" id="sec-bar-fill"></span></div>
       <div class="sec-nav-row">
+        <button type="button" class="sec-rail-fab" id="sec-rail-fab">
+          <i class="fa-solid fa-list" aria-hidden="true"></i>
+          <span class="sec-btn-txt">Secciones</span>
+        </button>
         <button type="button" class="sec-btn" id="sec-prev" aria-label="Sección anterior">
           <i class="fa-solid fa-arrow-left" aria-hidden="true"></i><span class="sec-btn-txt">Anterior</span>
         </button>
@@ -384,7 +392,7 @@
   <div class="map-modal-backdrop" id="map-modal-backdrop" hidden>
     <div class="map-modal" role="dialog" aria-modal="true" aria-label="Mapa de destinos">
       <div class="map-modal-head">
-        <strong><i class="fa-solid fa-map-location"></i> Mapa de destinos</strong>
+        <strong><i class="fa-solid fa-map-location"></i>Mapa de destinos</strong>
         <button type="button" class="map-modal-close" id="map-modal-close" aria-label="Cerrar mapa">✕</button>
       </div>
       <div class="map-modal-body wide-wrap" id="map-modal-body"></div>
