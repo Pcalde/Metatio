@@ -784,41 +784,33 @@ async function renombrarSeccion(nombreViejo, nombreNuevo) {
   if (!user) { showStatus('Inicia sesión para renombrar secciones', 'err'); return false; }
   nombreNuevo = String(nombreNuevo || '').trim();
   if (!nombreNuevo) return false;
-  const afectadas = schema.filter(q =>
-    q.config && !_esMarcaDeSeccion(q, nombreViejo) &&
-    _secNormNombre(q.config.seccion || '') === _secNormNombre(nombreViejo));
-  const marcas = schema.filter(q => _esMarcaDeSeccion(q, nombreViejo));
+  const key = _secNormNombre(nombreViejo);
+  const sec = seccionesDelEsquema().find(s => _secNormNombre(s.nombre || s.titulo) === key);
+  if (!sec) { showStatus('No se encontró la sección', 'err'); return false; }
+
   let ok = 0, errs = 0;
-  for (const q of afectadas.concat(marcas)) {
+  for (const { q } of sec.items) {
+    const esMarca = !!(q.config && q.config.esEncabezado);
     const newCfg = Object.assign({}, q.config || {}, { seccion: nombreNuevo });
     try {
       await apiAuth({
         action: 'edit_pregunta',
         eid: user.eid, nombre: user.nombre, pinHash: user.pinHash,
-        questionId: q.id,
-        label: q.config.esEncabezado ? nombreNuevo : q.label,
-        config: newCfg,
+        questionId: q.id, label: esMarca ? nombreNuevo : q.label, config: newCfg,
       });
       q.config = newCfg;
-      if (q.config.esEncabezado) q.label = nombreNuevo;
+      if (esMarca) q.label = nombreNuevo;
       ok++;
-    } catch (e) {
-      console.warn('No se pudo renombrar la pregunta', q.id, e);
-      errs++;
-    }
+    } catch (e) { console.warn('Renombrar', q.id, e); errs++; }
   }
-  if (!errs) {
-    showStatus(`Sección renombrada a «${nombreNuevo}» (${ok} elemento${ok === 1 ? '' : 's'} actualizado${ok === 1 ? '' : 's'}).`, 'ok', 5000);
-  } else {
-    showStatus(`Se renombró parcialmente: ${ok} bien, ${errs} con error.`, 'err', 7000);
-  }
+  showStatus(errs ? `Renombrado parcial: ${ok} bien, ${errs} con error.`
+                  : `Sección renombrada a «${nombreNuevo}».`, errs ? 'err' : 'ok', 5000);
   lastRaw = '';
   pollOnce();
   _secCerrarMenu();
   goToSectionDeNombre(nombreNuevo);
   return !errs;
 }
-
 // Elimina una sección: borra la tarjeta «marca» (delete_pregunta) y quita
 // config.seccion a sus preguntas, que pasan a «Sin sección» (conservadas).
 async function eliminarSeccion(nombre) {
