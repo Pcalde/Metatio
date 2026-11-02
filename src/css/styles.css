@@ -614,6 +614,10 @@ body.map-modal-open { overflow: hidden; }
 .sec-rail-item.active { background: var(--bg); border-color: var(--accent); color: var(--accent); font-weight: 600; }
 .sec-rail-item.not-applicable { opacity: .5; }
 .sec-rail-item.not-applicable .sec-rail-label { text-decoration: line-through; text-decoration-thickness: 1px; }
+/* Sección «no aplica»: la ficha principal es un botón deshabilitado (no es
+   navegable), pero «gestionar» sigue activo para poder editar/renombrar. */
+.sec-rail-main[disabled] { cursor: default; }
+.sec-rail-main[disabled]:hover { background: transparent; }
 .sec-rail-status { font-size: .72rem; color: var(--accent2); }
 .sec-rail-item.not-applicable .sec-rail-status { color: var(--muted); }
 .sec-rail-num {
