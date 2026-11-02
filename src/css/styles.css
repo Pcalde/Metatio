@@ -1104,3 +1104,21 @@ body.map-modal-open { overflow: hidden; }
 @media (max-width: 760px) {
   .sec-rail-main { display: flex; align-items: center; gap: 6px; }
 }
+
+.arbol-nota { font-size: .8rem; color: var(--muted); margin-bottom: 12px; }
+.arbol-sec { font-family: 'Fraunces', serif; font-weight: 500; margin: 16px 0 6px; }
+.arbol-lista, .arbol-hijos { list-style: none; margin: 0; padding: 0; }
+.arbol-hijos { margin-left: 14px; padding-left: 12px; border-left: 2px solid var(--border); }
+.arbol-nodo > details { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; margin: 6px 0; }
+.arbol-nodo summary { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; cursor: pointer; }
+.arbol-q { font-weight: 600; font-size: .9rem; }
+.arbol-tipo { font-size: .7rem; color: var(--muted); border: 1px solid var(--border); border-radius: 10px; padding: 1px 8px; }
+.arbol-n { font-size: .74rem; color: var(--muted); }
+.arbol-go { margin-left: auto; }
+.arbol-opts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.arbol-opt { font-size: .76rem; background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 2px 9px; color: var(--muted); }
+.arbol-opt.has { color: var(--ink); border-color: var(--accent2); }
+.arbol-opt i { color: var(--accent3); }
+.arbol-rama { margin: 8px 0; }
+.arbol-rama-label { font-size: .8rem; color: var(--accent3); font-weight: 600; }
+.arbol-vacio { color: var(--muted); font-size: .85rem; font-style: italic; }
