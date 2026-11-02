@@ -77,9 +77,15 @@ function _secDeIdx(idx, secs) {
     (!key && s.items.some(it => it.i === idx))) || null;
 }
 
+function _secNoAplica(sec, answers) {
+  if (_secOculta(sec, answers)) return true;
+  const tienePreguntas = sec.items.some(it => !(it.q.config && it.q.config.esEncabezado));
+  return tienePreguntas && _secItemsVisibles(sec, answers).length === 0;
+}
+
 // Índice de la primera pregunta visible de una sección (o -1).
 function _secPrimeraVisible(sec, answers) {
-  if (_secOculta(sec, answers)) return -1;
+  if (_secNoAplica(sec, answers)) return -1;          // ← antes solo _secOculta
   const vis = _secItemsVisibles(sec, answers);
   if (vis.length) return vis[0].i;
   if (sec.encabezadoIdx >= 0) return sec.encabezadoIdx;
@@ -659,8 +665,7 @@ function renderRail() {
   let shownNum = 0;
   secs.forEach((sec, si) => {
     const items = _secItemsVisibles(sec, st);
-    const allHidden = _secOculta(sec, st) ||
-      (items.length === 0 && sec.items.some(it => !(it.q.config && it.q.config.esEncabezado)));
+    const allHidden = _secNoAplica(sec, st);
     const answered = items.length > 0 && items.every(it => _secHasAnswer(st[it.q.id], it.q.tipo));
     const active = cur === sec;
     if (!allHidden) shownNum++;
@@ -1190,8 +1195,7 @@ function renderBottomBar() {
   const cur = _secDeIdx(SEC_ESTADO.idx, secs) || secs[0];
   // Secciones navegables = las que tienen al menos una tarjeta para mostrar
   // (preguntas visibles o la propia marca de encabezado).
-  const navSecs = secs.filter(s => s.items.some(it =>
-    !it.q.config?.esEncabezado ? esVisible(it.q, st) : !_secOculta(s, st)));
+  const navSecs = secs.filter(s => _secPrimeraVisible(s, st) >= 0);
   const total = Math.max(navSecs.length, 1);
   let pos = Math.max(1, navSecs.indexOf(cur) + 1);
   const label = $('sec-pos');
