@@ -7,18 +7,59 @@ button, label, a, input, textarea, select { -webkit-tap-highlight-color: transpa
 [hidden] { display: none !important; }
 
 :root {
-  --bg:     #f5f0e8;
-  --card:   #fffdf8;
-  --ink:    #1a1612;
-  --muted:  #7a6f63;
-  --accent: #c94f2c;
-  --accent2:#3a6b4a;
-  --accent3:#3a5f6b;
-  --border: #ddd5c8;
-  --rojo_negativo: #bb3030;
-  --mas_tres: #0a6bcd;
-  --mas_uno: #2c9121;
+  /* Base cálida — más contraste en muted */
+  --bg:       #f4efe6;
+  --bg-alt:   #ece5d8;      /* hover, filas alternas, KPIs */
+  --card:     #fffdf8;
+  --ink:      #16120e;      /* casi negro, no puro */
+  --ink-soft: #3d352c;
+  --muted:    #5f5449;      /* ⬅ sube de #7a6f63 → contraste 5.1:1 */
+  --border:   #ddd4c5;
+
+  /* Acentos con escala de 3 tonos cada uno */
+  --accent:      #c94f2c;   /* terracota (primario) */
+  --accent-600:  #a83f20;
+  --accent-100:  #fbe9e2;
+
+  --accent2:     #3a6b4a;   /* verde (positivo) */
+  --accent2-600: #2c5338;
+  --accent2-100: #e6f0e9;
+
+  --accent3:     #2f5f7a;   /* azul (info) — más saturado y frío */
+  --accent3-600: #234a60;
+  --accent3-100: #e3edf4;
+
+  /* Semánticos con 2 tonos */
+  --ok:    #2c9121;  --ok-bg:    #e8f5e4;
+  --warn:  #b7791f;  --warn-bg:  #fdf6e3;
+  --err:   #bb3030;  --err-bg:   #fdeceb;
+  --star:  #0a6bcd;  --star-bg:  #e6f0fb;
+
   --radius: 12px;
+  --radius-sm: 8px;
+  --shadow-sm: 0 1px 2px rgba(22,18,14,.06);
+  --shadow-md: 0 4px 14px rgba(22,18,14,.10);
+  --shadow-lg: 0 10px 34px rgba(22,18,14,.16);
+
+  @media (prefers-color-scheme: dark) {
+  :root {
+    --bg:       #1a1612;
+    --bg-alt:   #221d18;
+    --card:     #211c17;
+    --ink:      #f2ece2;
+    --ink-soft: #d6ccbe;
+    --muted:    #a89c8c;
+    --border:   #3a322a;
+
+    --accent:   #e06a45;
+    --accent2:  #6aa87b;
+    --accent3:  #5b95b3;
+
+    --ok-bg:    #1f2e1c;
+    --err-bg:   #2e1c1a;
+    --warn-bg:  #2e2718;
+  }
+  }
 }
 
 body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--ink); min-height: 100vh; }
@@ -72,14 +113,28 @@ header h1 em { font-style: italic; color: var(--accent); }
 
 /* ── LAYOUT (raíl de secciones + columna principal) ────────────────────── */
 .form-wrap {
-  display: grid; grid-template-columns: 230px minmax(0, 720px);
-  gap: 28px; max-width: 1010px; margin: 0 auto; align-items: start;
+  display: grid;
+  /* Columna izquierda vacía (equilibrio) | Contenido principal | Raíl derecho */
+  grid-template-columns: 1fr minmax(0, 720px) 230px;
+  gap: 28px;
+  max-width: 1240px; /* 720 + 230 + gaps + espacio para el 1fr izquierdo */
+  margin: 0 auto;
+  align-items: start;
 }
-/* Colocación explícita en la cuadrícula: raíl en la columna izquierda y
-   contenido principal en la derecha. Evita que elementos intermedios (p.ej.
-   la tarjeta de participantes) desplacen el raíl si cambia el orden del DOM. */
-.form-wrap > .sec-rail { grid-column: 1; grid-row: 1; }
-.form-wrap > .sec-main { grid-column: 2; grid-row: 1; }
+
+/* El contenido principal va en la columna CENTRAL (2) */
+.form-wrap > .sec-main { 
+  grid-column: 2; 
+  grid-row: 1; 
+}
+
+/* El raíl va en la columna DERECHA (3) */
+.form-wrap > .sec-rail { 
+  grid-column: 3; 
+  grid-row: 1; 
+  margin-left: 4px; /* Separación visual respecto al main */
+}
+
 .sec-main { min-width: 0; display: flex; flex-direction: column; gap: 24px; }
 
 .card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 28px; }
@@ -416,7 +471,7 @@ input[type="range"]::-moz-range-thumb {
 }
 .mode-tab.active {
   background: var(--card); color: var(--ink);
-  box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+  box-shadow: 0 2px 6px --shadow-md;
 }
 .tab-count {
   background: var(--bg); color: var(--ink); padding: 1px 7px;
@@ -531,10 +586,21 @@ body.map-modal-open { overflow: hidden; }
 
 /* ── RAÍL DE SECCIONES (columna izquierda, pegajoso) ── */
 .sec-rail {
-  position: sticky; top: 16px; max-height: calc(100vh - 32px);
-  overflow-y: auto; display: flex; flex-direction: column; gap: 6px;
-  background: var(--card); border: 1px solid var(--border);
-  border-radius: var(--radius); padding: 12px 10px; z-index: 5;
+  position: sticky;
+  top: 16px;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 10px;
+  z-index: 5;
+  
+  /* Añadido: margen izquierdo para respirar respecto al contenido principal */
+  margin-left: 4px; 
 }
 .sec-rail-empty { padding: 8px 10px; font-size: .8rem; color: var(--muted); font-style: italic; }
 .sec-rail-item {
@@ -619,7 +685,7 @@ body.map-modal-open { overflow: hidden; }
 /* ── BARRA INFERIOR FIJA (Anterior · n de N · Siguiente · Enviar) ── */
 .sec-nav {
   position: fixed; left: 50%; transform: translate(-50%, 120%);
-  bottom: 14px; width: min(880px, calc(100% - 24px));
+  bottom: 14px; width: fit-content;
   background: var(--card); border: 1px solid var(--border);
   border-radius: 14px; box-shadow: 0 10px 34px rgba(0,0,0,.16);
   padding: 10px 14px 12px; z-index: 90; /* por encima del raíl y tarjetas para evitar solapamientos */
@@ -1122,3 +1188,72 @@ body.map-modal-open { overflow: hidden; }
 .arbol-rama { margin: 8px 0; }
 .arbol-rama-label { font-size: .8rem; color: var(--accent3); font-weight: 600; }
 .arbol-vacio { color: var(--muted); font-size: .85rem; font-style: italic; }
+.sec-rail-cond { flex-basis: 100%; }
+/* ── BOTÓN SECCIONES INTEGRADO EN NAV ─────────────────────────────── */
+.sec-rail-fab {
+  /* Resetear estilos de FAB flotante */
+  position: static;
+  bottom: auto;
+  right: auto;
+  z-index: auto;
+  box-shadow: none;
+  border-radius: 9px; /* Coincide con .sec-btn */
+  
+  /* Estilo consistente con la barra */
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 14px;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+@media (max-width: 760px) {
+  /* El botón de secciones ya no flota: vive dentro de la barra inferior */
+  .sec-rail-fab {
+    position: static;
+    right: auto;
+    bottom: auto;
+    z-index: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: var(--bg);
+    color: var(--ink);
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    padding: 9px 12px;
+    font: inherit;
+    font-size: .85rem;
+    box-shadow: none;
+    cursor: pointer;
+    white-space: nowrap;
+    flex: none;
+    transition: border-color .15s, color .15s;
+  }
+  .sec-rail-fab:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* El raíl sigue comportándose como bottom-sheet */
+  .sec-rail {
+    position: fixed; left: 0; right: 0; bottom: 0; top: auto;
+    max-height: 75vh; z-index: 1100;
+    flex-direction: column; overflow-y: auto; overflow-x: hidden;
+    border-radius: 16px 16px 0 0; padding: 14px 12px 24px;
+    transform: translateY(105%); transition: transform .25s ease;
+    box-shadow: 0 -10px 40px rgba(154, 14, 14, 0.25);
+  }
+  .sec-rail.open { transform: translateY(0); }
+  .sec-rail-item { flex: none; display: flex; flex-wrap: wrap; max-width: none; white-space: normal; border-radius: 10px; padding: 8px; }
+  .sec-rail-main { display: grid; grid-template-columns: 18px 24px minmax(0, 1fr); }
+  .sec-rail-label { white-space: normal; overflow: visible; text-overflow: clip; }
+  .sec-rail-na { display: inline; }
+  .sec-rail-sub { display: flex; flex-basis: 100%; }
+  .sec-rail-num { width: 22px; height: 22px; background: var(--border); font-size: .66rem; }
+  .sec-rail-item.active .sec-rail-num { background: var(--accent); color: #fff; }
+  .sec-rail-backdrop { position: fixed; inset: 0; z-index: 1090; background: rgba(20,16,12,.45); }
+}
+
+@media (max-width: 640px) {
+  /* En pantallas muy estrechas, solo el icono para no saturar la barra */
+  .sec-rail-fab .sec-btn-txt { display: none; }
+}
