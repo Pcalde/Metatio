@@ -1064,7 +1064,7 @@ async function eliminarSeccion(nombre) {
   return !errs;
 }
 
-// Abre #add-q-form (tarjeta «Ampliar el cuestionario») con la sección ya
+// Abre # add-q-form (tarjeta «Ampliar el cuestionario») con la sección ya
 // seleccionada en el desplegable. Llamado desde el menú de gestionar y la lista.
 function abrirAddPreguntaEnSeccion(nombre) {
   const f = $('add-q-form'), t = $('btn-toggle-add-q');

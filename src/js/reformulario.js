@@ -37,7 +37,7 @@ function getMySubmittedAnswers() {
   return mine ? mine.answers : collectAnswers();
 }
 
-function createSeededRNG(seed = 42) {
+function createSeededRNG(seed = 22) {
   let a = seed >>> 0;
   return function() {
     let t = (a += 0x6D2B79F5);
@@ -582,7 +582,7 @@ function resolverVentana(viajerosCandidatos, matriz, indiceFechas, nombresNucleo
 }
 
 // ── 6. SIMULACIÓN MONTE CARLO DE RESILIENCIA (Port de resiliencia.py) ───────
-function simularFragilidad(dictAsignacion, viajerosAsignados, nSim = 250, pGlobal = 0.12, nCadena = 80, seed = 42) {
+function simularFragilidad(dictAsignacion, viajerosAsignados, nSim = 250, pGlobal = 0.12, nCadena = 100, seed = 23) {
   const personas = Object.keys(dictAsignacion);
   if (!personas.length) return null;
 
@@ -1283,11 +1283,11 @@ function buildTopologyAndSensitivityCard(model, topo) {
   }
 
   card.innerHTML = `
-    <div class="card-title"><span class="num">🕸️</span> Sensibilidad, Cuellos de Botella y Topología (AᵀA)</div>
+    <div class="card-title"><span class="num">🕸️</span> Sensibilidad y cuellos de botella</div>
 
     <div class="sens-grid-4">
       <div class="kpi-box">
-        <span class="kpi-label">Cuello de Botella Logístico</span>
+        <span class="kpi-label">Cuello de botella logístico</span>
         <span class="kpi-val" style="color:var(--accent)">${esc(s.diaCritico)}</span>
                 <small>${s.logistica ? `Holgura mínima: ${s.minHolgura} plaza(s)` : 'Nadie ha indicado transporte'}</small>
       </div>
@@ -1323,7 +1323,7 @@ function buildTopologyAndSensitivityCard(model, topo) {
 
     <details style="margin-top:16px">
       <summary style="cursor:pointer;font-size:0.84rem;font-weight:500;color:var(--accent3)">
-        Ver Matriz de Compatibilidad Temporal Cruzada (AᵀA — días en común)
+        Ver Matriz de Compatibilidad Temporal Cruzada (días en común)
       </summary>
       <div style="overflow-x:auto;margin-top:10px">
         <table class="compat-matrix-table">
@@ -1470,7 +1470,7 @@ function buildOptionsConsensus(card, q, myVal) {
           ${o.url ? `<a href="${esc(o.url)}" target="_blank" rel="noopener" class="ref-link">${esc(o.key)} ↗</a>` : `<span class="ref-opt-title">${esc(o.key)}</span>`}
           ${o.precio ? `<span class="casa-precio">${esc(o.precio)}</span>` : ''}
           ${o.foto ? `<img class="ref-foto" src="${esc(o.foto)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : ''}
-          ${controversial ? `<span class="badge-controversy">⚡ Polarizada</span>` : ''}
+          ${controversial ? `<span class="badge-controversy"><i class="fa-solid fa-volcano"></i> Polarizada</span>` : ''}
         </div>
         <div class="ref-opt-actions">
           <span class="ref-score-badge">${weightByProb ? o.score.toFixed(1) : o.rawScore} pts</span>
