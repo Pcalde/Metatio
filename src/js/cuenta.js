@@ -9,26 +9,28 @@
 function openAccountModal() {
   const backdrop = $('account-modal-backdrop');
   if (!backdrop || !user) return;
-  // Prellenar con el estado actual
-  $('acc-nombre').value = user.nombre || '';
-  $('acc-pin').value    = '';
+  if ($('acc-nombre')) $('acc-nombre').value = user.nombre || '';
+  if ($('acc-pin'))    $('acc-pin').value    = '';
   const p = puntoPartida();
-  $('acc-partida').placeholder = p
-    ? `Actual: ${p.lat.toFixed(4)}, ${p.lng.toFixed(4)} (${p.texto || 'sin etiqueta'})`
-    : 'p.ej. Calle Mayor 1, Madrid';
-  $('acc-partida').value = '';
+  if ($('acc-partida')) {
+    $('acc-partida').placeholder = p
+      ? `Actual: ${p.lat.toFixed(4)}, ${p.lng.toFixed(4)} (${p.texto || 'sin etiqueta'})`
+      : 'p.ej. Calle Mayor 1, Madrid';
+    $('acc-partida').value = '';
+  }
   accountStatus('', 'ok');
   backdrop.hidden = false;
-  backdrop.style.removeProperty('display');   // deshace el cierre forzado
+  backdrop.style.removeProperty('display');
+  document.body.classList.add('map-modal-open');
 }
 
 function closeAccountModal() {
   const backdrop = $('account-modal-backdrop');
   if (backdrop) {
     backdrop.hidden = true;
-    // Igual que en el modal del mapa: garantizamos que no quede tapando la página.
     backdrop.style.setProperty('display', 'none', 'important');
   }
+  document.body.classList.remove('map-modal-open');
 }
 
 function accountStatus(msg, kind) {
@@ -60,8 +62,8 @@ async function saveAccountChanges() {
 
   accountStatus('', 'ok');
   if (!nuevoNombre)              { accountStatus('El nombre no puede estar vacío.'); return; }
-  if (nuevoPin && !/^[A-Za-z0-9]{4,8}$/.test(nuevoPin)) {
-    accountStatus('La nueva contraseña debe tener entre 4 y 8 caracteres (letras o dígitos).'); return;
+  if (nuevoPin && (nuevoPin.length < 4 || nuevoPin.length > 64)) {
+    accountStatus('La nueva contraseña debe tener al menos 4 caracteres.'); return;
   }
 
   // Resolver primero el punto de partida (si se ha escrito algo) para no
@@ -104,7 +106,7 @@ async function saveAccountChanges() {
     if (partida && partida.coords) setPuntoPartida({ lat: partida.coords.lat, lng: partida.coords.lng, texto: partida.texto });
 
     $('utag-nombre').textContent = user.nombre;
-    $('acc-pin').value = '';
+    if ($('acc-pin')) $('acc-pin').value = '';
     if (typeof renderParticipants === 'function') renderParticipants();
     if (typeof renderAllQuestions === 'function') renderAllQuestions();
     if (typeof restoreDraft === 'function') restoreDraft();
@@ -120,15 +122,23 @@ async function saveAccountChanges() {
   }
 }
 
+let _accountModalBound = false;
+
 function bindAccountModal() {
+  if (_accountModalBound) return;
   const backdrop = $('account-modal-backdrop');
   if (!backdrop) return;
+  _accountModalBound = true;
+
   backdrop.addEventListener('click', e => { if (e.target === backdrop) closeAccountModal(); });
   const btnClose = $('account-modal-close');
   if (btnClose) btnClose.addEventListener('click', closeAccountModal);
 
   const btnOpen = $('btn-account-modal');
-  if (btnOpen) btnOpen.addEventListener('click', () => { closeSideNav(); openAccountModal(); });
+  if (btnOpen) btnOpen.addEventListener('click', () => {
+    if (typeof closeSideNav === 'function') closeSideNav();
+    openAccountModal();
+  });
 
   const btnSave = $('btn-account-save');
   if (btnSave) btnSave.addEventListener('click', saveAccountChanges);
@@ -148,4 +158,14 @@ function bindAccountModal() {
 
   const btnLogout = $('btn-account-logout');
   if (btnLogout) btnLogout.addEventListener('click', () => { closeAccountModal(); logout(); });
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && !backdrop.hidden) closeAccountModal();
+  });
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', bindAccountModal);
+} else {
+  bindAccountModal();
 }

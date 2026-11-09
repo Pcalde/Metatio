@@ -1232,7 +1232,7 @@ function buildFeasibleSolutionsSection(soluciones, diagnosticos, topo) {
       <div class="sol-group-chips">
         <div><small>Núcleo (${sol.N_full}):</small> ${sol.asistentesNucleo.map(n => `<span class="voter-chip star">${esc(n)}</span>`).join(' ')}</div>
         ${sol.satelitesAsignados.length ? `<div><small>Satélites (${sol.N_convoy}):</small>${sol.satelitesAsignados.map(n => `<span class="voter-chip">${esc(n)} (${fmtShortDate(sol.asignacion[n][0])}→${fmtShortDate(sol.asignacion[n][sol.asignacion[n].length - 1])})</span>`).join(' ')}</div>` : ''}
-        ${sol.excluidos.length ? `<div><small>Excluidos (${sol.excluidos.length}):</small>${sol.excluidos.map(n => `<span class="voter-chip veto">${esc(n)}</span>`).join(' ')}</div>` : `<div><span style="color:var(--accent2);font-size:0.8rem">✓ ¡Asistencia perfecta del grupo!</span></div>`}
+        ${sol.excluidos.length ? `<div><small>Ausentes (${sol.excluidos.length}):</small>${sol.excluidos.map(n => `<span class="voter-chip veto">${esc(n)}</span>`).join(' ')}</div>` : `<div><span style="color:var(--accent2);font-size:0.8rem">✓ ¡Asistencia perfecta del grupo!</span></div>`}
       </div>
 
       ${logOn ? `

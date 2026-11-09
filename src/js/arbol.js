@@ -1,31 +1,40 @@
 // ══════════════════════════════════════════════════════════════════════════
-//  ÁRBOL DEL CUESTIONARIO (solo lectura) — src/js/arbol.js
-//  Dibuja las ramas definidas por config.mostrarSi: las preguntas sin
-//  condición son raíces y cada pregunta condicional cuelga de la que la
-//  activa, con la etiqueta de la rama y cuánta gente llegaría a ella.
-//  Cada opción muestra sus votos entre quienes llegan a esa pregunta.
-//  No contiene ningún control de respuesta.
-//  Requiere: schema, respuestas, extractAnswer, optVal, esc (state/types) y
-//  _condMatch (secciones.js).
+//  GRAFO DE FLUJO DEL CUESTIONARIO (Ruta Base + Ramas + Pan/Zoom) — arbol.js
+//  · Las preguntas sin condición forman la Ruta Base secuencial (A1 → A2 → A3…).
+//  · De cada Ai salen sus ramas condicionales (B1, B2, B3 → C1, C2…).
+//  · Al terminar las subramas de Ai, todas las hojas reconvergen en A(i+1).
+//  · Lienzo interactivo: arrastrar con ratón (pan) y zoom con rueda.
 // ══════════════════════════════════════════════════════════════════════════
 (function () {
   var TIPOS_TXT = {
-    'checkbox': 'Selección múltiple', 'voto-ponderado': 'Votación con puntos',
-    'radio': 'Selección única', 'casas': 'Alojamientos', 'slider': 'Rango',
+    'checkbox': 'Múltiple', 'voto-ponderado': 'Puntos',
+    'radio': 'Única', 'casas': 'Alojamientos', 'slider': 'Rango',
     'disponibilidad': 'Fechas', 'horarios': 'Horarios', 'textarea': 'Texto',
   };
 
   const esMarca = q => !!(q.config && q.config.esEncabezado);
-  const valoresDe = c => (Array.isArray(c.valor) ? c.valor : [c.valor]).map(String);
+  const valoresDe = c => (Array.isArray(c.valor) ? c.valor : (c.valor != null ? [c.valor] : [])).map(String);
+
+  function reglasEfectivas(q) {
+    let raw = q.config && q.config.mostrarSi;
+    if (!raw || (!raw.qid && !Array.isArray(raw) && !Array.isArray(raw.rules))) {
+      const h = typeof _condDeSeccion === 'function' ? _condDeSeccion(q) : null;
+      raw = h && h.config ? h.config.mostrarSi : null;
+    }
+    if (!raw) return { logic: 'OR', rules: [] };
+    if (Array.isArray(raw)) return { logic: 'OR', rules: raw.filter(r => r && r.qid) };
+    if (Array.isArray(raw.rules)) return { logic: raw.logic === 'AND' ? 'AND' : 'OR', rules: raw.rules.filter(r => r && r.qid) };
+    if (raw.qid) return { logic: 'OR', rules: [raw] };
+    return { logic: 'OR', rules: [] };
+  }
 
   function textoCond(c) {
     const vals = valoresDe(c).map(v => '«' + v + '»').join(' o ');
-    const verbo = c.op === 'igual' ? 'es' : c.op === 'alguno' ? 'elige alguna de' : 'elige';
-    return (c.no ? 'Si NO ' : 'Si ') + verbo + ' ' + vals;
+    const verbo = c.op === 'igual' ? 'es' : c.op === 'alguno' ? 'elige' : 'marca';
+    return (c.no ? 'NO ' : '') + verbo + ' ' + vals;
   }
 
-  // ¿Esta respuesta cumple la condición? (misma semántica que esVisible)
-  function cumple(raw, c) {
+  function cumpleRegla(raw, c) {
     let ok = false;
     try { ok = _condMatch(raw, c.op || 'incluye', c.valor); } catch (e) {}
     return c.no ? !ok : ok;
@@ -45,125 +54,803 @@
     return String(v) !== '';
   }
 
-  function construir() {
-    const preguntas = schema.filter(q => !esMarca(q));
-    const ids = new Set(preguntas.map(q => q.id));
-    const hijos = new Map(), raices = new Set();
-    preguntas.forEach(q => {
-      const c = condEfectiva(q);
-      if (c && c.qid && c.qid !== q.id && ids.has(c.qid)) {
-        if (!hijos.has(c.qid)) hijos.set(c.qid, []);
-        hijos.get(c.qid).push(q);
-      } else raices.add(q.id);
-    });
-    // opciones que abren ramas (para marcarlas con un icono)
+  // Construye la topología Serie-Paralelo:
+  // Ruta Base (A1, A2, ...) + subárboles condicionales (B, C, D...) que reconvergen en el siguiente A
+  function construirTopologia(preguntas, gente) {
+    const byId = new Map(preguntas.map(q => [q.id, q]));
+    const childrenMap = new Map(preguntas.map(q => [q.id, []]));
+    const parentsMap = new Map(preguntas.map(q => [q.id, []]));
     const abre = new Map();
+    const branchEdges = [];
+    const roots = [];
+
     preguntas.forEach(q => {
-      const c = condEfectiva(q);
-      if (!c || !c.qid || c.no) return;
-      valoresDe(c).forEach(v => {
-        const k = c.qid + '\u0000' + v;
-        abre.set(k, (abre.get(k) || 0) + 1);
+      const { logic, rules } = reglasEfectivas(q);
+      const validRules = rules.filter(r => byId.has(r.qid) && r.qid !== q.id);
+
+      if (!validRules.length) {
+        roots.push(q);
+        return;
+      }
+
+      // El primer padre válido define su columna en el subárbol DOM;
+      // todas las reglas generan su flecha SVG correspondiente.
+      const primaryParentId = validRules[0].qid;
+      childrenMap.get(primaryParentId).push(q);
+
+      validRules.forEach(r => {
+        const vals = valoresDe(r);
+        const portOpt = (!r.no && vals.length === 1) ? vals[0] : null;
+        if (!r.no) {
+          vals.forEach(v => {
+            const k = r.qid + '\u0000' + v;
+            abre.set(k, (abre.get(k) || 0) + 1);
+          });
+        }
+        parentsMap.get(q.id).push({ fromId: r.qid, rule: r, logic });
+        branchEdges.push({ type: 'branch', fromId: r.qid, toId: q.id, rule: r, portOpt, viajeros: [] });
       });
     });
-    return { preguntas, hijos, raices, abre };
+
+    // Si hubiera algún ciclo aislado no alcanzable desde roots, lo añadimos como raíz de rescate
+    const visitados = new Set();
+    function marcar(q) {
+      if (visitados.has(q.id)) return;
+      visitados.add(q.id);
+      (childrenMap.get(q.id) || []).forEach(marcar);
+    }
+    roots.forEach(marcar);
+    preguntas.forEach(q => { if (!visitados.has(q.id)) { roots.push(q); marcar(q); } });
+
+    // Propagación de alcance (quién llega a cada pregunta)
+    const alcance = new Map();
+    function calcAlcance(q) {
+      if (alcance.has(q.id)) return alcance.get(q.id);
+      const padres = parentsMap.get(q.id) || [];
+      if (!padres.length) {
+        alcance.set(q.id, gente);
+        return gente;
+      }
+      const { logic } = reglasEfectivas(q);
+      const filtrados = gente.filter(resp => {
+        const evals = padres.map(p => {
+          const base = calcAlcance(byId.get(p.fromId));
+          if (!base.includes(resp)) return false;
+          return cumpleRegla(extractAnswer(resp.answers || {}, byId.get(p.fromId)), p.rule);
+        });
+        return logic === 'AND' ? evals.every(Boolean) : evals.some(Boolean);
+      });
+      alcance.set(q.id, filtrados);
+      return filtrados;
+    }
+    preguntas.forEach(calcAlcance);
+
+    branchEdges.forEach(e => {
+      const base = alcance.get(e.fromId) || gente;
+      const qPadre = byId.get(e.fromId);
+      e.viajeros = base.filter(r => cumpleRegla(extractAnswer(r.answers || {}, qPadre), e.rule));
+    });
+
+    // Construir etapas de la Ruta Base (A1, A2, ...) y aristas de reconvergencia
+    const returnEdges = [];
+    const stages = [];
+    const codeMap = new Map();
+
+    roots.forEach((rootQ, rIdx) => {
+      const aCode = `A${rIdx + 1}`;
+      codeMap.set(rootQ.id, { code: aCode, isTrunk: true, depth: 0 });
+
+      const leaves = [];
+      const depthCounters = new Map(); // depth -> contador para B1, B2... C1, C2...
+      const seenInStage = new Set([rootQ.id]);
+
+      function walkSubtree(u, depth) {
+        const hijos = (childrenMap.get(u.id) || []).filter(h => !seenInStage.has(h.id));
+        if (!hijos.length) {
+          if (depth > 0) leaves.push(u);
+          return;
+        }
+        hijos.forEach(h => {
+          seenInStage.add(h.id);
+          const d = depth + 1;
+          const letra = String.fromCharCode(65 + Math.min(25, d)); // 1->B, 2->C, 3->D...
+          const cnt = (depthCounters.get(d) || 0) + 1;
+          depthCounters.set(d, cnt);
+          codeMap.set(h.id, { code: `${letra}${cnt}`, isTrunk: false, depth: d });
+          walkSubtree(h, d);
+        });
+      }
+      walkSubtree(rootQ, 0);
+
+      // ¿A qué nodo de la Ruta Base reconvergen las ramas de esta etapa?
+      const nextTargetId = (rIdx + 1 < roots.length) ? roots[rIdx + 1].id : '__FIN__';
+
+      if (!leaves.length) {
+        // Etapa sin ramificaciones: paso directo por la Ruta Base A_i -> A_{i+1}
+        if (nextTargetId !== '__FIN__') {
+          returnEdges.push({
+            type: 'trunk',
+            fromId: rootQ.id,
+            toId: nextTargetId,
+            viajeros: alcance.get(rootQ.id) || gente
+          });
+        }
+      } else {
+        // Todas las hojas de las ramificaciones (ej. C1, C2, B2, B3) se enrutan de vuelta a la Ruta Base
+        leaves.forEach(leaf => {
+          returnEdges.push({
+            type: 'return',
+            fromId: leaf.id,
+            toId: nextTargetId,
+            viajeros: alcance.get(leaf.id) || []
+          });
+        });
+
+        // Si en la raíz A_i hay opciones que NO abren ninguna rama, también fluyen directo a A_{i+1}
+        const optsSinRama = (rootQ.opciones || []).filter(op => {
+          const key = optVal(rootQ, op);
+          return !abre.has(rootQ.id + '\u0000' + key);
+        });
+        if (optsSinRama.length > 0 && (rootQ.opciones || []).length > 0) {
+          returnEdges.push({
+            type: 'bypass',
+            fromId: rootQ.id,
+            toId: nextTargetId,
+            viajeros: alcance.get(rootQ.id) || []
+          });
+        }
+      }
+
+      stages.push({ rootQ, leaves, hasBranches: leaves.length > 0 });
+    });
+
+    const needsEndNode = stages.length > 0 && stages[stages.length - 1].hasBranches;
+
+    return {
+      byId, childrenMap, alcance, abre, codeMap, stages,
+      edges: [...branchEdges, ...returnEdges],
+      needsEndNode
+    };
   }
 
-  function nodoHtml(q, gente, ctx, depth) {
-    if (ctx.visited.has(q.id) || depth > 12) return '';
-    ctx.visited.add(q.id);
+  function renderCard(q, topo) {
     const idx = schema.indexOf(q);
-    const raws = gente.map(r => extractAnswer(r.answers || {}, q));
+    const meta = topo.codeMap.get(q.id) || { code: 'A', isTrunk: true, depth: 0 };
+    const genteNodo = topo.alcance.get(q.id) || [];
+    const raws = genteNodo.map(r => extractAnswer(r.answers || {}, q));
     const nResp = raws.filter(respondio).length;
 
-    const opts = (q.opciones || []).map(op => {
+    const optsHtml = (q.opciones || []).map(op => {
       const key = optVal(q, op);
       const n = raws.filter(v => elige(v, key)).length;
-      const nRamas = ctx.abre.get(q.id + '\u0000' + key) || 0;
-      return `<span class="arbol-opt${n ? ' has' : ''}">${esc(key)} <b>${n}</b>` +
-        (nRamas ? ` <i class="fa-solid fa-code-branch" title="Abre ${nRamas} pregunta(s)" aria-hidden="true"></i>` : '') +
-        `</span>`;
+      const nRamas = topo.abre.get(q.id + '\u0000' + key) || 0;
+      return `<div class="grafo-opt${n ? ' has' : ''}${nRamas ? ' is-branch' : ''}" data-port="${esc(q.id + ':::' + key)}">` +
+        `<span class="grafo-opt-txt">${esc(key)}</span>` +
+        `<strong class="grafo-opt-cnt">${n}</strong>` +
+        `<button type="button" class="grafo-opt-link" data-idx="${idx}" data-opt="${esc(key)}" title="Conectar «${esc(key)}» a una pregunta ya existente"><i class="fa-solid fa-link" aria-hidden="true"></i></button>` +
+        `<button type="button" class="grafo-opt-add" data-idx="${idx}" data-opt="${esc(key)}" title="Crear pregunta nueva si eligen «${esc(key)}»">+</button>` +
+      `</div>`;
     }).join('');
 
-    const ramas = (ctx.hijos.get(q.id) || []).map(k => {
-      const c = condEfectiva(k)
-      const sub = gente.filter(r => cumple(extractAnswer(r.answers || {}, q), c));
-      return `<li class="arbol-rama">` +
-        `<div class="arbol-rama-label"><i class="fa-solid fa-code-branch" aria-hidden="true"></i> ${esc(textoCond(c))}` +
-        ` <span class="arbol-n">${sub.length} persona${sub.length === 1 ? '' : 's'}</span></div>` +
-        `<ul class="arbol-hijos">${nodoHtml(k, sub, ctx, depth + 1)}</ul></li>`;
-    }).join('');
+    return `<article class="grafo-node${meta.isTrunk ? ' is-trunk' : ' is-branch-node'}" data-qid="${esc(q.id)}">` +
+      `<header class="grafo-node-head">` +
+        `<span class="grafo-node-code${meta.isTrunk ? ' trunk-code' : ''}">${esc(meta.code)}</span>` +
+        (meta.isTrunk ? `<span class="grafo-trunk-pill">Ruta base</span>` : '') +
+        `<span class="grafo-tipo">${esc(TIPOS_TXT[q.tipo] || q.tipo)}</span>` +
+        (q.tipo !== 'textarea' ? `<span class="grafo-n" title="Respondieron / Llegan a esta pregunta">${nResp}/${genteNodo.length} <i class="fa-solid fa-user" aria-hidden="true"></i></span>` : '') +
+        `<div class="grafo-node-actions">` +
+          `<button type="button" class="sec-rail-tool arbol-go" data-idx="${idx}" title="Ir a esta pregunta"><i class="fa-solid fa-arrow-right" aria-hidden="true"></i></button>` +
+          `<button type="button" class="sec-rail-tool arbol-branch" data-idx="${idx}" title="Crear pregunta condicionada a esta"><i class="fa-solid fa-plus" aria-hidden="true"></i></button>` +
+        `</div>` +
+      `</header>` +
+      `<div class="grafo-node-title">${esc(q.label)}</div>` +
+      (optsHtml ? `<div class="grafo-opts">${optsHtml}</div>` : '') +
+    `</article>`;
+  }
 
-    return `<li class="arbol-nodo"><details open>` +
-      `<summary><span class="arbol-q">${esc(q.label)}</span>` +
-      `<span class="arbol-tipo">${esc(TIPOS_TXT[q.tipo] || q.tipo)}</span>` +
-      (q.tipo !== 'textarea' ? `<span class="arbol-n">${nResp}/${gente.length} responden</span>` : '') +
-      `<button type="button" class="sec-rail-tool arbol-go" data-idx="${idx}" title="Ir a esta pregunta"><i class="fa-solid fa-arrow-right" aria-hidden="true"></i></button>` +
-      `<button type="button" class="sec-rail-tool arbol-branch" data-idx="${idx}" title="Crear una pregunta condicionada a esta"><i class="fa-solid fa-plus" aria-hidden="true"></i></button>` +
-      `</summary>` +
-      (opts ? `<div class="arbol-opts">${opts}</div>` : '') +
-      (ramas ? `<ul class="arbol-hijos">${ramas}</ul>` : '') +
-      `</details></li>`;
+  // Renderiza recursivamente un nodo y sus hijos en columnas paralelas debajo de él
+  function renderSubtreeHtml(q, topo, visitedDom) {
+    if (visitedDom.has(q.id)) return '';
+    visitedDom.add(q.id);
+
+    const hijos = (topo.childrenMap.get(q.id) || []).filter(h => !visitedDom.has(h.id));
+    const cardHtml = renderCard(q, topo);
+
+    if (!hijos.length) {
+      return `<div class="grafo-subtree is-leaf"><div class="grafo-subtree-root">${cardHtml}</div></div>`;
+    }
+
+    const childrenHtml = hijos.map(h => renderSubtreeHtml(h, topo, visitedDom)).join('');
+    return `<div class="grafo-subtree has-children">` +
+      `<div class="grafo-subtree-root">${cardHtml}</div>` +
+      `<div class="grafo-subtree-children">${childrenHtml}</div>` +
+    `</div>`;
+  }
+
+  // ── Estado de navegación del mapa (Pan & Zoom) ──────────────────────────
+  let _zoom = 1;
+  let _panX = 0;
+  let _panY = 0;
+  let _ultimoTopo = null;
+
+  function aplicarTransform() {
+    const stage = document.getElementById('grafo-stage');
+    const zoomLbl = document.getElementById('grafo-zoom-lbl');
+    if (stage) {
+      stage.style.transform = `translate3d(${_panX}px, ${_panY}px, 0) scale(${_zoom})`;
+    }
+    if (zoomLbl) {
+      zoomLbl.textContent = `${Math.round(_zoom * 100)}%`;
+    }
+  }
+
+  function centrarMapa(encajar = false) {
+    const vp = document.getElementById('grafo-viewport');
+    const stage = document.getElementById('grafo-stage');
+    if (!vp || !stage) return;
+
+    const vw = vp.clientWidth || 800;
+    const vh = vp.clientHeight || 500;
+    const sw = stage.offsetWidth || 600;
+    const sh = stage.offsetHeight || 400;
+
+    if (encajar) {
+      const zx = (vw - 48) / Math.max(1, sw);
+      const zy = (vh - 48) / Math.max(1, sh);
+      _zoom = Math.max(0.4, Math.min(1, Math.min(zx, zy)));
+    } else {
+      _zoom = sw > vw - 40 ? Math.max(0.55, (vw - 48) / sw) : 1;
+    }
+
+    _panX = Math.round((vw - sw * _zoom) / 2);
+    _panY = 24;
+    aplicarTransform();
+  }
+
+  function bindPanZoom(vp) {
+    let isDown = false;
+    let isDragging = false;
+    let startX = 0, startY = 0;
+    let downX = 0, downY = 0;
+
+    vp.addEventListener('pointerdown', e => {
+      if (e.button !== 0 && e.button !== 1) return;
+      if (e.target.closest('button, a, input, select, .grafo-hud')) return;
+      isDown = true;
+      isDragging = false;
+      downX = e.clientX;
+      downY = e.clientY;
+      startX = e.clientX - _panX;
+      startY = e.clientY - _panY;
+    });
+
+    vp.addEventListener('pointermove', e => {
+      if (!isDown) return;
+      if (!isDragging && Math.hypot(e.clientX - downX, e.clientY - downY) > 4) {
+        isDragging = true;
+        vp.classList.add('is-panning');
+        try { vp.setPointerCapture(e.pointerId); } catch (_) {}
+      }
+      if (isDragging) {
+        _panX = e.clientX - startX;
+        _panY = e.clientY - startY;
+        aplicarTransform();
+      }
+    });
+
+    const endDrag = e => {
+      if (!isDown) return;
+      isDown = false;
+      if (isDragging) {
+        isDragging = false;
+        vp.classList.remove('is-panning');
+        try { vp.releasePointerCapture(e.pointerId); } catch (_) {}
+      }
+    };
+    vp.addEventListener('pointerup', endDrag);
+    vp.addEventListener('pointercancel', endDrag);
+
+    // Zoom suave con rueda centrado en el cursor
+    vp.addEventListener('wheel', e => {
+      e.preventDefault();
+      const rect = vp.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      const my = e.clientY - rect.top;
+
+      const sx = (mx - _panX) / _zoom;
+      const sy = (my - _panY) / _zoom;
+
+      const factor = e.deltaY < 0 ? 1.12 : 0.89;
+      _zoom = Math.max(0.35, Math.min(2.2, _zoom * factor));
+
+      _panX = mx - sx * _zoom;
+      _panY = my - sy * _zoom;
+      aplicarTransform();
+    }, { passive: false });
+  }
+
+  function eliminarReglaDeNodo(toId, fromId, ruleToRemove) {
+    const qHija = (schema || []).find(q => q.id === toId);
+    if (!qHija) return;
+    const actual = reglasEfectivas(qHija);
+    const restantes = actual.rules.filter(r => !(r.qid === fromId && JSON.stringify(r.valor) === JSON.stringify(ruleToRemove.valor)));
+    if (!restantes.length) {
+      actualizarCondicionPregunta(qHija, null);
+    } else if (restantes.length === 1) {
+      actualizarCondicionPregunta(qHija, restantes[0]);
+    } else {
+      actualizarCondicionPregunta(qHija, { logic: actual.logic, rules: restantes });
+    }
+  }
+
+  function cerrarPopoverArista() {
+    document.querySelectorAll('.grafo-edge-popover').forEach(el => el.remove());
+  }
+
+  function abrirPopoverArista(edge, anchorEl) {
+    cerrarPopoverArista();
+    const preguntas = (schema || []).filter(q => !esMarca(q));
+    const qPadre = preguntas.find(q => q.id === edge.fromId);
+    const qHija  = preguntas.find(q => q.id === edge.toId);
+    if (!qPadre || !qHija) return;
+
+    const valsActuales = new Set(valoresDe(edge.rule));
+    const opcionesPadre = (qPadre.opciones || []).map(op => optVal(qPadre, op));
+
+    const pop = document.createElement('div');
+    pop.className = 'grafo-edge-popover';
+    pop.innerHTML =
+      `<div class="gep-head">` +
+        `<strong>Condición hacia «${esc(qHija.label.slice(0, 28))}»</strong>` +
+        `<button type="button" class="gep-close">✕</button>` +
+      `</div>` +
+      `<div class="gep-row">` +
+        `<label class="gep-neg-toggle">` +
+          `<input type="checkbox" id="gep-no" ${edge.rule.no ? 'checked' : ''}> ` +
+          `<span>Invertir (entrar si <b>NO</b> se cumple)</span>` +
+        `</label>` +
+      `</div>` +
+      (opcionesPadre.length ? (
+        `<div class="gep-opts-lbl">Opciones de «${esc(qPadre.label.slice(0, 25))}» que activan esta rama:</div>` +
+        `<div class="gep-opts-list">` +
+          opcionesPadre.map(k =>
+            `<label class="gep-opt-chip">` +
+              `<input type="checkbox" value="${esc(k)}" ${valsActuales.has(String(k)) ? 'checked' : ''}>` +
+              `<span>${esc(k)}</span>` +
+            `</label>`
+          ).join('') +
+        `</div>`
+      ) : `<input type="text" id="gep-free-val" value="${esc([...valsActuales].join(', '))}" placeholder="Valor requerido">`) +
+      `<div class="gep-actions">` +
+        `<button type="button" class="btn-pc btn-pc-contra" id="gep-btn-unlink"><i class="fa-solid fa-link-slash"></i> Quitar condición</button>` +
+        `<button type="button" class="btn-pc btn-pc-pro" id="gep-btn-save">Guardar</button>` +
+      `</div>`;
+
+    const vp = document.getElementById('grafo-viewport');
+    vp.appendChild(pop);
+
+    // Posicionar junto a la píldora dentro del viewport
+    const vpRect = vp.getBoundingClientRect();
+    const bRect = anchorEl.getBoundingClientRect();
+    pop.style.left = `${Math.max(12, Math.min(vpRect.width - 290, bRect.left - vpRect.left - 80))}px`;
+    pop.style.top  = `${Math.max(12, Math.min(vpRect.height - 220, bRect.bottom - vpRect.top + 8))}px`;
+
+    pop.querySelector('.gep-close').addEventListener('click', cerrarPopoverArista);
+    pop.querySelector('#gep-btn-unlink').addEventListener('click', () => {
+      cerrarPopoverArista();
+      eliminarReglaDeNodo(edge.toId, edge.fromId, edge.rule);
+    });
+
+    pop.querySelector('#gep-btn-save').addEventListener('click', () => {
+      const isNo = pop.querySelector('#gep-no').checked;
+      let nuevosValores = [];
+      if (opcionesPadre.length) {
+        nuevosValores = Array.from(pop.querySelectorAll('.gep-opt-chip input:checked')).map(i => i.value);
+        if (!nuevosValores.length) return; // Evita dejar condición vacía sin querer
+      } else {
+        const raw = (pop.querySelector('#gep-free-val')?.value || '').trim();
+        if (raw) nuevosValores = [raw];
+      }
+
+      const nuevaRegla = {
+        qid: edge.fromId,
+        op: nuevosValores.length > 1 ? 'alguno' : (edge.rule.op || 'incluye'),
+        valor: nuevosValores.length === 1 ? nuevosValores[0] : nuevosValores,
+        no: isNo
+      };
+
+      const actual = reglasEfectivas(qHija);
+      const nuevasRules = actual.rules.map(r =>
+        (r.qid === edge.fromId && JSON.stringify(r.valor) === JSON.stringify(edge.rule.valor)) ? nuevaRegla : r
+      );
+
+      cerrarPopoverArista();
+      actualizarCondicionPregunta(qHija, nuevasRules.length === 1 ? nuevasRules[0] : { logic: actual.logic, rules: nuevasRules });
+    });
+  }
+
+  let _linkingSource = null; // { qPadre, optKey }
+
+  function iniciarModoEnlace(qPadre, optKey) {
+    cerrarPopoverArista();
+    _linkingSource = { qPadre, optKey };
+    const vp = document.getElementById('grafo-viewport');
+    if (vp) vp.classList.add('is-linking');
+
+    // Mostrar banner guía en la parte superior del lienzo
+    let banner = document.getElementById('grafo-link-banner');
+    if (!banner && vp) {
+      banner = document.createElement('div');
+      banner.id = 'grafo-link-banner';
+      banner.className = 'grafo-link-banner';
+      vp.appendChild(banner);
+    }
+    if (banner) {
+      banner.innerHTML =
+        `<span><i class="fa-solid fa-wand-magic-sparkles"></i> Haz clic en la pregunta destino que quieras activar cuando elijan <b>«${esc(optKey)}»</b> en <b>${esc(qPadre.label.slice(0, 24))}</b></span>` +
+        `<button type="button" class="btn-pc" id="grafo-cancel-link">Cancelar (Esc)</button>`;
+      banner.querySelector('#grafo-cancel-link').addEventListener('click', cancelarModoEnlace);
+    }
+  }
+
+  function cancelarModoEnlace() {
+    _linkingSource = null;
+    document.getElementById('grafo-viewport')?.classList.remove('is-linking');
+    document.getElementById('grafo-link-banner')?.remove();
+  }
+
+  function completarEnlaceEnNodo(qDestino) {
+    if (!_linkingSource) return;
+    const { qPadre, optKey } = _linkingSource;
+    const preguntas = (schema || []).filter(q => !esMarca(q));
+
+    if (creariaCiclo(qPadre.id, qDestino.id, preguntas)) {
+      alert('No se puede conectar: crearía un bucle circular entre preguntas.');
+      cancelarModoEnlace();
+      return;
+    }
+
+    const nuevaRegla = { qid: qPadre.id, op: 'incluye', valor: optKey, no: false };
+    const actual = reglasEfectivas(qDestino);
+
+    // Si ya tenía condiciones de otra rama (ej. B1 y B2 van a C1), las combinamos en OR
+    const yaExiste = actual.rules.some(r => r.qid === qPadre.id && valoresDe(r).includes(String(optKey)));
+    if (!yaExiste) {
+      const combinadas = [...actual.rules, nuevaRegla];
+      actualizarCondicionPregunta(
+        qDestino,
+        combinadas.length === 1 ? combinadas[0] : { logic: 'OR', rules: combinadas }
+      );
+    }
+    cancelarModoEnlace();
+  }
+
+
+  // ── Trazado de flechas SVG (apertura de ramas + reconvergencia a Ruta Base) ──
+  function trazarFlechas(stage, topo, totalGente) {
+    const svg = stage.querySelector('.grafo-svg-edges');
+    const labelsHost = stage.querySelector('.grafo-labels-layer');
+    if (!svg || !labelsHost) return;
+
+    const stageRect = stage.getBoundingClientRect();
+    const z = _zoom || 1;
+    svg.innerHTML = '';
+    labelsHost.innerHTML = '';
+
+    topo.edges.forEach((e, i) => {
+      const fromNode = stage.querySelector(`.grafo-node[data-qid="${CSS.escape(e.fromId)}"]`);
+      const toNode = stage.querySelector(`.grafo-node[data-qid="${CSS.escape(e.toId)}"]`);
+      if (!fromNode || !toNode) return;
+
+      let sourceEl = fromNode;
+      if (e.type === 'branch' && e.portOpt) {
+        const portKey = e.fromId + ':::' + e.portOpt;
+        const optEl = fromNode.querySelector(`[data-port="${CSS.escape(portKey)}"]`);
+        if (optEl) sourceEl = optEl;
+      }
+
+      const r1 = sourceEl.getBoundingClientRect();
+      const rParentCard = fromNode.getBoundingClientRect();
+      const r2 = toNode.getBoundingClientRect();
+
+      const x1 = (r1.left + r1.width / 2 - stageRect.left) / z;
+      const y1 = (r1.bottom - stageRect.top) / z;
+      // Borde inferior real de la tarjeta padre completa (debajo de todas las respuestas)
+      const yCardBottom = (rParentCard.bottom - stageRect.top) / z;
+      const x2 = (r2.left + r2.width / 2 - stageRect.left) / z;
+      const y2 = (r2.top - stageRect.top) / z;
+
+      let d = '';
+      const n = e.viajeros ? e.viajeros.length : 0;
+
+      if (e.type === 'return') {
+        const yBand = y2 - 68;
+        if (y1 < yBand - 12) {
+          d = `M ${x1} ${y1} L ${x1} ${yBand} C ${x1} ${yBand + 38}, ${x2} ${y2 - 38}, ${x2} ${y2}`;
+        } else {
+          const dy = Math.max(36, (y2 - y1) * 0.5);
+          d = `M ${x1} ${y1} C ${x1} ${y1 + dy}, ${x2} ${y2 - dy}, ${x2} ${y2}`;
+        }
+      } else if (e.type === 'bypass') {
+        const yBand = y2 - 68;
+        d = `M ${x1} ${y1} L ${x1} ${yBand} C ${x1} ${yBand + 34}, ${x2} ${y2 - 34}, ${x2} ${y2}`;
+      } else if (e.type === 'branch') {
+        // Baja primero hasta salir de la tarjeta padre y luego curva en el canal libre
+        const yExit = Math.max(y1, yCardBottom + 6);
+        const dy = Math.max(38, (y2 - yExit) * 0.55);
+        d = `M ${x1} ${y1} L ${x1} ${yExit} C ${x1} ${yExit + dy}, ${x2} ${y2 - dy}, ${x2} ${y2}`;
+      } else {
+        const dy = Math.max(40, Math.abs(y2 - y1) * 0.5);
+        d = `M ${x1} ${y1} C ${x1} ${y1 + dy}, ${x2} ${y2 - dy}, ${x2} ${y2}`;
+      }
+
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      path.setAttribute('d', d);
+
+      if (e.type === 'branch') {
+        const active = n > 0;
+        const strokeW = active ? Math.min(3.4, 1.7 + (n / Math.max(1, totalGente)) * 1.8) : 1.3;
+        path.setAttribute('class', 'grafo-edge-path' + (active ? ' is-active' : ' is-empty'));
+        path.setAttribute('stroke-width', strokeW.toFixed(2));
+        path.setAttribute('marker-end', active ? 'url(#grafo-arrow-active)' : 'url(#grafo-arrow-muted)');
+        svg.appendChild(path);
+
+        // Posicionar la etiqueta SIEMPRE en el canal vacío entre el final de la tarjeta padre y el inicio de la hija,
+        // alineada a la entrada del nodo destino (t = 0.68 del hueco libre) para que cada hijo tenga su cartel encima.
+        const yExit = Math.max(y1, yCardBottom + 6);
+        const t = 0.68;
+        const mt = 1 - t;
+        const dy = Math.max(38, (y2 - yExit) * 0.55);
+
+        const bx = (mt * mt * mt) * x1 + 3 * (mt * mt) * t * x1 + 3 * mt * (t * t) * x2 + (t * t * t) * x2;
+        const by = (mt * mt * mt) * yExit + 3 * (mt * mt) * t * (yExit + dy) + 3 * mt * (t * t) * (y2 - dy) + (t * t * t) * y2;
+
+        const badge = document.createElement('div');
+        badge.className = 'grafo-edge-badge is-interactive' + (active ? ' is-active' : ' is-empty');
+        badge.style.left = `${bx}px`;
+        badge.style.top = `${by}px`;
+        badge.title = 'Clic para editar esta condición';
+        badge.innerHTML =
+          `<span class="grafo-edge-cond">${esc(textoCond(e.rule))}</span>` +
+          `<span class="grafo-edge-count">${n}p</span>` +
+          `<button type="button" class="grafo-edge-del" title="Eliminar condición (devolver a Ruta Base)">✕</button>`;
+
+        // Clic en la✕: elimina esta regla directamente
+        badge.querySelector('.grafo-edge-del').addEventListener('click', ev => {
+          ev.stopPropagation();
+          eliminarReglaDeNodo(e.toId, e.fromId, e.rule);
+        });
+
+        // Clic en el cuerpo de la píldora: abre el popover de edición in-situ
+        badge.addEventListener('click', ev => {
+          ev.stopPropagation();
+          abrirPopoverArista(e, badge);
+        });
+
+        labelsHost.appendChild(badge);
+      } else if (e.type === 'trunk') {
+        path.setAttribute('class', 'grafo-edge-path is-trunk-edge');
+        path.setAttribute('stroke-width', '2.4');
+        path.setAttribute('marker-end', 'url(#grafo-arrow-trunk)');
+        svg.appendChild(path);
+      } else if (e.type === 'return') {
+        const active = n > 0;
+        path.setAttribute('class', 'grafo-edge-path is-return-edge' + (active ? ' is-active' : ' is-empty'));
+        path.setAttribute('stroke-width', active ? '2' : '1.3');
+        path.setAttribute('marker-end', active ? 'url(#grafo-arrow-return)' : 'url(#grafo-arrow-muted)');
+        svg.appendChild(path);
+      } else if (e.type === 'bypass') {
+        path.setAttribute('class', 'grafo-edge-path is-bypass-edge');
+        path.setAttribute('stroke-width', '1.4');
+        path.setAttribute('marker-end', 'url(#grafo-arrow-return)');
+        svg.appendChild(path);
+      }
+    });
+  }
+
+  // Comprueba si 'targetId' puede alcanzar a 'sourceId' (evita crear ciclos A -> B -> A)
+  function creariaCiclo(sourceId, targetId, preguntas) {
+    if (sourceId === targetId) return true;
+    const visitados = new Set([targetId]);
+    const cola = [targetId];
+    while (cola.length) {
+      const curr = cola.shift();
+      for (const q of preguntas) {
+        const { rules } = reglasEfectivas(q);
+        if (rules.some(r => r.qid === curr)) {
+          if (q.id === sourceId) return true;
+          if (!visitados.has(q.id)) {
+            visitados.add(q.id);
+            cola.push(q.id);
+          }
+        }
+      }
+    }
+    return false;
+  }
+
+  // Guarda la nueva condición en la pregunta, sincroniza UI y persiste en servidor si procede
+  async function actualizarCondicionPregunta(q, nuevoMostrarSi) {
+    if (!q.config) q.config = {};
+    if (!nuevoMostrarSi || (Array.isArray(nuevoMostrarSi.rules) && !nuevoMostrarSi.rules.length)) {
+      delete q.config.mostrarSi;
+    } else {
+      q.config.mostrarSi = nuevoMostrarSi;
+    }
+
+    // 1. Re-renderizar el grafo inmediatamente conservando pan y zoom
+    const prevZoom = _zoom, prevPanX = _panX, prevPanY = _panY;
+    render(true);
+    _zoom = prevZoom; _panX = prevPanX; _panY = prevPanY;
+    aplicarTransform();
+
+    // 2. Sincronizar cuestionario y raíl lateral
+    if (typeof renderAllQuestions === 'function') renderAllQuestions();
+    if (typeof restoreDraft === 'function') restoreDraft();
+    if (typeof renderRail === 'function') renderRail();
+
+    // 3. Persistir en backend si existe helper global o apiPost
+    try {
+      if (typeof saveQuestionCondition === 'function') {
+        await saveQuestionCondition(q.id, q.config.mostrarSi || null);
+      } else if (typeof apiPost === 'function' && typeof user !== 'undefined' && user) {
+        await apiPost({
+          action: 'update_question_config',
+          eid: user.eid,
+          nombre: user.nombre,
+          pinHash: user.pinHash,
+          qid: q.id,
+          config: q.config
+        });
+      }
+    } catch (err) {
+      console.warn('Cambio aplicado localmente; avisa si el backend requiere otra acción:', err);
+    }
   }
 
   function render() {
     const host = document.getElementById('arbol-body');
     if (!host) return;
-    if (!schema.length) { host.innerHTML = '<p class="arbol-vacio">Aún no hay preguntas.</p>'; return; }
-
-    const ctx = construir();
-    ctx.visited = new Set();
-    const gente = respuestas || [];
-
-    // Raíces agrupadas por sección, en el orden en que aparecen en el esquema
-    const grupos = new Map();
-    const asegurar = n => { if (!grupos.has(n)) grupos.set(n, []); return grupos.get(n); };
-    schema.forEach(q => {
-      const sec = String((q.config && q.config.seccion) || '').trim();
-      if (esMarca(q)) asegurar(sec || q.label);
-      else if (ctx.raices.has(q.id)) asegurar(sec).push(q);
-    });
-
-    let html = `<p class="arbol-nota"><i class="fa-solid fa-eye" aria-hidden="true"></i> Vista de solo lectura. ` +
-      `Cada rama muestra a quién le saldría esa parte según lo que ha enviado (${gente.length} respuesta${gente.length === 1 ? '' : 's'}). ` +
-      `Las opciones con <i class="fa-solid fa-code-branch" aria-hidden="true"></i> abren preguntas nuevas.</p>`;
-
-    grupos.forEach((qs, nombre) => {
-      html += `<h4 class="arbol-sec">${esc(nombre || 'Sin sección')}</h4>`;
-      html += qs.length
-        ? `<ul class="arbol-lista">${qs.map(q => nodoHtml(q, gente, ctx, 0)).join('')}</ul>`
-        : `<p class="arbol-vacio">Sin preguntas todavía.</p>`;
-    });
-
-    // Preguntas con condiciones cíclicas o rotas: se muestran aparte
-    const huerfanas = ctx.preguntas.filter(q => !ctx.visited.has(q.id));
-    if (huerfanas.length) {
-      html += `<h4 class="arbol-sec">Con condición rota o circular</h4><ul class="arbol-lista">` +
-        huerfanas.map(q => nodoHtml(q, gente, { ...ctx, hijos: new Map() }, 0)).join('') + `</ul>`;
+    const preguntas = (schema || []).filter(q => !esMarca(q));
+    if (!preguntas.length) {
+      host.innerHTML = '<p class="arbol-vacio">Aún no hay preguntas.</p>';
+      return;
     }
 
-    host.innerHTML = html;
+    const gente = respuestas || [];
+    const topo = construirTopologia(preguntas, gente);
+    _ultimoTopo = { topo, totalGente: gente.length };
+
+    const visitedDom = new Set();
+    let stagesHtml = topo.stages.map(st => {
+      return `<section class="grafo-stage-block">` +
+        renderSubtreeHtml(st.rootQ, topo, visitedDom) +
+      `</section>`;
+    }).join('');
+
+    if (topo.needsEndNode) {
+      stagesHtml += `<section class="grafo-stage-block">` +
+        `<article class="grafo-node is-trunk is-end-node" data-qid="__FIN__">` +
+          `<span class="grafo-node-code trunk-code"><i class="fa-solid fa-flag-checkered" aria-hidden="true"></i></span>` +
+          `<span class="grafo-end-txt">Ruta base · Fin del cuestionario (${gente.length}p)</span>` +
+        `</article>` +
+      `</section>`;
+    }
+
+    host.innerHTML =
+      `<div class="grafo-toolbar-top">` +
+        `<p class="arbol-nota"><i class="fa-solid fa-route" aria-hidden="true"></i> ` +
+        `<b>Ruta base (A1 → A2…)</b> en el eje central: las preguntas condicionales abren subramas (<b>B, C…</b>) y al terminar reconvergen de nuevo a la ruta base. ` +
+        `Arrastra con el ratón para moverte por el mapa y usa la rueda para hacer zoom.</p>` +
+      `</div>` +
+      `<div class="grafo-viewport" id="grafo-viewport">` +
+        `<div class="grafo-hud">` +
+          `<button type="button" class="grafo-hud-btn" id="grafo-z-in" title="Acercar">+</button>` +
+          `<span class="grafo-hud-lbl" id="grafo-zoom-lbl">100%</span>` +
+          `<button type="button" class="grafo-hud-btn" id="grafo-z-out" title="Alejar">−</button>` +
+          `<button type="button" class="grafo-hud-btn" id="grafo-z-fit" title="Centrar y encajar mapa"><i class="fa-solid fa-expand" aria-hidden="true"></i></button>` +
+        `</div>` +
+        `<div class="grafo-stage" id="grafo-stage">` +
+          `<svg class="grafo-svg" aria-hidden="true">` +
+            `<defs>` +
+              `<marker id="grafo-arrow-active" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">` +
+                `<path d="M 0 1 L 9 5 L 0 9 z" fill="var(--accent2)"/>` +
+              `</marker>` +
+              `<marker id="grafo-arrow-trunk" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">` +
+                `<path d="M 0 1 L 9 5 L 0 9 z" fill="var(--accent)"/>` +
+              `</marker>` +
+              `<marker id="grafo-arrow-return" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">` +
+                `<path d="M 0 1 L 9 5 L 0 9 z" fill="var(--accent3)"/>` +
+              `</marker>` +
+              `<marker id="grafo-arrow-muted" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">` +
+                `<path d="M 0 1 L 9 5 L 0 9 z" fill="var(--border)"/>` +
+              `</marker>` +
+            `</defs>` +
+            `<g class="grafo-svg-edges"></g>` +
+          `</svg>` +
+          `<div class="grafo-labels-layer" aria-hidden="true"></div>` +
+          `<div class="grafo-spine-wrap">${stagesHtml}</div>` +
+        `</div>` +
+      `</div>`;
+
+    const vp = document.getElementById('grafo-viewport');
+    if (vp) bindPanZoom(vp);
+
+    // Botones del HUD de zoom
+    document.getElementById('grafo-z-in')?.addEventListener('click', () => {
+      _zoom = Math.min(2.2, _zoom * 1.2);
+      aplicarTransform();
+    });
+    document.getElementById('grafo-z-out')?.addEventListener('click', () => {
+      _zoom = Math.max(0.35, _zoom / 1.2);
+      aplicarTransform();
+    });
+    document.getElementById('grafo-z-fit')?.addEventListener('click', () => {
+      centrarMapa(true);
+    });
+
+    // Iniciar enlace desde una opción hacia una pregunta existente
+    host.querySelectorAll('.grafo-opt-link').forEach(b => b.addEventListener('click', e => {
+      e.preventDefault(); e.stopPropagation();
+      const q = schema[parseInt(b.dataset.idx, 10)];
+      if (q && b.dataset.opt) iniciarModoEnlace(q, b.dataset.opt);
+    }));
+
+    // Si estamos en modo enlace, hacer clic en cualquier tarjeta destino cierra el circuito
+    host.querySelectorAll('.grafo-node:not(.is-end-node)').forEach(card => {
+      card.addEventListener('click', e => {
+        if (!_linkingSource) return;
+        e.preventDefault(); e.stopPropagation();
+        const qDest = (schema || []).find(q => q.id === card.dataset.qid);
+        if (qDest) completarEnlaceEnNodo(qDest);
+      });
+    });
+
+    // Eventos de las tarjetas
     host.querySelectorAll('.arbol-go').forEach(b => b.addEventListener('click', e => {
       e.preventDefault(); e.stopPropagation();
       cerrar();
       if (typeof switchMode === 'function') switchMode('survey');
       if (typeof goToSection === 'function') goToSection(parseInt(b.dataset.idx, 10));
     }));
-    // Botón «+» de cada nodo: crear una rama (pregunta condicionada a esta)
-    // desde el propio árbol. Delega en forms.js, que abre el formulario de
-    // pregunta nueva pre-rellenado (sección, condición y posición heredadas).
-    host.querySelectorAll('.arbol-branch').forEach(b => b.addEventListener('click', e => {
+
+    host.querySelectorAll('.arbol-branch, .grafo-opt-add').forEach(b => b.addEventListener('click', e => {
       e.preventDefault(); e.stopPropagation();
       const q = schema[parseInt(b.dataset.idx, 10)];
+      const optPre = b.dataset.opt || null;
       if (!q) return;
       cerrar();
       if (typeof switchMode === 'function') switchMode('survey');
       if (typeof abrirAddPreguntaCondicionado === 'function') {
-        abrirAddPreguntaCondicionado(q);
-      } else if (typeof goToSection === 'function') {
-        goToSection(parseInt(b.dataset.idx, 10));
+        abrirAddPreguntaCondicionado(q, optPre);
+        if (optPre) {
+          setTimeout(() => {
+            const valSel = document.querySelector('#add-q-cond-host select[multiple], #add-q-cond-host select:nth-of-type(3)');
+            if (valSel) {
+              Array.from(valSel.options).forEach(o => { o.selected = (o.value === optPre); });
+              valSel.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+          }, 60);
+        }
       }
     }));
+
+    requestAnimationFrame(() => {
+      const stage = document.getElementById('grafo-stage');
+      if (stage) {
+        _zoom = 1; _panX = 0; _panY = 0;
+        stage.style.transform = 'none';
+        trazarFlechas(stage, topo, gente.length);
+        centrarMapa(false);
+      }
+    });
+  }
+
+  function redibujarFlechas() {
+    const stage = document.getElementById('grafo-stage');
+    if (stage && _ultimoTopo) {
+      trazarFlechas(stage, _ultimoTopo.topo, _ultimoTopo.totalGente);
+    }
   }
 
   function abrir() {
@@ -174,9 +861,10 @@
     document.body.classList.add('map-modal-open');
     render();
   }
+
   function cerrar() {
     const bd = document.getElementById('arbol-modal-backdrop');
-    if (bd) { bd.hidden = true; bd.style.setProperty('display', 'none', 'important'); }
+    if (bd) { bd.hidden = true; }
     document.body.classList.remove('map-modal-open');
   }
 
@@ -185,6 +873,8 @@
     const bd = document.getElementById('arbol-modal-backdrop');
     if (bd && !bd.hidden) render();
   };
+
+  window.addEventListener('resize', redibujarFlechas);
 
   document.addEventListener('DOMContentLoaded', () => {
     const bd = document.getElementById('arbol-modal-backdrop');
@@ -197,10 +887,3 @@
     document.addEventListener('keydown', e => { if (e.key === 'Escape') cerrar(); });
   });
 })();
-
-function condEfectiva(q) {
-  const own = q.config && q.config.mostrarSi;
-  if (own && own.qid) return own;
-  const h = typeof _condDeSeccion === 'function' ? _condDeSeccion(q) : null;
-  return h ? h.config.mostrarSi : null;
-}

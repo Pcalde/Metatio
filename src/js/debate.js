@@ -217,7 +217,7 @@ function renderThreadsList(listEl, hilos) {
       <div style="font-size:0.75rem;font-weight:600;color:var(--muted);margin-bottom:6px;text-transform:uppercase">Pros y Contras registrados en las tarjetas (${pcFiltered.length})</div>
       ${pcFiltered.map(e => `
         <div class="pc-entry" style="padding:4px 0;border-bottom:1px solid var(--border)">
-          <span class="pc-tipo ${e.tipo}">${e.tipo === 'pro' ? '✓ PRO' : '✗ CONTRA'}</span>
+          <span class="pc-tipo ${e.tipo}">${e.tipo === 'pro' ? '✓ PRO' : 'X CONTRA'}</span>
           <span class="voter-chip">${esc(e.optKey)}</span>
           <span class="pc-texto">${esc(e.texto)}</span>
           <span class="pc-cred ${pcEstado(pcCred(e).p)}">${Math.round(pcCred(e).p * 100)}%</span>
