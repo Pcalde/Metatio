@@ -27,14 +27,15 @@
       <p style="margin-top:12px;color:var(--muted);font-size:0.95rem">Mis viajes</p>
     </header>
     <!-- Bloqueo del perfil: se oculta tras verificar la contraseña -->
-    <div class="card trips-check-card" id="trips-check-card">
+    <form class="card trips-check-card" id="trips-check-card"
+          onsubmit="event.preventDefault(); document.getElementById('btn-trips-unlock').click();">
       <div class="login-field">
-        <label for="trips-pass">Contraseña de tu perfil <span id="trips-check-nombre" style="color:var(--muted);font-size:0.78rem;font-weight:400"></span></label>
+        <label for="trips-pass">Contraseña de tu perfil ...</label>
         <input type="password" id="trips-pass" placeholder="••••" maxlength="64" autocomplete="current-password">
       </div>
       <button class="btn-generate" id="btn-trips-unlock" type="button">Desbloquear →</button>
-      <p class="trips-note">Tus accesos están cifrados en este dispositivo; solo tú puedes abrirlos con esta contraseña.</p>
-    </div>
+      <p class="trips-note">...</p>
+    </form>
 
     <div class="card trips-main-card" id="trips-main-card">
       <div class="trips-profile-row">
