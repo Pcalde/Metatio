@@ -105,7 +105,7 @@
       <!-- Campos extra solo al crear nuevo viaje -->
       <div id="create-trip-fields" style="display:none;flex-direction:column;gap:14px;margin-top:12px;padding-top:12px;border-top:1px dashed var(--border)">
         <div class="login-field" style="margin-bottom:0">
-          <label for="login-titulo">Tí­tulo del viaje</label>
+          <label for="login-titulo">Título del viaje</label>
           <input type="text" id="login-titulo" placeholder="p.ej. Escapada Rural Diciembre" maxlength="80">
         </div>
         <div class="login-field" style="margin-bottom:0">
@@ -116,7 +116,7 @@
           <label for="login-plantilla">Plantilla inicial de preguntas</label>
           <select id="login-plantilla">
             <option value="vacia"> En blanco (0 preguntas, crear todo a medida)</option>
-            <option value="minima"> Viaje mí­nimo (Disponibilidad + Presupuesto + Notas)</option>
+            <option value="minima"> Viaje mínimo (Disponibilidad + Presupuesto + Notas)</option>
             <option value="completa"> Completa de viaje (Plan, Casas, Precio, Transporte, Fechas, Notas)</option>
             <option value="quedada"> Quedada (plan, horarios por franjas, transporte, presupuesto)</option>
           </select>
@@ -199,7 +199,11 @@
           <input type="text" id="acc-nombre" maxlength="40" autocomplete="name">
         </div>
         <div class="login-field">
-          <label for="acc-partida">¿Desde dónde sales el dí­a del viaje? <span style="color:var(--muted);font-size:0.78rem;font-weight:400">(dirección, ciudad o «lat,lng» - se usa en el mapa para calcular distancias)</span></label>
+          <label for="acc-pin">Nueva contraseña <span style="color:var(--muted);font-size:0.78rem;font-weight:400">(opcional, déjalo vacío para no cambiarla)</span></label>
+          <input type="password" id="acc-pin" placeholder="••••" maxlength="64" autocomplete="new-password">
+        </div>
+        <div class="login-field">
+          <label for="acc-partida">¿Desde dónde sales el día del viaje? <span style="color:var(--muted);font-size:0.78rem;font-weight:400">(dirección, ciudad o «lat,lng» - se usa en el mapa para calcular distancias)</span></label>
           <div style="display:flex;gap:6px;flex-wrap:wrap">
             <input type="text" id="acc-partida" placeholder="p.ej. Calle Mayor 1, Madrid" style="flex:1;min-width:180px">
             <button type="button" class="btn-pc" id="acc-partida-geo" title="Usar mi ubicación actual"><i class="fa-solid fa-location-crosshairs" aria-hidden="true"></i></button>
@@ -231,13 +235,13 @@
         <div id="participants-list" class="participants-list" aria-live="polite"></div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
           <button type="button" class="btn-pc" id="btn-recordatorio-copy"><i class="fa-solid fa-copy" aria-hidden="true"></i> Copiar recordatorio</button>
-          <button type="button" class="btn-pc" id="btn-recordatorio-wa"><i class="fa-brands fa-whatsapp" aria-hidden="true"></i> Enviar por WhatsApp</button>
+          <button type="button" class="btn-pc btn-pc-wa" id="btn-recordatorio-wa"><i class="fa-brands fa-whatsapp" aria-hidden="true"></i> Enviar por WhatsApp</button>
         </div>
       </section>
 
       <div id="questions-container" style="display:flex;flex-direction:column;gap:24px"></div>
 
-      <!-- PROPONER NUEVA SECCIí“N -->
+      <!-- PROPONER NUEVA SECCIÓN -->
       <div class="card" id="add-question-card">
         <div class="card-title"><span class="num">+</span> Ampliar el cuestionario</div>
         <button class="add-opt-trigger" id="btn-toggle-add-q" type="button">+ Proponer una nueva pregunta al grupo</button>
@@ -287,7 +291,7 @@
           <div id="add-q-slider-wrap" style="display:none" class="add-q-field">
             <label>Configuración del rango</label>
             <div class="slider-config">
-              <div><label>Mí­nimo</label><input type="number" id="aq-min" value="0"></div>
+              <div><label>Mínimo</label><input type="number" id="aq-min" value="0"></div>
               <div><label>Máximo</label><input type="number" id="aq-max" value="100"></div>
               <div><label>Paso</label><input type="number" id="aq-step" value="10"></div>
             </div>
@@ -301,11 +305,11 @@
           <!-- Condición opcional «mostrar solo si…»: el editor lo pinta
                secciones.js (buildCondEditor) y forms.js lo lee al enviar. -->
           <div id="add-q-cond-host" class="cond-editor-host"></div>
-          <button class="btn-propose" type="button" id="btn-submit-new-q">Proponer al grupo →</button>
           <div class="add-q-field">
             <label>Descripción (opcional)</label>
-            <textarea id="add-q-desc" rows="2" maxlength="500" placeholder="Texto explicativo bajo el tí­tulo…"></textarea>
+            <textarea id="add-q-desc" rows="2" maxlength="500" placeholder="Texto explicativo bajo el título…"></textarea>
           </div>
+          <button class="btn-propose" type="button" id="btn-submit-new-q">Proponer al grupo →</button>
         </div>
       </div>
 
@@ -378,7 +382,7 @@
     </main><!-- /sec-main -->
 
     <!-- BARRA INFERIOR FIJA: navegación por secciones + estado de sincronización.
-         El botón #sec-submit delega en el flujo de enví­o de answers.js;
+         El botón #sec-submit delega en el flujo de envío de answers.js;
          #btn-generate queda oculto pero sigue siendo el "motor" del estado. -->
     <div class="sec-nav" id="sec-nav">
       <div class="sec-progress" aria-hidden="true"><span class="sec-bar-fill" id="sec-bar-fill"></span></div>
