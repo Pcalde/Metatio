@@ -34,6 +34,7 @@ button, label, a, input, textarea, select { -webkit-tap-highlight-color: transpa
   --accent3-100: #e3edf4;
 
   --ausentes: #dfc900d0;
+  --lider:    #f4faf6;
 
   --ok:    #2c9121;  --ok-bg:    #e8f5e4;
   --warn:  #b7791f;  --warn-bg:  #fdf6e3;
@@ -106,6 +107,7 @@ button, label, a, input, textarea, select { -webkit-tap-highlight-color: transpa
     --accent3-100: #192730;
 
     --ausentes: #dfc80079;
+    --lider:    #121f1c83;
 
     --ok-bg:    #1f2e1c;
     --err-bg:   #2e1c1a;
@@ -752,7 +754,7 @@ body.map-modal-open { overflow: hidden; }
 .submit-row { display: flex; justify-content: center; margin-top: 8px; }
 .submit-row .btn-generate { width: auto; min-width: 240px; padding: 12px 26px; font-size: 0.95rem; }
 .btn-generate.up-to-date {
-  background: var(--bg); color: var(--accent2);
+  background: var(--accent2); color: var(--btn-fg);
   border: 1px solid var(--accent2); opacity: 0.9;
 }
 
@@ -1013,7 +1015,7 @@ body.map-modal-open { overflow: hidden; }
 }
 .ref-opt-list { display: flex; flex-direction: column; gap: 10px; }
 .ref-opt-row { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; }
-.ref-opt-row.is-leader { border-color: var(--accent2); background: #f4faf6; }
+.ref-opt-row.is-leader { border-color: var(--accent2); background: var(--lider); }
 .ref-opt-main { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
 .ref-opt-info { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .ref-rank { font-weight: 700; font-size: 0.8rem; color: var(--muted); }
@@ -1247,7 +1249,7 @@ body.map-modal-open { overflow: hidden; }
 .pc-act:disabled { opacity: .4; cursor: default; }
 .pc-edit-inp { flex: 1; min-width: 140px; padding: 4px 8px; font-size: .82rem; }
 .pc-adj { font-size: .72rem; color: var(--accent3); }
-.q-desc { font-size: 0.85rem; color: var(--muted); line-height: 1.45; margin: -8px 0 16px; white-space: pre-wrap; }
+.q-desc { font-size: 0.85rem; color: var(--muted); line-height: 1.45; margin: -8px 0 16px; white-space: pre-wrap; max-width: 65ch;}
 .md-content {
     line-height: 1.5;
     word-wrap: break-word;
