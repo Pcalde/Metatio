@@ -4,9 +4,22 @@
 //  Extraído de reformulario.js (líneas 40–912; sin getMySubmittedAnswers,
 //  que sí depende del estado global). Capa SIN dependencias de DOM: recibe
 //  datos crudos y devuelve modelos/soluciones. Espejo JS de las R1–R8 del
-//  README y de analizador_viaje.py. Variables libres inyectadas por el
-//  envoltorio: UMBRAL_HORA_SOLAPE, weightByProb, mcUseEmpiricalProb,
-//  respondentes, ausencias, schema, getFranjas.
+//  README y de analizador_viaje.py.
+//
+//  Aportaciones locales (necesarias para que el archivo sea autocontenido y
+//  testeable en Node con `vm` — ver tests/harness.js y tests/engine.test.js):
+//    - UMBRAL_HORA_SOLAPE: declaración única (el extracto original la
+//      duplicaba; `var` lo hacía inocuo, pero se unifica por claridad).
+//    - mcUseEmpiricalProb: flag que solo se leía aquí (se declara con su
+//      valor por defecto, true, igual que reformulario.js l.6).
+//    - EngineRuntime: sustituto inyectable de los helpers globales que antes
+//      entraban por closures (getFranjas, extractAnswer, dispToMap, normPond,
+//      getEffectiveProb). En el navegador delegan en las funciones reales;
+//      en Node el harness los reemplaza por las cargadas desde types.js y
+//      state.js, o por dobles de test.
+//  Variables libres restantes (inyectadas por engine/index.js o por el
+//  harness de test): schema, respuestas, respondentes, weightByProb,
+//  mcUseEmpiricalProb.
 //
 //  ⚠ FASE 1 DE LA REESTRUCTURACIÓN: este archivo aún NO está enlazado por
 //    ningún <script>; reformulario.js sigue siendo la fuente canónica hasta
@@ -14,6 +27,18 @@
 // ══════════════════════════════════════════════════════════════════════════
 
 var UMBRAL_HORA_SOLAPE = 1.5;   // θ (R7): horas mínimas de solape horario
+var mcUseEmpiricalProb = true;  // true = p por viajero (1 - probEfectiva); false = pGlobal fijo
+
+// Punto único de inyección de dependencias de la capa engine. Los valores por
+// defecto delegan en los globales clásicos de la app (comportamiento idéntico
+// a reformulario.js cuando este archivo se enlace en Fase 2).
+var EngineRuntime = {
+  getFranjas:       function (q) { return getFranjas(q); },
+  extractAnswer:    function (ansObj, q) { return extractAnswer(ansObj, q); },
+  dispToMap:        function (list) { return dispToMap(list); },
+  normPond:         function (v) { return normPond(v); },
+  getEffectiveProb: function (nombre) { return getEffectiveProb(nombre); },
+};
 
 function createSeededRNG(seed = 22) {
   let a = seed >>> 0;
@@ -55,7 +80,8 @@ function parsePrecioNumerico(raw) {
 
 // ── 2b. CRUCE DE HORARIOS (capa B del modelo de dos capas) ──────────────────
 // Solape horario mínimo exigido entre miembros del núcleo, en horas.
-var UMBRAL_HORA_SOLAPE = 1.5;
+// (UMBRAL_HORA_SOLAPE se declara una sola vez al principio del archivo; el
+//  extracto original la duplicaba aquí — `var` lo hacía inocuo.)
 
 // Normaliza la duración del plan: enteros [1..12] se interpretan como nº de
 // franjas consecutivas; reales > 12 se interpretan como horas.
@@ -63,7 +89,7 @@ function duracionPlanHoras(qHor) {
   const raw = qHor && qHor.config ? Number(qHor.config.duracionHoras) : NaN;
   if (!isFinite(raw) || raw <= 0) return 3;
   if (raw <= 12) {
-    const f = getFranjas(qHor);
+    const f = EngineRuntime.getFranjas(qHor);
     return Math.max(1, Math.round(raw)) * (f[0].end - f[0].start);
   }
   return raw;
@@ -161,21 +187,21 @@ function buildModelData() {
     };
   const fechasGlobal = new Set();
     respuestas.forEach(r => {
-      const d = qDisp ? extractAnswer(r.answers || {}, qDisp) : null;
+      const d = qDisp ? EngineRuntime.extractAnswer(r.answers || {}, qDisp) : null;
       if (d && d.noSe) return;
       ((d && d.rangos) || []).forEach(rg => _expand(rg.desde, rg.hasta).forEach(f => fechasGlobal.add(f)));
-      const h = qHor ? extractAnswer(r.answers || {}, qHor) : null;
-      if (h && Array.isArray(h.disponibilidades)) for (const f of dispToMap(h.disponibilidades).keys()) fechasGlobal.add(f);
+      const h = qHor ? EngineRuntime.extractAnswer(r.answers || {}, qHor) : null;
+      if (h && Array.isArray(h.disponibilidades)) for (const f of EngineRuntime.dispToMap(h.disponibilidades).keys()) fechasGlobal.add(f);
     });
     
   respuestas.forEach(r => {
     const ans = r.answers || {};
-    const disp = qDisp ? extractAnswer(ans, qDisp) : null;
-    const trans = qTrans ? extractAnswer(ans, qTrans) : null;
-    const prec = qPrec ? extractAnswer(ans, qPrec) : null;
-    const casasRaw = qCasas ? extractAnswer(ans, qCasas) : [];
-    const optsRaw  = qOpts ? extractAnswer(ans, qOpts) : [];
-    const hor = qHor ? extractAnswer(ans, qHor) : null;
+    const disp = qDisp ? EngineRuntime.extractAnswer(ans, qDisp) : null;
+    const trans = qTrans ? EngineRuntime.extractAnswer(ans, qTrans) : null;
+    const prec = qPrec ? EngineRuntime.extractAnswer(ans, qPrec) : null;
+    const casasRaw = qCasas ? EngineRuntime.extractAnswer(ans, qCasas) : [];
+    const optsRaw  = qOpts ? EngineRuntime.extractAnswer(ans, qOpts) : [];
+    const hor = qHor ? EngineRuntime.extractAnswer(ans, qHor) : null;
 
     const diasMax = Math.max(1, parseInt((disp && disp.diasMax) ?? ans.diasMax ?? (qDisp ? 5 : 1), 10) || 1);
     const soloFinde = !!(disp && disp.soloFinde);
@@ -213,7 +239,7 @@ function buildModelData() {
 
     const horFechas = new Set();
     if (hor && Array.isArray(hor.disponibilidades)) {
-      for (const f of dispToMap(hor.disponibilidades).keys()) horFechas.add(f);
+      for (const f of EngineRuntime.dispToMap(hor.disponibilidades).keys()) horFechas.add(f);
     }
 
     let conjuntoFechas = forzarFechas || new Set([...rangoSet, ...horFechas]);
@@ -239,7 +265,7 @@ function buildModelData() {
     // con cualquiera), pero quien sí los rellenas exige cruce real (ver motor).
     const horFranjasPorDia = hor && Array.isArray(hor.disponibilidades) ? {} : null;
     if (horFranjasPorDia) {
-      dispToMap(hor.disponibilidades).forEach((setIds, f) => {
+      EngineRuntime.dispToMap(hor.disponibilidades).forEach((setIds, f) => {
         if (conjuntoFechas.has(f)) horFranjasPorDia[f] = [...setIds];
       });
     }
@@ -289,7 +315,7 @@ function buildModelData() {
       meDaIgual,
       horFranjasPorDia,
       preferirPuente: prefPuente,
-      probEfectiva: getEffectiveProb(r.nombre),
+      probEfectiva: EngineRuntime.getEffectiveProb(r.nombre),
       tieneLogistica: !!String(estadoTrans || '').trim(),
     });
   });
@@ -633,7 +659,7 @@ function ejecutarMotorFactibilidad(model) {
 
   const qHor = schema.find(q => q.tipo === 'horarios');
   const durH = qHor ? duracionPlanHoras(qHor) : null;
-  const franjas = qHor ? getFranjas(qHor) : null;
+  const franjas = qHor ? EngineRuntime.getFranjas(qHor) : null;
 
   // Cruce de la capa horaria B entre todos los miembros del núcleo que
   // declararon horarios: si dos incompatibles coinciden en la ventana,
