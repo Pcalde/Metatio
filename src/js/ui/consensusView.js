@@ -4,16 +4,12 @@
 //  Extraído de reformulario.js (líneas 915–fin). Capa SOLO de presentación:
 //  consume el `model` y las `soluciones` que produce el motor puro
 //  (engine/optimizador.js) y pinta tarjetas en #consensus-container.
-//  Dependencias asumidas (por ahora globales clásicas): $, esc, faIcon,
-//  renderMarkdown, div, getFranjas, proscontras (pcParts), patchSingleAnswer…
-//
-//  ⚠ FASE 1 DE LA REESTRUCTURACIÓN: aún NO enlazado; ver docs/arquitectura.md
 // ══════════════════════════════════════════════════════════════════════════
 
 function renderMarkdown(texto) {
-    if (!texto) return '';
-    const htmlCrudo = marked.parse(String(texto), { breaks: true, gfm: true });
-    return DOMPurify.sanitize(htmlCrudo, { USE_PROFILES: { html: true } });
+  if (!texto) return '';
+  const htmlCrudo = marked.parse(String(texto), { breaks: true, gfm: true });
+  return DOMPurify.sanitize(htmlCrudo, { USE_PROFILES: { html: true } });
 }
 
 function renderReformulario() {
@@ -117,7 +113,7 @@ function buildExecutiveSummaryCard(model, soluciones, topo) {
         <span class="kpi-val">${model.viajeros.length} <small>/ ${respondentes.length} resp.</small></span>
       </div>
       <div class="kpi-box">
-        <span class="kpi-label">Esperanza asistencia E[N]</span>
+        <span class="kpi-label">Esperanza asistencia E[N] (a priori)</span>
         <span class="kpi-val">${expected.toFixed(1)} <small>± ${Math.sqrt(variance).toFixed(1)}</small></span>
       </div>
       <div class="kpi-box">
@@ -142,9 +138,6 @@ function buildExecutiveSummaryCard(model, soluciones, topo) {
 }
 
 // ── TABLA DE PREFERENCIAS BOOLEANAS POR VIAJERO ─────────────────────────────
-// Muestra de un vistazo quién votó ir y venir, quién prefiere solo finde,
-// quién no tiene preferencia de día y quién prefiere puente. Sin emojis:
-// celdas con check/cruz y color según el caso.
 function buildPreferenciasBooleanasCard(model) {
   const card = div('card pref-bool-card');
 
@@ -156,13 +149,13 @@ function buildPreferenciasBooleanasCard(model) {
   }
 
   const cols = [
-    { key: 'diasMax',      label: 'Días máx.',   type: 'num' },
-    { key: 'irYVenir',     label: 'Ir y venir',  type: 'bool' },
-    { key: 'soloFinde',    label: 'Solo finde',  type: 'bool' },
-    { key: 'meDaIgual',    label: 'Me da igual', type: 'bool' },
+    { key: 'diasMax',        label: 'Días máx.',       type: 'num' },
+    { key: 'irYVenir',       label: 'Ir y venir',      type: 'bool' },
+    { key: 'soloFinde',      label: 'Solo finde',      type: 'bool' },
+    { key: 'meDaIgual',      label: 'Me da igual',     type: 'bool' },
     { key: 'preferirPuente', label: 'Preferir puente', type: 'bool' },
-    { key: '_horarios',    label: 'Horarios',    type: 'tri' },
-    { key: '_fechas',      label: 'Fechas',      type: 'tri' },
+    { key: '_horarios',      label: 'Horarios',        type: 'tri' },
+    { key: '_fechas',        label: 'Fechas',          type: 'tri' },
   ];
 
   const cellHtml = (v, col) => {
@@ -171,7 +164,6 @@ function buildPreferenciasBooleanasCard(model) {
       const on = !!v[col.key];
       return `<td class="${on ? 'pb-yes' : 'pb-no'}">${on ? 'Sí' : 'No'}</td>`;
     }
-    // tri: horarios/fechas rellenos o no (relevante para el cruce del motor)
     let val;
     if (col.key === '_horarios') val = v.horFranjasPorDia && Object.keys(v.horFranjasPorDia).length;
     else val = v.conjuntoFechas && v.conjuntoFechas.size;
@@ -207,7 +199,42 @@ function buildPreferenciasBooleanasCard(model) {
   return card;
 }
 
-// ── RENDER DE SOLUCIONES ÓPTIMAS (Port visual de reporte.py) ────────────────
+// Helper para renderizar el bloque de alertas priorizadas (§6.4) dentro de tarjetas de solución o consenso
+function buildAlertBlockHtml(alertas) {
+  if (!alertas || !alertas.length) return '';
+  const top  = alertas[0];
+  const rest = alertas.slice(1);
+  return `
+    <div class="prob-alert-box sev-${top.prioridad || 1}" style="margin-top:6px">
+      <div class="prob-alert-main">
+        <span>${esc(top.mensaje)}</span>
+        ${rest.length ? `<button type="button" class="prob-alert-more-btn" data-count="${rest.length}">+${rest.length} ${rest.length === 1 ? 'alerta' : 'alertas'}</button>` : ''}
+      </div>
+      ${rest.length ? `
+        <div class="prob-alert-extra">
+          ${rest.map(a => `<div>• ${esc(a.mensaje)}</div>`).join('')}
+        </div>
+      ` : ''}
+    </div>
+  `;
+}
+
+function bindAlertExpandButtons(rootEl) {
+  if (!rootEl) return;
+  rootEl.querySelectorAll('.prob-alert-more-btn').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.preventDefault(); e.stopPropagation();
+      const box = btn.closest('.prob-alert-box');
+      const extra = box && box.querySelector('.prob-alert-extra');
+      if (!extra) return;
+      const open = extra.classList.toggle('open');
+      const cnt = Number(btn.dataset.count || 1);
+      btn.textContent = open ? 'Ocultar' : `+${cnt} ${cnt === 1 ? 'alerta' : 'alertas'}`;
+    });
+  });
+}
+
+// ── RENDER DE SOLUCIONES ÓPTIMAS (Port visual de reporte.py + Pareto §5/§7) ──
 function buildFeasibleSolutionsSection(soluciones, diagnosticos, topo) {
   const wrap = div('ref-solutions-wrap');
 
@@ -235,11 +262,16 @@ function buildFeasibleSolutionsSection(soluciones, diagnosticos, topo) {
     const cruceStr = sol.cruceHorario
       ? ` · Cruce horario: ${sol.cruceHorario.texto} (${sol.cruceHorario.solape.toFixed(1).replace(/\.0$/, '')} h)`
       : '';
-    const pStr = sol.pMaxGrupo != null ? `${sol.pMaxGrupo} €` : 'N/A';
+    const pStr = sol.pMaxGrupo != null
+      ? (sol.pIdealGrupo != null && sol.pIdealGrupo < sol.pMaxGrupo
+          ? `${sol.pIdealGrupo} € (Tope ${sol.pMaxGrupo} €)`
+          : `${sol.pMaxGrupo} €`)
+      : 'N/A';
     const logOn = !(sol.flujo && sol.flujo.sinLogistica);
     const sinDato = logOn ? sol.viajerosAsignados.filter(v => !v.tieneLogistica).map(v => v.nombre) : [];
+    const mapViajeros = new Map(sol.viajerosAsignados.map(v => [v.nombre, v]));
 
-    // Tablas de logística (Idas y Vueltas)
+    // Tablas de logística (Idas y Vueltas + Notas de ruta y afinidad)
     const renderTablaViajes = (viajes, titulo, badgeCls) => {
       if (!viajes || !viajes.length) return `<div class="muted-note">Sin desplazamientos en coche requeridos.</div>`;
       return `
@@ -248,34 +280,62 @@ function buildFeasibleSolutionsSection(soluciones, diagnosticos, topo) {
           <table class="sol-log-table">
             <thead><tr><th>Fecha</th><th>Conductor</th><th>Pasajeros asignados</th></tr></thead>
             <tbody>
-              ${viajes.map(v => `
-                <tr>
-                  <td class="mono-cell">${fmtShortDate(v.fecha)}</td>
-                  <td><b>${esc(v.conductor)}</b></td>
-                  <td>${v.pasajeros.length ? v.pasajeros.map(esc).join(', ') : '<em style="color:var(--muted)">solo</em>'}</td>
-                </tr>
-              `).join('')}
+              ${viajes.map(v => {
+                const dObj = mapViajeros.get(v.conductor);
+                const notaD = dObj && dObj.notaRuta ? ` <small style="color:var(--muted)">(${esc(dObj.notaRuta)})</small>` : '';
+                return `
+                  <tr>
+                    <td class="mono-cell">${fmtShortDate(v.fecha)}</td>
+                    <td><b>${esc(v.conductor)}</b>${notaD}</td>
+                    <td>${v.pasajeros.length ? v.pasajeros.map(esc).join(', ') : '<em style="color:var(--muted)">solo</em>'}</td>
+                  </tr>
+                `;
+              }).join('')}
             </tbody>
           </table>
         </div>
       `;
     };
 
-    // Evaluación de casas (Precio Cooperativo vs Coalición)
+    // Evaluación de casas (Soporta tanto `casas` clásico como `probabilidad-opcion` con E[X], P25[X] y alertas)
     const casasHtml = sol.casasEvaluadas.length
-      ? sol.casasEvaluadas.map(c => `
-          <div class="sol-casa-item ${c.viable ? 'viable' : 'inviable'}">
-            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
-              <strong>${esc(c.nombre)}</strong>
-              <span class="sol-badge ${c.viable ? 'ok' : 'err'}">${c.viable ? '✓ Viable en presupuesto' : '✗ Excede presupuesto mín.'}</span>
+      ? sol.casasEvaluadas.map(c => {
+          const isProbModel = c.E != null && c.P25 != null;
+          const budgetBadge = c.viable
+            ? (c.comoda === false
+                ? `<span class="sol-badge" style="background:rgba(245,158,11,0.16);color:#f59e0b">⚡ Dentro de Hard Cap (> ideal)</span>`
+                : `<span class="sol-badge ok">✓ Viable en presupuesto</span>`)
+            : `<span class="sol-badge err">✗ Excede presupuesto / veto</span>`;
+
+          return `
+            <div class="sol-casa-item ${c.viable ? 'viable' : 'inviable'}">
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+                <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+                  <strong>${esc(c.nombre)}</strong>
+                  ${c.esPredilecta ? `<span class="prob-pred-badge">★ Opción predilecta</span>` : ''}
+                  ${isProbModel && c.enFronteraPareto && !c.esPredilecta ? `<span class="prob-quad-badge ganador">Frontera de Pareto</span>` : ''}
+                  ${isProbModel && c.cuadrante ? `<span class="prob-quad-badge ${c.cuadrante.id}">${esc(c.cuadrante.label)}</span>` : ''}
+                </div>
+                ${budgetBadge}
+              </div>
+              <div class="sol-casa-meta">
+                <span>Total: <b>${c.precio_total.toFixed(0)}€</b></span>
+                <span>Cooperativo (entre ${sol.N}): <b>${c.p_coop.toFixed(1)}€/pers</b></span>
+                ${isProbModel
+                  ? `<span>Por E[X]=${c.E.toFixed(1)}: <b>${c.p_coal.toFixed(1)}€/pers</b></span>
+                     <span>P25: <b>${c.P25.toFixed(2)}</b></span>`
+                  : `<span>Coalición (${c.votos} votantes): <b>${c.p_coal.toFixed(1)}€/pers</b></span>`}
+              </div>
+              ${isProbModel ? `
+                <div style="font-size:0.77rem;color:var(--muted);margin-top:4px;line-height:1.35">
+                  <div>• ${esc(c.msgE)}</div>
+                  <div>• ${esc(c.msgP25)}</div>
+                </div>
+                ${buildAlertBlockHtml(c.alertas)}
+              ` : ''}
             </div>
-            <div class="sol-casa-meta">
-              <span>Total: <b>${c.precio_total.toFixed(0)}€</b></span>
-              <span>Cooperativo (entre ${sol.N}): <b>${c.p_coop.toFixed(1)}€/pers</b></span>
-              <span>Coalición (${c.votos} votantes): <b>${c.p_coal.toFixed(1)}€/pers</b></span>
-            </div>
-          </div>
-        `).join('')
+          `;
+        }).join('')
       : `<div class="muted-note">No hay casas con precio numérico votadas por este subgrupo.</div>`;
 
     // Resiliencia Monte Carlo
@@ -329,7 +389,7 @@ function buildFeasibleSolutionsSection(soluciones, diagnosticos, topo) {
           <span class="sol-pill">Total <b>${sol.N}</b></span>
           <span class="sol-pill">Núcleo <b>${sol.N_full}</b></span>
           <span class="sol-pill">Satélites <b>${sol.N_convoy}</b></span>
-          <span class="sol-pill">Tope Coop. <b>${pStr}</b></span>
+          <span class="sol-pill">Tope Coop. <b>${esc(pStr)}</b></span>
         </div>
       </div>
 
@@ -349,7 +409,7 @@ function buildFeasibleSolutionsSection(soluciones, diagnosticos, topo) {
 
       <div style="margin-top:14px">
         <div style="font-size:0.82rem;color:var(--muted);margin-bottom:6px">
-          Plan preferido por los asistentes: <strong style="color:var(--ink)">${esc(sol.opcionVotada)}</strong>
+          Plan / Candidatas en ventana: <strong style="color:var(--ink)">${esc(sol.opcionVotada)}</strong>
         </div>
         ${casasHtml}
       </div>
@@ -362,6 +422,8 @@ function buildFeasibleSolutionsSection(soluciones, diagnosticos, topo) {
         </button>
       </div>
     `;
+
+    bindAlertExpandButtons(card);
 
     card.querySelector('.btn-propose-sol').addEventListener('click', () => {
       const textoPropuesta = `Propongo cerrar la Solución #${idx + 1}: del ${fmtShortDate(sol.fIni)} al ${fmtShortDate(sol.fFin)} (${sol.L} día${sol.L === 1 ? '' : 's'}, ${sol.N} asistentes: ${[...sol.asistentesNucleo, ...sol.satelitesAsignados].join(', ')}). Plan: ${sol.opcionVotada}.`;
@@ -393,7 +455,7 @@ function buildTopologyAndSensitivityCard(model, topo) {
       <div class="kpi-box">
         <span class="kpi-label">Cuello de botella logístico</span>
         <span class="kpi-val" style="color:var(--accent)">${esc(s.diaCritico)}</span>
-                <small>${s.logistica ? `Holgura mínima: ${s.minHolgura} plaza(s)` : 'Nadie ha indicado transporte'}</small>
+        <small>${s.logistica ? `Holgura mínima: ${s.minHolgura} plaza(s)` : 'Nadie ha indicado transporte'}</small>
       </div>
       <div class="kpi-box">
         <span class="kpi-label">Aislamiento Topológico (L₁)</span>
@@ -470,6 +532,9 @@ function buildAnalyticalCard(q, idx, myAns) {
     case 'casas':
       buildOptionsConsensus(card, q, myVal);
       break;
+    case 'probabilidad-opcion':
+      buildProbabilidadOpcionConsensus(card, q, myVal);
+      break;
     case 'slider':
       buildSliderConsensus(card, q, myVal);
       break;
@@ -489,13 +554,207 @@ function buildAnalyticalCard(q, idx, myAns) {
   return card;
 }
 
+// ── NUEVA VISTA DE CONSENSO PARA `probabilidad-opcion` (§4, §5, §6 y §7) ───
+function buildProbabilidadOpcionConsensus(card, q, myVal) {
+  const pcIdx  = pcIndex();
+  const escala = typeof getEscalaProbabilidad === 'function' ? getEscalaProbabilidad(q) : [
+    { label: 'Nunca', val: 0.00, pct: '0%' },
+    { label: 'Poco probable', val: 0.20, pct: '20%' },
+    { label: 'Quizás', val: 0.50, pct: '50%' },
+    { label: 'Probable', val: 0.75, pct: '75%' },
+    { label: 'Casi seguro', val: 0.90, pct: '90%' },
+    { label: 'Seguro', val: 0.95, pct: '95%*' },
+  ];
+  const myDict = typeof normProbOpcion === 'function' ? normProbOpcion(myVal) : (myVal || {});
+
+  // Evaluar métricas E[X], P25[X], frontera de Pareto, cuadrantes y alertas
+  const evalRes = typeof window.evaluarProbabilidadOpcion === 'function'
+    ? window.evaluarProbabilidadOpcion(q)
+    : (typeof evaluarCatalogoProbabilidad === 'function' ? evaluarCatalogoProbabilidad(q, buildModelData().viajeros) : null);
+
+  if (!evalRes || (!evalRes.frontera.length && !evalRes.descartadas.length && !(q.opciones || []).length)) {
+    card.innerHTML += `<p style="color:var(--muted);font-size:0.85rem">Sin opciones o valoraciones registradas aún.</p>`;
+    return;
+  }
+
+  // Mapa auxiliar para recuperar URL/foto de cada opción del esquema
+  const rawByKey = new Map();
+  (q.opciones || []).forEach(op => {
+    const k = optVal(q, op);
+    rawByKey.set(k, op);
+  });
+
+  const maxE = Math.max(1, evalRes.nVotantes || 1, ...evalRes.opciones.map(o => o.E || 0));
+
+  const renderOptionRow = (it, isPredilecta, isDescartada = false) => {
+    const rawOp = rawByKey.get(it.key);
+    const url   = (rawOp && typeof rawOp === 'object' && rawOp.url) ? safeUrl(rawOp.url) : '';
+    const foto  = (rawOp && typeof rawOp === 'object' && rawOp.foto) ? safeUrl(rawOp.foto) : '';
+
+    const entriesPC = pcIdx.get(q.id + '\u0000' + it.key) || [];
+    const pros = entriesPC.filter(e => e.tipo === 'pro').length;
+    const cons = entriesPC.filter(e => e.tipo === 'contra').length;
+
+    const myProb = (it.key in myDict) ? Number(myDict[it.key]) : null;
+    const pctBar = Math.max(0, Math.min(100, (it.E / maxE) * 100));
+
+    const row = div('ref-opt-row' + (isPredilecta ? ' is-leader' : ''));
+    if (isPredilecta) row.style.borderColor = '#10b981';
+
+    // Badges de estado (Predilecta, Cuadrante 2x2 o Causa de descarte Pareto/Grupo pequeño)
+    const statusBadgesHtml = isDescartada
+      ? (it.inviableGrupoPequeno
+          ? `<span class="prob-quad-badge rechazar">Inviable (veto 0.00 en grupo ≤ 4)</span>`
+          : `<span class="prob-quad-badge tibio">Dominada por «${esc(it.dominadaPor)}»</span>`)
+      : `${isPredilecta ? `<span class="prob-pred-badge">★ Opción predilecta</span>` : ''}
+         <span class="prob-quad-badge ${it.cuadrante.id}">${esc(it.cuadrante.label)}</span>`;
+
+    // Chips individuales de votantes con su probabilidad declarada
+    const porUsuarioEntries = Object.entries(it.porUsuario || it.probPorViajero || {})
+      .sort((a, b) => b[1] - a[1]);
+
+    const votersHtml = porUsuarioEntries.length
+      ? porUsuarioEntries.map(([nom, p]) => {
+          const cls = p === 0 ? 'veto' : (p >= 0.90 ? 'star' : '');
+          return `<span class="voter-chip ${cls}">${esc(nom)} <b>${Math.round(p * 100)}%</b></span>`;
+        }).join('')
+      : `<span style="color:var(--muted);font-size:0.75rem">Sin valoraciones aún</span>`;
+
+    // Botonera interactiva en vivo para cambiar mi probabilidad directamente desde el Reformulario
+    const scaleBtnsHtml = escala.map(cat => {
+      const isAct = myProb != null && Math.abs(myProb - cat.val) < 0.03;
+      return `
+        <button type="button" class="btn-prob-cat ${isAct ? 'active' : ''}" data-prob="${cat.val}" title="${esc(cat.label)} (${cat.pct})" style="min-width:56px;padding:3px 5px">
+          <span style="font-size:0.7rem">${esc(cat.label)}</span>
+          <small>${esc(cat.pct)}</small>
+        </button>
+      `;
+    }).join('');
+
+    row.innerHTML = `
+      <div class="ref-opt-main" style="align-items:flex-start">
+        <div class="ref-opt-info" style="flex-wrap:wrap;gap:6px">
+          ${url ? `<a href="${esc(url)}" target="_blank" rel="noopener" class="ref-link">${esc(it.label)} ↗</a>` : `<span class="ref-opt-title">${esc(it.label)}</span>`}
+          ${it.precio ? `<span class="casa-precio">${esc(it.precio)}</span>` : ''}
+          ${foto ? `<img class="ref-foto" src="${esc(foto)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : ''}
+          ${statusBadgesHtml}
+        </div>
+        <div class="prob-metrics-pills">
+          <span class="prob-metric-pill" title="Asistencia esperada E[X] = Σ p_i">E[X]: <b>${it.E.toFixed(1)}</b></span>
+          <span class="prob-metric-pill" title="Percentil 25 de las probabilidades">P25: <b>${it.P25.toFixed(2)}</b></span>
+        </div>
+      </div>
+
+      <div class="ref-bar-track" style="margin:6px 0">
+        <div class="ref-bar-fill ${it.P25 < 0.15 ? 'negative' : ''}" style="width:${pctBar}%"></div>
+      </div>
+
+      ${it.nOpt > 0 ? `
+        <div class="prob-cand-msgs" style="margin-bottom:4px">
+          <div>• ${esc(it.msgE)}</div>
+          <div>• ${esc(it.msgP25)}</div>
+        </div>
+        <div class="prob-cand-tradeoff" style="margin-bottom:6px">${esc(it.cuadrante.tradeoff)}</div>
+        ${buildAlertBlockHtml(it.alertas)}
+      ` : ''}
+
+      <div style="margin-top:8px">
+        <div style="font-size:0.73rem;color:var(--muted);margin-bottom:4px">Mi probabilidad en esta opción (clic para cambiar en vivo):</div>
+        <div class="prob-scale-row">${scaleBtnsHtml}</div>
+      </div>
+
+      <div class="ref-opt-meta" style="margin-top:8px">
+        <div class="ref-voters">${votersHtml}</div>
+        <button type="button" class="btn-JumpDebate">
+          💬 ${pros + cons > 0 ? `▲${pros} ▼${cons} · Debatir` : 'Debatir opción'}
+        </button>
+      </div>
+    `;
+
+    bindAlertExpandButtons(row);
+
+    row.querySelectorAll('.btn-prob-cat').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const pVal = typeof clipProbabilidad === 'function'
+          ? clipProbabilidad(btn.dataset.prob)
+          : Math.min(0.95, Math.max(0, Number(btn.dataset.prob)));
+        const next = Object.assign({}, myDict);
+        if (next[it.key] != null && Math.abs(next[it.key] - pVal) < 0.03) {
+          delete next[it.key];
+        } else {
+          next[it.key] = pVal;
+        }
+        patchSingleAnswer(q.id, next);
+      });
+    });
+
+    row.querySelector('.btn-JumpDebate').addEventListener('click', () => {
+      if (typeof openDebateFor === 'function') openDebateFor(q.id, it.key);
+    });
+
+    return row;
+  };
+
+  // Cabecera de síntesis de la pregunta (Expectativa a priori vs Candidatas en Frontera de Pareto)
+  const summaryBar = div();
+  summaryBar.style.cssText = 'display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px;font-size:0.82rem;color:var(--muted)';
+  summaryBar.innerHTML = `
+    <span><b>Candidatas en la Frontera de Pareto (${evalRes.frontera.length})</b> · Las opciones no dominadas compiten en la decisión principal.</span>
+    <span>Votantes: <b>${evalRes.nVotantes}</b> · Asistencia esperada a priori: <b>${evalRes.eBase.toFixed(1)}</b> pers.</span>
+  `;
+  card.appendChild(summaryBar);
+
+  const frontList = div('ref-opt-list');
+  if (evalRes.frontera.length) {
+    evalRes.frontera.forEach(it => {
+      const isPred = !!(evalRes.predilecta && evalRes.predilecta.key === it.key);
+      frontList.appendChild(renderOptionRow(it, isPred, false));
+    });
+  } else {
+    // Si aún nadie ha votado o todas tienen veto en grupo <= 4, mostramos las sin voto para poder votarlas
+    const sinVotos = evalRes.opciones.filter(o => o.nOpt === 0);
+    if (sinVotos.length) {
+      sinVotos.forEach(it => frontList.appendChild(renderOptionRow(it, false, false)));
+    } else {
+      const msg = div('muted-note', 'Ninguna opción supera el filtro de viabilidad en grupo pequeño (n ≤ 4 con algún voto 0.00). Despliega las opciones descartadas debajo.');
+      frontList.appendChild(msg);
+    }
+  }
+  card.appendChild(frontList);
+
+  // Opciones aún sin ningún voto cuando ya hay frontera activa (para que cualquier usuario pueda estrenarlas)
+  const unwatched = evalRes.opciones.filter(o => o.nOpt === 0);
+  if (evalRes.frontera.length && unwatched.length) {
+    const unwatchedWrap = div('ref-opt-list');
+    unwatchedWrap.style.marginTop = '8px';
+    unwatched.forEach(it => unwatchedWrap.appendChild(renderOptionRow(it, false, false)));
+    card.appendChild(unwatchedWrap);
+  }
+
+  // §5.2 y §7: Apartado secundario plegado ("Resto / opciones descartadas")
+  if (evalRes.descartadas.length) {
+    const details = document.createElement('details');
+    details.className = 'prob-discarded-details';
+    details.style.marginTop = '12px';
+    const summary = document.createElement('summary');
+    summary.textContent = `Ver resto / opciones descartadas por dominancia de Pareto (${evalRes.descartadas.length})`;
+    const discList = div('ref-opt-list');
+    discList.style.marginTop = '8px';
+    evalRes.descartadas.forEach(it => {
+      discList.appendChild(renderOptionRow(it, false, true));
+    });
+    details.append(summary, discList);
+    card.appendChild(details);
+  }
+}
+
 function buildOptionsConsensus(card, q, myVal) {
   const pcIdx = pcIndex();
   const opts  = (q.opciones || []).map(op => {
     const key    = optVal(q, op);
     const precio = (op && typeof op === 'object' && op.precio) ? op.precio : null;
     const url    = (op && typeof op === 'object' && op.url) ? safeUrl(op.url) : '';
-    const foto = (op && typeof op === 'object' && op.foto) ? safeUrl(op.foto) : '';
+    const foto   = (op && typeof op === 'object' && op.foto) ? safeUrl(op.foto) : '';
     return { key, precio, url, foto, score: 0, rawScore: 0, voters: [], vetoes: [] };
   });
 
@@ -636,15 +895,28 @@ function buildOptionsConsensus(card, q, myVal) {
   card.appendChild(list);
 }
 
+// ── SLIDER CONSENSUS (Soporta escalar clásico y objeto Dual { ideal, max }) ─
 function buildSliderConsensus(card, q, myVal) {
   const cfg  = q.config || {};
   const min  = cfg.min ?? 10, max = cfg.max ?? 500, step = cfg.step ?? 10;
-  const unit = cfg.unit ?? (/^(precio|presu)_/.test(q.id) ? ' €' : '');
+  const unit = cfg.unit ?? (/^(precio|presu)/.test(q.id) ? ' €' : '');
+
+  const unpackSlider = v => {
+    if (v == null) return null;
+    if (typeof v === 'object') {
+      const ideal = Number(v.ideal ?? v.value ?? v.min);
+      const cap   = Number(v.max ?? ideal);
+      if (!isFinite(ideal)) return null;
+      return { ideal, max: isFinite(cap) ? Math.max(ideal, cap) : ideal, isDual: isFinite(cap) && cap > ideal };
+    }
+    const num = Number(v);
+    return isFinite(num) ? { ideal: num, max: num, isDual: false } : null;
+  };
 
   const entries = [];
   respuestas.forEach(r => {
-    const v = extractAnswer(r.answers, q);
-    if (v != null && !isNaN(v)) entries.push({ nombre: r.nombre, val: Number(v) });
+    const parsed = unpackSlider(extractAnswer(r.answers, q));
+    if (parsed) entries.push({ nombre: r.nombre, val: parsed.ideal, max: parsed.max, isDual: parsed.isDual });
   });
 
   if (!entries.length) {
@@ -652,24 +924,31 @@ function buildSliderConsensus(card, q, myVal) {
     return;
   }
 
-  entries.sort((a, b) => a.val - b.val);
-  const vals = entries.map(e => e.val);
-  const vMin = vals[0];
-  const q1   = vals[Math.floor((vals.length - 1) * 0.25)];
-  const med  = vals[Math.floor((vals.length - 1) * 0.50)];
-  const mean = vals.reduce((acc, x) => acc + x, 0) / vals.length;
-  const curMyVal = (myVal != null && !isNaN(myVal)) ? Number(myVal) : (cfg.default ?? med);
+  entries.sort((a, b) => a.max - b.max || a.val - b.val);
+  const hardCaps = entries.map(e => e.max);
+  const ideals   = entries.map(e => e.val).sort((a, b) => a - b);
+
+  const vMinCap   = hardCaps[0];
+  const vMinIdeal = ideals[0];
+  const q1   = ideals[Math.floor((ideals.length - 1) * 0.25)];
+  const med  = ideals[Math.floor((ideals.length - 1) * 0.50)];
+  const mean = ideals.reduce((acc, x) => acc + x, 0) / ideals.length;
+
+  const myParsed  = unpackSlider(myVal);
+  const curMyVal  = myParsed ? myParsed.ideal : (cfg.default ?? med);
+  const curMyMax  = myParsed ? myParsed.max   : curMyVal;
+  const hasMyDual = myParsed ? myParsed.isDual : false;
 
   const wrap = div('ref-slider-analysis');
   wrap.innerHTML = `
     <div class="kpi-grid" style="margin-bottom:14px">
       <div class="kpi-box">
-        <span class="kpi-label">Restricción Activa (Mín)</span>
-        <span class="kpi-val" style="color:var(--accent)">${vMin}${esc(unit)}</span>
-        <small>Por ${esc(entries[0].nombre)}</small>
+        <span class="kpi-label">Restricción Activa (Hard Cap)</span>
+        <span class="kpi-val" style="color:var(--accent)">${vMinCap}${esc(unit)}</span>
+        <small>Por ${esc(entries[0].nombre)}${vMinIdeal < vMinCap ? ` ( cómodo mín: ${vMinIdeal}${esc(unit)} )` : ''}</small>
       </div>
       <div class="kpi-box">
-        <span class="kpi-label">Percentil 25 (Q₁)</span>
+        <span class="kpi-label">Percentil 25 (Q₁ cómodo)</span>
         <span class="kpi-val">${q1}${esc(unit)}</span>
         <small>75% del grupo lo acepta</small>
       </div>
@@ -682,13 +961,14 @@ function buildSliderConsensus(card, q, myVal) {
     <div class="ref-dist-list">
       ${entries.map(e => {
         const pct = max > min ? ((e.val - min) / (max - min)) * 100 : 50;
+        const capTxt = e.isDual ? ` <small style="color:var(--muted)">(tope ${e.max}${esc(unit)})</small>` : '';
         return `
           <div class="ref-dist-row">
             <span class="ref-dist-name">${esc(e.nombre)}</span>
             <div class="ref-bar-track" style="flex:1">
               <div class="ref-bar-fill" style="width:${Math.max(4, Math.min(100, pct))}%"></div>
             </div>
-            <span class="ref-dist-val">${e.val}${esc(unit)}</span>
+            <span class="ref-dist-val" style="width:auto;min-width:75px;text-align:right">${e.val}${esc(unit)}${capTxt}</span>
           </div>
         `;
       }).join('')}
@@ -696,7 +976,7 @@ function buildSliderConsensus(card, q, myVal) {
 
     <div class="ref-reformulario-box">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-        <span style="font-size:0.85rem;font-weight:500">Ajustar mi límite en caliente:</span>
+        <span style="font-size:0.85rem;font-weight:500">Ajustar mi presupuesto cómodo en caliente:</span>
         <strong class="ref-live-val" style="color:var(--accent2);font-size:1.1rem">${curMyVal}${esc(unit)}</strong>
       </div>
       <input type="range" class="ref-live-slider" min="${min}" max="${max}" step="${step}" value="${curMyVal}">
@@ -708,11 +988,18 @@ function buildSliderConsensus(card, q, myVal) {
   const updatePct = () => {
     const pct = max > min ? ((+sl.value - min) / (max - min)) * 100 : 0;
     sl.style.setProperty('--pct', pct + '%');
-    lbl.textContent = sl.value + unit;
+    lbl.textContent = sl.value + unit + (hasMyDual ? ` (Tope: ${Math.max(+sl.value, curMyMax)}${unit})` : '');
   };
   updatePct();
   sl.addEventListener('input', updatePct);
-  sl.addEventListener('change', () => patchSingleAnswer(q.id, +sl.value));
+  sl.addEventListener('change', () => {
+    const newIdeal = +sl.value;
+    if (hasMyDual) {
+      patchSingleAnswer(q.id, { ideal: newIdeal, max: Math.max(newIdeal, curMyMax), value: newIdeal });
+    } else {
+      patchSingleAnswer(q.id, newIdeal);
+    }
+  });
 
   card.appendChild(wrap);
 }
@@ -724,9 +1011,8 @@ function buildDisponibilidadConsensus(card) {
     return;
   }
 
-  // Heatmap compacto de disponibilidad por persona y fecha
   const wrap = div();
-  const datesSlice = model.indiceFechas.slice(0, 45); // Primeros 45 días activos para legibilidad
+  const datesSlice = model.indiceFechas.slice(0, 45);
   wrap.innerHTML = `
     <div style="font-size:0.82rem;color:var(--muted);margin-bottom:8px">
       Mapa de calor diario (${model.indiceFechas.length} días en el horizonte; las ventanas óptimas combinadas se muestran arriba):
@@ -761,9 +1047,14 @@ function buildRadioConsensus(card, q, myVal) {
   const cs = getRadioStepperConfig(q);
   const counts = new Map();
   (q.opciones || []).forEach(op => {
-    const s = String(op);
-    const [val, label] = s.includes('|') ? s.split('|') : [s, s];
-    counts.set(val, { val, label, users: [], extraSum: 0 });
+    const norm = typeof normalizeOption === 'function'
+      ? normalizeOption(q, op)
+      : (() => {
+          const s = (op && typeof op === 'object') ? String(op.nombre || '') : String(op);
+          const [val, label] = s.includes('|') ? s.split('|') : [s, s];
+          return { key: val, label };
+        })();
+    counts.set(norm.key, { val: norm.key, label: norm.label, users: [], extraSum: 0 });
   });
 
   respuestas.forEach(r => {
@@ -773,7 +1064,9 @@ function buildRadioConsensus(card, q, myVal) {
     const entry = counts.get(est);
     if (entry) {
       const extra = (cs && typeof v === 'object' && v[cs.key || 'plazasLibres']) ? Number(v[cs.key || 'plazasLibres']) : 0;
-      entry.users.push({ nombre: r.nombre, extra });
+      const prefsObj = (typeof v === 'object') ? (v.prefPasajeros || v.prefCoches || null) : null;
+      const favs = prefsObj ? Object.entries(prefsObj).filter(([, s]) => Number(s) > 0).map(([k]) => k) : [];
+      entry.users.push({ nombre: r.nombre, extra, favs });
       entry.extraSum += extra;
     }
   });
@@ -796,14 +1089,22 @@ function buildRadioConsensus(card, q, myVal) {
         </div>
       </div>
       <div class="ref-voters" style="margin-top:6px">
-        ${item.users.map(u => `<span class="voter-chip">${esc(u.nombre)}${u.extra ? ` (+${u.extra} pl.)` : ''}</span>`).join('') || `<span style="color:var(--muted);font-size:0.75rem">Nadie aún</span>`}
+        ${item.users.map(u => {
+          const favTxt = u.favs && u.favs.length ? ` · ★ ${u.favs.join(', ')}` : '';
+          return `<span class="voter-chip">${esc(u.nombre)}${u.extra ? ` (+${u.extra} pl.)` : ''}${esc(favTxt)}</span>`;
+        }).join('') || `<span style="color:var(--muted);font-size:0.75rem">Nadie aún</span>`}
       </div>
     `;
 
     row.querySelector('.btn-ref-toggle').addEventListener('click', () => {
       if (cs) {
-        const payload = { estado: item.val };
-        if (item.val === cs.when) payload[cs.key || 'plazasLibres'] = myExtra;
+        const payload = (myVal && typeof myVal === 'object') ? Object.assign({}, myVal) : {};
+        payload.estado = item.val;
+        if (item.val === cs.when) {
+          payload[cs.key || 'plazasLibres'] = myExtra;
+        } else {
+          delete payload[cs.key || 'plazasLibres'];
+        }
         patchSingleAnswer(q.id, payload);
       } else {
         patchSingleAnswer(q.id, item.val);
@@ -817,33 +1118,31 @@ function buildRadioConsensus(card, q, myVal) {
 }
 
 function buildTextareaConsensus(card, q) {
-    if (q.config?.descripcion) {
-        card.innerHTML += `<div class="md-content">${renderMarkdown(q.config.descripcion)}</div>`;
-        return;
-    }
-    const notes = [];
-    respuestas.forEach(r => {
-        const v = extractAnswer(r.answers, q);
-        if (v && String(v).trim()) notes.push({ nombre: r.nombre, texto: String(v).trim() });
-    });
-    
-    if (!notes.length) {
-        card.innerHTML += `<p style="color:var(--muted);font-size:0.85rem">Sin comentarios adicionales.</p>`;
-        return;
-    }
-    
-    const wrap = div('ref-notes-list');
-    notes.forEach(n => {
-        const item = div('ref-note-item');
-        // Se mantiene esc() para el nombre del usuario por seguridad, 
-        // pero se usa renderMarkdown() para el contenido del texto.
-        item.innerHTML = `<strong>${esc(n.nombre)}:</strong> <div class="md-content">${renderMarkdown(n.texto)}</div>`;
-        wrap.appendChild(item);
-    });
-    card.appendChild(wrap);
-}
-// ── OPTIMIZADOR DE VENTANAS HORARIAS Y RESTRICCIONES (Comidas, Cine, Clases…) ──
+  if (q.config?.descripcion) {
+    card.innerHTML += `<div class="md-content">${renderMarkdown(q.config.descripcion)}</div>`;
+    return;
+  }
+  const notes = [];
+  respuestas.forEach(r => {
+    const v = extractAnswer(r.answers, q);
+    if (v && String(v).trim()) notes.push({ nombre: r.nombre, texto: String(v).trim() });
+  });
 
+  if (!notes.length) {
+    card.innerHTML += `<p style="color:var(--muted);font-size:0.85rem">Sin comentarios adicionales.</p>`;
+    return;
+  }
+
+  const wrap = div('ref-notes-list');
+  notes.forEach(n => {
+    const item = div('ref-note-item');
+    item.innerHTML = `<strong>${esc(n.nombre)}:</strong> <div class="md-content">${renderMarkdown(n.texto)}</div>`;
+    wrap.appendChild(item);
+  });
+  card.appendChild(wrap);
+}
+
+// ── OPTIMIZADOR DE VENTANAS HORARIAS Y RESTRICCIONES (Comidas, Cine, Clases…) ──
 function parseHHMM(str) {
   if (!str) return null;
   const [h, m] = String(str).split(':').map(Number);
@@ -870,7 +1169,6 @@ function buildHorariosConsensus(card, q, myVal) {
   const base = (myVal && typeof myVal === 'object')
     ? myVal : { disponibilidades: [], restricciones: [], duracionHoras: q.config?.duracionIdeal || 3 };
 
-  // Aplica un cambio a MI respuesta y sincroniza
   const commit = mut => {
     const nv = JSON.parse(JSON.stringify(base));
     nv.disponibilidades = nv.disponibilidades || [];
@@ -902,7 +1200,6 @@ function buildHorariosConsensus(card, q, myVal) {
     const durIdeal = duraciones.length ? duraciones[Math.floor(duraciones.length / 2)] : (q.config?.duracionIdeal || 3);
     const fechasOrdenadas = [...fechasSet].sort();
 
-    // Malla de 30 min adaptada a las franjas definidas
     const tMin = Math.floor(Math.min(...FR.map(f => f.start)) * 2) / 2;
     const tMax = Math.ceil(Math.max(...FR.map(f => f.end)) * 2) / 2;
     const SLOTS = [];
