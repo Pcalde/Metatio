@@ -108,7 +108,7 @@ button, label, a, input, textarea, select { -webkit-tap-highlight-color: transpa
 
     --ausentes: #dfc80079;
     --lider:    #121f1c83;
-
+    --iconos:   rgba(153, 100, 3, 0.582);
     --ok-bg:    #1f2e1c;
     --err-bg:   #2e1c1a;
     --warn-bg:  #2e2718;
