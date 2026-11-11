@@ -20,7 +20,6 @@
 (function () {
   'use strict';
 
-  // 1) Inyecta parámetros centralizados en config.js → variables libres del motor.
   window.Engine = {
     configure(overrides = {}) {
       UMBRAL_HORA_SOLAPE = overrides.umbralHoraSolape ?? ENGINE_PARAMS.UMBRAL_HORA_SOLAPE;
@@ -28,19 +27,43 @@
       mcUseEmpiricalProb = overrides.mcEmpirico       ?? mcUseEmpiricalProb;
     },
 
-    // 2) Pipeline completo: estado global → modelo → soluciones → topología.
+    // Pipeline completo: estado global → modelo (incluyendo Pareto global) → soluciones → topología.
     run() {
       this.configure();
-      const model     = buildModelData();                 // engine/optimizador.js
+      const model     = buildModelData();
       const { soluciones, diagnosticos } = ejecutarMotorFactibilidad(model);
       const topo      = computeTopologyAndSensitivity(model, soluciones);
-      return { model, soluciones, diagnosticos, topo };
+      return {
+        model,
+        soluciones,
+        diagnosticos,
+        topo,
+        probabilidades: model.probGlobal || {},
+      };
     },
 
-    // 3) Re-cálculo puntual tras cambiar un voto aislado (patchSingleAnswer).
-    recomputeForQ(qid) { /* FASE 2: extraer aquí el branch por-pregunta */ }
-  };
+    // Evalúa bajo demanda una pregunta `probabilidad-opcion` para todo el grupo o para un subconjunto de nombres
+    evaluarProbabilidad(qOrId, filtroNombres = null) {
+      const q = typeof qOrId === 'object' ? qOrId : (schema || []).find(x => x.id === qOrId);
+      if (!q) return null;
+      const model = buildModelData();
+      const subgrupo = Array.isArray(filtroNombres)
+        ? model.viajeros.filter(v => filtroNombres.includes(v.nombre))
+        : model.viajeros;
+      return evaluarCatalogoProbabilidad(q, subgrupo);
+    },
 
-  // Arranque equivalente al actual: renderReformulario() llamará a Engine.run()
-  // en la FASE 2. Mientras reformulario.js siga enlazado, este archivo es inerte.
+    // Re-cálculo puntual tras cambiar un voto aislado
+    recomputeForQ(qid) {
+      const q = (schema || []).find(x => x.id === qid);
+      if (q && q.tipo === 'probabilidad-opcion') {
+        if (typeof window.refreshProbabilidadCards === 'function') window.refreshProbabilidadCards();
+        return this.evaluarProbabilidad(q);
+      }
+      if (q && q.tipo === 'radio' && typeof window.refreshTransportCards === 'function') {
+        window.refreshTransportCards();
+      }
+      return this.run();
+    }
+  };
 })();

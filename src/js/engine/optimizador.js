@@ -11,6 +11,13 @@
 //  ⚠ FASE 1 DE LA REESTRUCTURACIÓN: este archivo aún NO está enlazado por
 //    ningún <script>; reformulario.js sigue siendo la fuente canónica hasta
 //    que el envoltorio sustituya al monolito. Ver docs/arquitectura.md.
+//
+//  Incluye:
+//  · Soporte completo para `probabilidad-opcion` (E[X], P25[X], Frontera de
+//    Pareto, opción predilecta, cuadrantes 2x2 y alertas §6).
+//  · Simulación Monte Carlo condicional por opción en `simularFragilidad`.
+//  · Soporte para Slider Dual ({ ideal, max }) en restricciones de presupuesto.
+//  · Emparejamiento bilateral de transporte (prefPasajeros + prefCoches).
 // ══════════════════════════════════════════════════════════════════════════
 
 var UMBRAL_HORA_SOLAPE = 1.5;   // θ (R7): horas mínimas de solape horario
@@ -39,12 +46,12 @@ function diffDaysISO(isoA, isoB) {
 
 function isWeekendISO(iso) {
   const d = new Date(iso + 'T00:00:00Z').getUTCDay();
-  return d === 5 || d === 6; // Viernes o Sábado (weekday 5, 6 en Python equivalen a Sáb/Dom; aquí Vie/Sáb/Dom)
+  return d === 5 || d === 6;
 }
 
 function isSatSunISO(iso) {
   const d = new Date(iso + 'T00:00:00Z').getUTCDay();
-  return d === 0 || d === 6; // Sábado o Domingo (exacto a d.weekday() in (5,6) de Python)
+  return d === 0 || d === 6;
 }
 
 function parsePrecioNumerico(raw) {
@@ -53,12 +60,38 @@ function parsePrecioNumerico(raw) {
   return m ? parseFloat(m[1].replace(',', '.')) : null;
 }
 
-// ── 2b. CRUCE DE HORARIOS (capa B del modelo de dos capas) ──────────────────
-// Solape horario mínimo exigido entre miembros del núcleo, en horas.
-var UMBRAL_HORA_SOLAPE = 1.5;
+// Acota la probabilidad individual al rango operativo [0.00, 0.95] (§3)
+function clipProbMotor(p) {
+  const n = Number(p);
+  if (!isFinite(n) || n <= 0) return 0.00;
+  if (n > 1 && n <= 100) return Math.min(0.95, Math.round(n) / 100);
+  return Math.min(0.95, Math.round(n * 100) / 100);
+}
 
-// Normaliza la duración del plan: enteros [1..12] se interpretan como nº de
-// franjas consecutivas; reales > 12 se interpretan como horas.
+// Percentil 25 robusto (§4.2):
+// - n in [4, 7]: segundo valor más bajo del vector ordenado.
+// - n <= 3: mínimo.
+// - n >= 8: interpolación lineal estándar.
+function calcP25Motor(sortedProbs) {
+  const n = sortedProbs.length;
+  if (n === 0) return 0;
+  if (n <= 3)  return sortedProbs[0];
+  if (n < 8)   return sortedProbs[1];
+  const pos = 0.25 * (n - 1);
+  const lo  = Math.floor(pos);
+  const hi  = Math.ceil(pos);
+  const a   = pos - lo;
+  return sortedProbs[lo] + a * (sortedProbs[hi] - sortedProbs[lo]);
+}
+
+// Determina si una pregunta `probabilidad-opcion` representa un catálogo de alojamientos
+function esCatalogoCasasProb(q) {
+  if (!q || q.tipo !== 'probabilidad-opcion') return false;
+  if (q.config && q.config.modoCasas) return true;
+  return (q.opciones || []).some(o => o && typeof o === 'object' && (o.precio || o.url || o.foto));
+}
+
+// ── 2b. CRUCE DE HORARIOS (capa B del modelo de dos capas) ──────────────────
 function duracionPlanHoras(qHor) {
   const raw = qHor && qHor.config ? Number(qHor.config.duracionHoras) : NaN;
   if (!isFinite(raw) || raw <= 0) return 3;
@@ -69,9 +102,6 @@ function duracionPlanHoras(qHor) {
   return raw;
 }
 
-// Conjunto de intervalos horarios [ini, fin) en los que el viajero está libre
-// un día dado: union de sus franjas disponibles expandidas por la duración
-// ideal del plan (deslizando la ventana hacia atrás para respetar la longitud).
 function ventanasHorariasDelDia(franjasIds, durH, franjas) {
   const ivs = [];
   franjas.forEach(f => {
@@ -91,7 +121,6 @@ function ventanasHorariasDelDia(franjasIds, durH, franjas) {
   return merged;
 }
 
-// Intersección de listas de intervalos; devuelve [] si el cruce es vacío.
 function intersectIntervalLists(A, B) {
   const out = [];
   for (const [a1, a2] of A) {
@@ -103,8 +132,6 @@ function intersectIntervalLists(A, B) {
   return out;
 }
 
-// Cruce de horarios entre dos viajeros para una ventana de días dada:
-// mayor solape efectivo (horas) y franja resultante. null si no hay cruce.
 function cruzarHorariosPareja(vA, vB, diasRango, durH, franjas) {
   if (!vA.horFranjasPorDia || !vB.horFranjasPorDia) return null;
   let best = null;
@@ -121,7 +148,6 @@ function cruzarHorariosPareja(vA, vB, diasRango, durH, franjas) {
     }
   }
   if (!best) return null;
-  // Formato legible: "26/12 (18:00) → 27/12 (05:00)" (la fecha se repite solo si cambia de día)
   const fIni = fmtShortDate(best.dia);
   const hIni = Math.floor(best.ini), mIni = Math.round((best.ini - hIni) * 60);
   const fFin = fmtShortDate(addDaysISO(best.dia, Math.floor(hIni / 24)));
@@ -140,34 +166,183 @@ function addDaysISO(iso, n) {
   return dt.toISOString().slice(0, 10);
 }
 
+// ── 2c. EVALUADOR PARETO DE PROBABILIDAD POR OPCIÓN (§4, §5, §6 y §7) ──────
+function evaluarCatalogoProbabilidad(q, viajerosSubgrupo) {
+  if (!q || !Array.isArray(q.opciones) || !q.opciones.length) return null;
+  const qid = q.id;
+
+  // Votantes del subgrupo que han respondido a esta pregunta
+  const votantesActivos = viajerosSubgrupo.filter(v =>
+    v.probRespuestas && v.probRespuestas[qid] && Object.keys(v.probRespuestas[qid]).length > 0
+  );
+  const nVotantes = votantesActivos.length;
+  const eBase = votantesActivos.reduce((acc, v) => acc + clipProbMotor(v.probEfectiva ?? 0.80), 0);
+
+  const items = (q.opciones || []).map(rawOp => {
+    const key = typeof optVal === 'function'
+      ? optVal(q, rawOp)
+      : (rawOp && typeof rawOp === 'object' ? String(rawOp.nombre || '') : String(rawOp));
+    const label = (rawOp && typeof rawOp === 'object') ? String(rawOp.nombre || key) : key;
+    const precioStr = (rawOp && typeof rawOp === 'object' && rawOp.precio) ? String(rawOp.precio) : null;
+    const precioNum = parsePrecioNumerico(precioStr);
+
+    const vec = [];
+    const probPorViajero = {};
+    votantesActivos.forEach(v => {
+      const dict = v.probRespuestas[qid];
+      if (dict && key in dict) {
+        const p = clipProbMotor(dict[key]);
+        vec.push(p);
+        probPorViajero[v.nombre] = p;
+      }
+    });
+
+    const sorted = [...vec].sort((a, b) => a - b);
+    const nOpt   = sorted.length;
+    const E      = sorted.reduce((a, b) => a + b, 0);
+    const P25    = calcP25Motor(sorted);
+    const nVetos = sorted.filter(p => p === 0).length;
+    const nBajos = sorted.filter(p => p <= 0.20).length;
+
+    const eBaseOpt  = nVotantes > 0 ? eBase * (nOpt / nVotantes) : 0;
+    const deltaBase = E - eBaseOpt;
+
+    // §5.5 Regla para grupos pequeños (n <= 4): un 0.00 marca la opción como inviable
+    const inviableGrupoPequeno = (nOpt > 0 && nOpt <= 4 && nVetos > 0);
+
+    // §5.3 Mensajes operativos en pareja (E[X] y P25[X])
+    const diffAbs = Math.abs(deltaBase).toFixed(1);
+    let diffPhrase = `igual a lo que se esperaba a priori (${eBaseOpt.toFixed(1)})`;
+    if (deltaBase <= -0.05) diffPhrase = `lo cual es ${diffAbs} menos de lo que se esperaba a priori (${eBaseOpt.toFixed(1)})`;
+    else if (deltaBase >= 0.05) diffPhrase = `lo cual es ${diffAbs} más de lo que se esperaba a priori (${eBaseOpt.toFixed(1)})`;
+
+    const msgE   = `Se espera que a este viaje asistáis ${E.toFixed(1)} personas, ${diffPhrase}.`;
+    const msgP25 = `El 75% de los votantes tienen como mínimo ${P25.toFixed(2)} de probabilidad de asistir a esta opción.`;
+
+    // §4.3 Cuadrante 2x2
+    const refE  = eBaseOpt > 0 ? eBaseOpt * 0.75 : nOpt * 0.55;
+    const highE = nOpt > 0 && E >= refE;
+    const highP = P25 >= 0.50;
+    let cuadrante;
+    if (highE && highP) {
+      cuadrante = { id: 'ganador', label: 'Ganador claro', tradeoff: 'Alta asistencia media esperada y sólido compromiso en la cola baja.' };
+    } else if (highE && !highP) {
+      cuadrante = { id: 'polarizante', label: 'Popular pero polarizante', tradeoff: 'Lleva a más gente en media, pero depende de que los indecisos se animen.' };
+    } else if (!highE && highP) {
+      cuadrante = { id: 'tibio', label: 'Consensuado pero tibio', tradeoff: 'Nadie expresa rechazo fuerte, pero el entusiasmo general es moderado.' };
+    } else {
+      cuadrante = { id: 'rechazar', label: 'Rechazar / Baja tracción', tradeoff: 'Baja asistencia esperada y escasa garantía entre los votantes.' };
+    }
+
+    // §6 Alertas priorizadas (1. Colapso de cola, 2. Caída respecto al plan base)
+    const alertas = [];
+    if (nOpt > 0 && (P25 === 0 || P25 < 0.15)) {
+      const det = nVetos > 0
+        ? `${nVetos} ${nVetos === 1 ? 'persona declara' : 'personas declaran'} «Nunca» (0.00)`
+        : `${nBajos} ${nBajos === 1 ? 'persona tiene' : 'personas tienen'} probabilidad ≤ 0.20`;
+      alertas.push({
+        tipo: 'colapso_cola',
+        prioridad: 1,
+        mensaje: `Colapso de cola (P25 = ${P25.toFixed(2)}): ${det}. Riesgo real de bajas si se elige esta opción.`,
+      });
+    }
+    if (nOpt > 0 && deltaBase < -1.5) {
+      alertas.push({
+        tipo: 'caida_base',
+        prioridad: 2,
+        mensaje: `Caída respecto al plan base: se pierden ${Math.abs(deltaBase).toFixed(1)} asistentes esperados respecto a la expectativa a priori (${eBaseOpt.toFixed(1)}).`,
+      });
+    }
+
+    return {
+      key,
+      label,
+      precio: precioStr,
+      precio_num: precioNum,
+      nOpt,
+      E,
+      P25,
+      eBaseOpt,
+      deltaBase,
+      nVetos,
+      nBajos,
+      inviableGrupoPequeno,
+      vectorProbabilidades: sorted,
+      probPorViajero,
+      msgE,
+      msgP25,
+      cuadrante,
+      alertas,
+      dominadaPor: null,
+    };
+  });
+
+  // §5.2 Dominancia de Pareto
+  const EPS = 1e-9;
+  const evaluables = items.filter(it => it.nOpt > 0 && !it.inviableGrupoPequeno);
+  evaluables.forEach(b => {
+    const dom = evaluables.find(a =>
+      a.key !== b.key &&
+      a.E >= b.E - EPS &&
+      a.P25 >= b.P25 - EPS &&
+      (a.E > b.E + EPS || a.P25 > b.P25 + EPS)
+    );
+    if (dom) b.dominadaPor = dom.label;
+  });
+
+  const frontera = evaluables
+    .filter(it => !it.dominadaPor)
+    .sort((a, b) => (b.E - a.E) || (b.P25 - a.P25));
+
+  const descartadas = items
+    .filter(it => it.nOpt > 0 && (it.dominadaPor || it.inviableGrupoPequeno))
+    .sort((a, b) => (b.E - a.E) || (b.P25 - a.P25));
+
+  const totalConVotos = items.filter(it => it.nOpt > 0).length;
+  const predilecta = (frontera.length === 1 && totalConVotos >= 2) ? frontera[0] : null;
+
+  return {
+    questionId: qid,
+    label: q.label,
+    nVotantes,
+    eBase,
+    opciones: items,
+    frontera,
+    descartadas,
+    predilecta,
+  };
+}
+
 // ── 2. NORMALIZACIÓN Y MATRIZ DE DISPONIBILIDAD (Port de datos.py) ──────────
 function buildModelData() {
   const qDisp  = schema.find(q => q.tipo === 'disponibilidad');
   const qTrans = schema.find(q => getRadioStepperConfig(q));
-  const qPrec  = schema.find(q => q.tipo === 'slider');
-  const qCasas = schema.find(q => q.tipo === 'casas');
-  const qOpts  = schema.find(q => q.tipo === 'checkbox' || q.tipo === 'voto-ponderado');
-  const qHor = schema.find(q => q.tipo === 'horarios');
+  const qPrec  = schema.find(q => q.tipo === 'slider' && q.id !== 'prob_asistencia_propia') || schema.find(q => q.tipo === 'slider');
+  const qCasas = schema.find(q => q.tipo === 'casas') || schema.find(esCatalogoCasasProb);
+  const qOpts  = schema.find(q => q.tipo === 'checkbox' || q.tipo === 'voto-ponderado' || (q.tipo === 'probabilidad-opcion' && q !== qCasas));
+  const qHor   = schema.find(q => q.tipo === 'horarios');
+  const qProbs = schema.filter(q => q.tipo === 'probabilidad-opcion');
 
   const viajeros = [];
   const allDatesSet = new Set();
 
   const _expand = (a, b) => {
-      const out = []; if (!a || !b || b < a) return out;
-      const cur = new Date(a + 'T00:00:00Z'), end = new Date(b + 'T00:00:00Z');
-      for (let g = 0; cur <= end && g < 180; g++, cur.setUTCDate(cur.getUTCDate() + 1))
-        out.push(cur.toISOString().slice(0, 10));
-      return out;
-    };
+    const out = []; if (!a || !b || b < a) return out;
+    const cur = new Date(a + 'T00:00:00Z'), end = new Date(b + 'T00:00:00Z');
+    for (let g = 0; cur <= end && g < 180; g++, cur.setUTCDate(cur.getUTCDate() + 1))
+      out.push(cur.toISOString().slice(0, 10));
+    return out;
+  };
+
   const fechasGlobal = new Set();
-    respuestas.forEach(r => {
-      const d = qDisp ? extractAnswer(r.answers || {}, qDisp) : null;
-      if (d && d.noSe) return;
-      ((d && d.rangos) || []).forEach(rg => _expand(rg.desde, rg.hasta).forEach(f => fechasGlobal.add(f)));
-      const h = qHor ? extractAnswer(r.answers || {}, qHor) : null;
-      if (h && Array.isArray(h.disponibilidades)) for (const f of dispToMap(h.disponibilidades).keys()) fechasGlobal.add(f);
-    });
-    
+  respuestas.forEach(r => {
+    const d = qDisp ? extractAnswer(r.answers || {}, qDisp) : null;
+    if (d && d.noSe) return;
+    ((d && d.rangos) || []).forEach(rg => _expand(rg.desde, rg.hasta).forEach(f => fechasGlobal.add(f)));
+    const h = qHor ? extractAnswer(r.answers || {}, qHor) : null;
+    if (h && Array.isArray(h.disponibilidades)) for (const f of dispToMap(h.disponibilidades).keys()) fechasGlobal.add(f);
+  });
+
   respuestas.forEach(r => {
     const ans = r.answers || {};
     const disp = qDisp ? extractAnswer(ans, qDisp) : null;
@@ -187,17 +362,13 @@ function buildModelData() {
     let forzarFechas = null;
     if (disp && disp.noSe) {
       const pAns = ans.prob_asistencia_propia;
+      const pVal = (pAns && typeof pAns === 'object') ? (pAns.ideal ?? pAns.value) : pAns;
       const pResp = (respondentes.find(x => x.nombre.toLowerCase() === r.nombre.toLowerCase()) || {}).prob_asistencia;
-      const p = (pAns != null ? pAns : (pResp != null ? pResp : 80)) / 100;
-      if (p <= 0.5 || !fechasGlobal.size) return;   // "a nada": fuera del modelo
-      forzarFechas = new Set(fechasGlobal);          // "a todo"
+      const p = (pVal != null ? pVal : (pResp != null ? pResp : 80)) / 100;
+      if (p <= 0.5 || !fechasGlobal.size) return;
+      forzarFechas = new Set(fechasGlobal);
     }
 
-    // ── CRUCE DE FUENTES: fechas de disponibilidad + franjas de horarios ──
-    // Antes se usaban las fechas SOLO si existían; si alguien rellenaba horarios
-    // pero no fechas, sus días quedaban fuera del modelo (y viceversa). Ahora se
-    // unen ambas fuentes y se intersectan con el rango de fechas cuando ambos lo
-    // rellenan y se solapan (intersección no vacía); si no se solapan, la unión.
     const rangoSet = new Set();
     rangos.forEach(rg => {
       if (!rg || !rg.desde || !rg.hasta || rg.hasta < rg.desde) return;
@@ -219,24 +390,18 @@ function buildModelData() {
     let conjuntoFechas = forzarFechas || new Set([...rangoSet, ...horFechas]);
     if (!forzarFechas && rangoSet.size && horFechas.size) {
       const inter = new Set([...rangoSet].filter(f => horFechas.has(f)));
-      if (inter.size) conjuntoFechas = inter; // ambas fuentes rellenas y compatibles → cruce estricto
+      if (inter.size) conjuntoFechas = inter;
     }
 
-    // Filtro "solo fines de semana" aplicado a la unión/cruce resultante
     if (soloFinde && conjuntoFechas.size) {
       conjuntoFechas = new Set([...conjuntoFechas].filter(isWeekendISO));
     }
     if (conjuntoFechas.size === 0) {
-      // Fallback: sin fechas en ninguna de las dos fuentes, la última franja horaria
-      // propia registrada en esta sesión da un día candidato (quedadas de un día).
       const fb = lastHorariosRange && (lastHorariosRange.desde || lastHorariosRange.fecha);
       if (fb) { conjuntoFechas.add(fb); allDatesSet.add(fb); }
-      else return; // Descarta participantes sin fechas válidas (como datos.py)
+      else return;
     }
 
-    // Capa B del modelo: mapa fecha → ids de franjas horarias declaradas.
-    // Quien no rellena horarios queda con null (restricción laxa: compatible
-    // con cualquiera), pero quien sí los rellenas exige cruce real (ver motor).
     const horFranjasPorDia = hor && Array.isArray(hor.disponibilidades) ? {} : null;
     if (horFranjasPorDia) {
       dispToMap(hor.disponibilidades).forEach((setIds, f) => {
@@ -246,58 +411,114 @@ function buildModelData() {
 
     conjuntoFechas.forEach(f => allDatesSet.add(f));
 
-    const estadoTrans = trans ? (typeof trans === 'object' ? trans.estado : String(trans)) : '';
+    // Normalización de transporte y preferencias bilaterales (coches <-> pasajeros)
+    const estadoTransRaw = trans ? (typeof trans === 'object' ? trans.estado : String(trans)) : '';
     const cs = qTrans ? getRadioStepperConfig(qTrans) : null;
+    const driverTrigger = (cs && cs.when) ? String(cs.when).trim().toLowerCase() : 'llevo-coche';
+    const estadoNorm = String(estadoTransRaw || '').trim().toLowerCase();
+    const esConductor = !!estadoNorm && (estadoNorm === driverTrigger || estadoNorm === 'llevo-coche' || estadoNorm === 'coche');
+    const transporte = esConductor ? 'llevo-coche' : estadoNorm;
+
     const keyPlazas = (cs && cs.key) ? cs.key : 'plazasLibres';
     const plazasLibres = (trans && typeof trans === 'object' && trans[keyPlazas] != null)
       ? Math.max(0, parseInt(trans[keyPlazas], 10) || 0)
       : 0;
+    const prefPasajeros = (trans && typeof trans === 'object' && trans.prefPasajeros) ? trans.prefPasajeros : {};
+    const prefCoches    = (trans && typeof trans === 'object' && trans.prefCoches)    ? trans.prefCoches    : {};
+    const notaRuta      = (trans && typeof trans === 'object' && trans.notaRuta)      ? String(trans.notaRuta) : '';
 
-    // Parseo de casas votadas con precio numérico (como parsear_casas_estricto en datos.py)
-    const casasParsed = [];
-    (Array.isArray(casasRaw) ? casasRaw : []).forEach(c => {
-      const nombre = typeof c === 'string' ? c : c.nombre;
-      let precioStr = (typeof c === 'object' && c.precio) ? c.precio : null;
-      if (!precioStr && qCasas) {
-        const schemaCasa = (qCasas.opciones || []).find(o => o.nombre === nombre);
-        if (schemaCasa) precioStr = schemaCasa.precio;
-      }
-      const pNum = parsePrecioNumerico(precioStr);
-      if (nombre && pNum != null && pNum > 0) {
-        casasParsed.push({ nombre, precio_num: pNum });
+    // Soporte de Slider Dual ({ ideal, max, value } o escalar numérico)
+    let precioIdealPP = null, precioMaxPP = null;
+    if (prec != null && typeof prec === 'object') {
+      const idVal = Number(prec.ideal ?? prec.value);
+      const mxVal = Number(prec.max ?? prec.ideal ?? prec.value);
+      if (isFinite(idVal) && idVal >= 0) precioIdealPP = idVal;
+      if (isFinite(mxVal) && mxVal >= 0) precioMaxPP   = mxVal;
+    } else if (prec != null && isFinite(Number(prec)) && Number(prec) >= 0) {
+      precioIdealPP = Number(prec);
+      precioMaxPP   = Number(prec);
+    }
+
+    // Respuestas a todas las preguntas de tipo `probabilidad-opcion`
+    const probRespuestas = {};
+    qProbs.forEach(qp => {
+      const rawP = extractAnswer(ans, qp);
+      if (rawP && typeof rawP === 'object' && !Array.isArray(rawP)) {
+        const clean = {};
+        Object.entries(rawP).forEach(([k, v]) => {
+          if (isFinite(Number(v))) clean[k] = clipProbMotor(v);
+        });
+        probRespuestas[qp.id] = clean;
       }
     });
 
-    // Opciones de plan votadas
+    // Parseo de casas (compatible tanto con `casas` checkbox como con `probabilidad-opcion`)
+    const casasParsed = [];
+    if (Array.isArray(casasRaw)) {
+      casasRaw.forEach(c => {
+        const nombre = typeof c === 'string' ? c : c.nombre;
+        let precioStr = (typeof c === 'object' && c.precio) ? c.precio : null;
+        if (!precioStr && qCasas) {
+          const schemaCasa = (qCasas.opciones || []).find(o => o && o.nombre === nombre);
+          if (schemaCasa) precioStr = schemaCasa.precio;
+        }
+        const pNum = parsePrecioNumerico(precioStr);
+        if (nombre && pNum != null && pNum > 0) {
+          casasParsed.push({ nombre, precio_num: pNum, prob: 0.90 });
+        }
+      });
+    } else if (casasRaw && typeof casasRaw === 'object' && qCasas) {
+      Object.entries(casasRaw).forEach(([nombre, rawProb]) => {
+        const prob = clipProbMotor(rawProb);
+        const schemaCasa = (qCasas.opciones || []).find(o => {
+          const k = typeof optVal === 'function' ? optVal(qCasas, o) : (o && o.nombre ? o.nombre : String(o));
+          return k === nombre;
+        });
+        const precioStr = schemaCasa && typeof schemaCasa === 'object' ? schemaCasa.precio : null;
+        const pNum = parsePrecioNumerico(precioStr);
+        // En probabilidad-opcion guardamos todas las valoradas y marcamos como "votada positivamente" si prob > 0.5
+        if (nombre && pNum != null && pNum > 0 && prob > 0.5) {
+          casasParsed.push({ nombre, precio_num: pNum, prob });
+        }
+      });
+    }
+
+    // Opciones de plan votadas (> 0.5 unifica voto-ponderado {1,3} y probabilidad-opcion {0.75, 0.90, 0.95})
     let opcionesList = [];
-    if (Array.isArray(optsRaw)) opcionesList = optsRaw;
-    else if (optsRaw && typeof optsRaw === 'object') {
-      opcionesList = Object.entries(optsRaw).filter(([, pts]) => Number(pts) > 0).map(([k]) => k);
+    if (Array.isArray(optsRaw)) {
+      opcionesList = optsRaw;
+    } else if (optsRaw && typeof optsRaw === 'object') {
+      const umbral = (qOpts && qOpts.tipo === 'probabilidad-opcion') ? 0.5 : 0;
+      opcionesList = Object.entries(optsRaw).filter(([, pts]) => Number(pts) > umbral).map(([k]) => k);
     }
 
     viajeros.push({
       nombre: r.nombre,
       diasMax,
-      precioMaxPP: (prec != null && !isNaN(prec) && Number(prec) >= 0) ? Number(prec) : null,
-      transporte: String(estadoTrans || '').trim().toLowerCase(),
+      precioMaxPP,
+      precioIdealPP,
+      transporte,
       plazasLibres,
+      prefPasajeros,
+      prefCoches,
+      notaRuta,
       soloFinde,
       conjuntoFechas,
       casasParsed,
       opcionesList,
+      probRespuestas,
       irYVenir,
       meDaIgual,
       horFranjasPorDia,
       preferirPuente: prefPuente,
       probEfectiva: getEffectiveProb(r.nombre),
-      tieneLogistica: !!String(estadoTrans || '').trim(),
+      tieneLogistica: !!estadoNorm,
     });
   });
 
-    if (!viajeros.length || !allDatesSet.size) {
-    return { viajeros: [], indiceFechas: [], matriz: {}, lMaxEval: 0, logistica: false, nLog: 0 };
+  if (!viajeros.length || !allDatesSet.size) {
+    return { viajeros: [], indiceFechas: [], matriz: {}, lMaxEval: 0, logistica: false, nLog: 0, probGlobal: {} };
   }
-
 
   const sortedBounds = [...allDatesSet].sort();
   const indiceFechas = [];
@@ -310,7 +531,6 @@ function buildModelData() {
     guard++;
   }
 
-  // Matriz binaria A[fecha][nombre] ∈ {0, 1}
   const matriz = {};
   indiceFechas.forEach(f => {
     matriz[f] = {};
@@ -319,12 +539,17 @@ function buildModelData() {
     });
   });
 
-  // Dentro de buildModelData() en js/reformulario.js, reemplaza el final por:
+  // Evaluación global de Pareto para todas las preguntas `probabilidad-opcion`
+  const probGlobal = {};
+  qProbs.forEach(qp => {
+    probGlobal[qp.id] = evaluarCatalogoProbabilidad(qp, viajeros);
+  });
+
   const hayPlanDia = viajeros.some(v => v.diasMax === 1 || v.irYVenir || v.conjuntoFechas.size === 1);
   const lMinEval = hayPlanDia ? 1 : 2;
   const lMaxEval = Math.min(12, Math.max(lMinEval, ...viajeros.map(v => v.diasMax)));
   const nLog = viajeros.filter(v => v.tieneLogistica).length;
-  return { viajeros, indiceFechas, matriz, lMinEval, lMaxEval, logistica: nLog > 0, nLog };
+  return { viajeros, indiceFechas, matriz, lMinEval, lMaxEval, logistica: nLog > 0, nLog, probGlobal };
 }
 
 // ── 3. GENERACIÓN DE TRAYECTORIAS ÓPTIMAS (Port de trayectorias.py) ─────────
@@ -334,7 +559,6 @@ function generarTrayectoriasOptimas(conjuntoFechas, dMax, diasRango) {
   const diasOrdenados = [...conjuntoFechas].sort();
   if (!diasOrdenados.length) return [];
 
-  // Particionar en bloques consecutivos sin huecos
   const bloques = [];
   let actual = [diasOrdenados[0]];
   for (let i = 1; i < diasOrdenados.length; i++) {
@@ -372,7 +596,20 @@ function generarTrayectoriasOptimas(conjuntoFechas, dMax, diasRango) {
   return candidatas.map(c => c.traj);
 }
 
-// ── 4. FLUJO DE TRANSPORTE Y APARCAMIENTO (Port de transporte.py) ───────────
+// ── 4. FLUJO DE TRANSPORTE Y EMPAREJAMIENTO BILATERAL ──────────────────────
+function afinidadCochePasajero(mapViajeros, nomConductor, nomPasajero) {
+  const d = mapViajeros.get(nomConductor);
+  const p = mapViajeros.get(nomPasajero);
+  let score = 0;
+  if (d && d.prefPasajeros && nomPasajero in d.prefPasajeros) {
+    score += Number(d.prefPasajeros[nomPasajero]) || 0;
+  }
+  if (p && p.prefCoches && nomConductor in p.prefCoches) {
+    score += Number(p.prefCoches[nomConductor]) || 0;
+  }
+  return score; // en [-2, +2]
+}
+
 function construirFlujoTransporte(viajerosGrupo, dictAsignacion) {
   const idasCoches = {}, vueltasCoches = {};
   const idasPax = {}, vueltasPax = {};
@@ -380,9 +617,8 @@ function construirFlujoTransporte(viajerosGrupo, dictAsignacion) {
   const fechasActivas = new Set();
 
   const mapViajeros = new Map(viajerosGrupo.map(v => [v.nombre, v]));
-  // Nadie ha indicado transporte (o la pregunta no existe): la logística no condiciona la factibilidad
   if (!viajerosGrupo.some(v => v.tieneLogistica)) {
-    return { viable: true, flujo: { idas: [], vueltas: [], rango_activo: null, sinLogistica: true } };
+    return { viable: true, flujo: { idas: [], vueltas: [], rango_activo: null, sinLogistica: true, afinidadTotal: 0 } };
   }
 
   for (const [nombre, traj] of Object.entries(dictAsignacion)) {
@@ -394,7 +630,6 @@ function construirFlujoTransporte(viajerosGrupo, dictAsignacion) {
     const estado = row.transporte;
     const plazas = row.plazasLibres;
 
-    // 'propio' o sin dato de transporte: no entra en el reparto de coches
     if (estado === 'propio' || !row.tieneLogistica) continue;
 
     if (!idasPax[tIn]) idasPax[tIn] = [];
@@ -431,7 +666,8 @@ function construirFlujoTransporte(viajerosGrupo, dictAsignacion) {
     }
   }
 
-  const flujo = { idas: [], vueltas: [], rango_activo: null };
+  let afinidadTotal = 0;
+  const flujo = { idas: [], vueltas: [], rango_activo: null, afinidadTotal: 0 };
   const pares = [
     [idasCoches, idasPax, 'idas'],
     [vueltasCoches, vueltasPax, 'vueltas'],
@@ -451,13 +687,30 @@ function construirFlujoTransporte(viajerosGrupo, dictAsignacion) {
         if (estadoCoches.length === 0) {
           return { viable: false, flujo: { error: `Sin coches el ${fmtShortDate(dia)} (${pasajeros.length} pax sin plaza)` } };
         }
-        estadoCoches.sort((a, b) => b.plazas - a.plazas);
-        const opt = estadoCoches[0];
-        if (opt.plazas <= 0) {
+        const conHueco = estadoCoches.filter(c => c.plazas > 0);
+        if (conHueco.length === 0) {
           return { viable: false, flujo: { error: `Faltan plazas el ${fmtShortDate(dia)} (${pasajeros.length} pax sin asignar)` } };
         }
-        opt.asignados.push(pasajeros.shift());
-        opt.plazas -= 1;
+
+        // Selección greedy por máxima afinidad bilateral (prefPasajeros + prefCoches), desempatando por plazas libres
+        let bestCar = null, bestPaxIdx = 0, bestScore = -Infinity;
+        for (let pIdx = 0; pIdx < pasajeros.length; pIdx++) {
+          const paxName = pasajeros[pIdx];
+          for (const car of conHueco) {
+            const af = afinidadCochePasajero(mapViajeros, car.nombre, paxName);
+            const composite = af * 100 + car.plazas;
+            if (composite > bestScore) {
+              bestScore  = composite;
+              bestCar    = car;
+              bestPaxIdx = pIdx;
+            }
+          }
+        }
+
+        const chosenPax = pasajeros.splice(bestPaxIdx, 1)[0];
+        afinidadTotal += afinidadCochePasajero(mapViajeros, bestCar.nombre, chosenPax);
+        bestCar.asignados.push(chosenPax);
+        bestCar.plazas -= 1;
       }
 
       for (const c of estadoCoches) {
@@ -466,6 +719,7 @@ function construirFlujoTransporte(viajerosGrupo, dictAsignacion) {
     }
   }
 
+  flujo.afinidadTotal = afinidadTotal;
   if (fechasActivas.size > 0) {
     const s = [...fechasActivas].sort();
     flujo.rango_activo = [s[0], s[s.length - 1]];
@@ -478,7 +732,6 @@ function resolverVentana(viajerosCandidatos, matriz, indiceFechas, nombresNucleo
   const nucleoSet = new Set(nombresNucleo);
   const rangoSet  = new Set(diasRango);
 
-  // Pesos por día (100 en ventana núcleo, 10 si >= mitad disponible, -50 resto)
   const mitad = viajerosCandidatos.length / 2;
   const pesosDias = {};
   indiceFechas.forEach(f => {
@@ -499,14 +752,13 @@ function resolverVentana(viajerosCandidatos, matriz, indiceFechas, nombresNucleo
     baseScore += scoreTraj(diasRango);
   });
 
-  // Espacio de estados para satélites (limitado a las 6 mejores trayectorias + opción de no asistir)
   const satelites = viajerosCandidatos.filter(v => !nucleoSet.has(v.nombre));
   const opcionesSat = satelites.map(sat => {
     const trajs = generarTrayectoriasOptimas(sat.conjuntoFechas, sat.diasMax, diasRango)
       .slice(0, 6)
       .map(t => ({ traj: t, score: scoreTraj(t) }))
       .filter(x => x.score > 0);
-    return { nombre: sat.nombre, opciones: [...trajs, null] }; // null = no asignado
+    return { nombre: sat.nombre, opciones: [...trajs, null] };
   });
 
   let bestSol = null;
@@ -514,7 +766,6 @@ function resolverVentana(viajerosCandidatos, matriz, indiceFechas, nombresNucleo
   let nodesVisited = 0;
   const MAX_NODES = 1200;
 
-  // Sufijo máximo posible para poda por cota superior (Branch & Bound)
   const maxRem = new Array(opcionesSat.length + 1).fill(0);
   for (let i = opcionesSat.length - 1; i >= 0; i--) {
     const bestOpt = opcionesSat[i].opciones.reduce((m, o) => Math.max(m, o ? o.score : 0), 0);
@@ -523,18 +774,22 @@ function resolverVentana(viajerosCandidatos, matriz, indiceFechas, nombresNucleo
 
   function dfs(idx, curScore, curAsignacion) {
     if (nodesVisited > MAX_NODES) return;
-    if (curScore + maxRem[idx] <= bestScore) return; // Poda por cota superior
+    if (curScore + maxRem[idx] + 20 <= bestScore) return;
 
     if (idx === opcionesSat.length) {
       nodesVisited++;
       const res = construirFlujoTransporte(viajerosCandidatos, curAsignacion);
       if (res.viable) {
-        bestScore = curScore;
-        bestSol = {
-          asignacion: Object.assign({}, curAsignacion),
-          flujo: res.flujo,
-          objetivo: -curScore,
-        };
+        // Bonificación suave por afinidad en los coches asignados
+        const totalScore = curScore + (res.flujo.afinidadTotal || 0) * 2;
+        if (totalScore > bestScore) {
+          bestScore = totalScore;
+          bestSol = {
+            asignacion: Object.assign({}, curAsignacion),
+            flujo: res.flujo,
+            objetivo: -totalScore,
+          };
+        }
       }
       return;
     }
@@ -559,20 +814,27 @@ function resolverVentana(viajerosCandidatos, matriz, indiceFechas, nombresNucleo
   return bestSol;
 }
 
-// ── 6. SIMULACIÓN MONTE CARLO DE RESILIENCIA (Port de resiliencia.py) ───────
-function simularFragilidad(dictAsignacion, viajerosAsignados, nSim = 250, pGlobal = 0.12, nCadena = 100, seed = 23) {
+// ── 6. SIMULACIÓN MONTE CARLO DE RESILIENCIA (Con soporte condicional p_{i,X}) ──
+function simularFragilidad(dictAsignacion, viajerosAsignados, nSim = 250, pGlobal = 0.12, nCadena = 100, seed = 23, probCondicionalMap = null) {
   const personas = Object.keys(dictAsignacion);
   if (!personas.length) return null;
 
   const rng = createSeededRNG(seed);
   const probFalta = {};
   viajerosAsignados.forEach(v => {
-    probFalta[v.nombre] = mcUseEmpiricalProb
-      ? Math.max(0.02, Math.min(0.95, 1 - v.probEfectiva))
-      : pGlobal;
+    // Si la ventana tiene una opción candidata con probabilidades condicionales p_{i,X},
+    // usamos 1 - p_{i,X} (donde p_{i,X} = 0.00 es un veto duro -> ausencia segura 1.00).
+    if (probCondicionalMap && v.nombre in probCondicionalMap) {
+      const pCond = clipProbMotor(probCondicionalMap[v.nombre]);
+      probFalta[v.nombre] = pCond === 0 ? 1.00 : Math.max(0.05, Math.min(0.95, 1 - pCond));
+    } else {
+      probFalta[v.nombre] = mcUseEmpiricalProb
+        ? Math.max(0.02, Math.min(0.95, 1 - v.probEfectiva))
+        : pGlobal;
+    }
   });
 
-  // 1. Impacto individual determinista (colapso inmediato si falta esa persona)
+  // 1. Impacto individual determinista
   const impactoIndividual = {};
   for (const p of personas) {
     const sinP = {};
@@ -621,6 +883,7 @@ function simularFragilidad(dictAsignacion, viajerosAsignados, nSim = 250, pGloba
     impactoIndividual,
     viabilidadGlobal,
     impactoCadena,
+    probFalta,
     nSim,
     pGlobal,
   };
@@ -631,13 +894,12 @@ function ejecutarMotorFactibilidad(model) {
   const { viajeros, indiceFechas, matriz, lMaxEval } = model;
   if (!viajeros.length || indiceFechas.length < 2) return { soluciones: [], diagnosticos: [] };
 
-  const qHor = schema.find(q => q.tipo === 'horarios');
-  const durH = qHor ? duracionPlanHoras(qHor) : null;
+  const qHor   = schema.find(q => q.tipo === 'horarios');
+  const qCasas = schema.find(q => q.tipo === 'casas') || schema.find(esCatalogoCasasProb);
+  const qProbs = schema.filter(q => q.tipo === 'probabilidad-opcion');
+  const durH   = qHor ? duracionPlanHoras(qHor) : null;
   const franjas = qHor ? getFranjas(qHor) : null;
 
-  // Cruce de la capa horaria B entre todos los miembros del núcleo que
-  // declararon horarios: si dos incompatibles coinciden en la ventana,
-  // el núcleo se descarta (resuelve el caso "fechas sí/horarios no" y viceversa).
   function cruzHorarioNucleo(nombresNucleo, diasRango) {
     if (!qHor) return { ok: true, solape: null };
     const conHor = nombresNucleo
@@ -657,11 +919,8 @@ function ejecutarMotorFactibilidad(model) {
 
   const candidatosBrutos = [];
   const diagnosticos = [];
+  const lMin = model.lMinEval || 1;
 
-  const lMin = model.lMinEval || 1; // Permite evaluar excursiones de 1 día (L = 1)
-
-  // Núcleo con reglas de la capa A: pernocta exige L ≥ 2 y diaMax suficiente;
-  // "ir y venir" solo participa en excursiones (L = 1) salvo "me da igual".
   function nucleoPernocta(L, diasRango) {
     return viajeros
       .filter(v => !(v.irYVenir && !v.meDaIgual && L > 1) &&
@@ -669,8 +928,6 @@ function ejecutarMotorFactibilidad(model) {
       .map(v => v.nombre);
   }
 
-  // Relajación para L = 1: si nadie forma núcleo de fin de semana, se aceptan
-  // núcleos de un día que incluyan excursionistas (quien vota "ir y venir").
   function nucleoExcursion(fIni) {
     if (!viajeros.some(v => v.irYVenir)) return [];
     return viajeros
@@ -720,10 +977,19 @@ function ejecutarMotorFactibilidad(model) {
       const satelitesAsignados = dfAsig.map(v => v.nombre).filter(n => !(n in nucleoSet) && !nucleoSet.has(n));
       const nTotal = dfAsig.length;
 
-      const presupuestos = dfAsig.map(v => v.precioMaxPP).filter(p => p != null);
-      const pMaxGrupo = presupuestos.length ? Math.min(...presupuestos) : null;
+      // Presupuesto: cota dura (Hard Cap) y cota cómoda (Ideal)
+      const presupuestosMax   = dfAsig.map(v => v.precioMaxPP).filter(p => p != null);
+      const presupuestosIdeal = dfAsig.map(v => v.precioIdealPP ?? v.precioMaxPP).filter(p => p != null);
+      const pMaxGrupo   = presupuestosMax.length   ? Math.min(...presupuestosMax)   : null;
+      const pIdealGrupo = presupuestosIdeal.length ? Math.min(...presupuestosIdeal) : null;
 
-      // Moda de opción de destino en el subgrupo asignado
+      // Evaluación de Pareto condicional al subgrupo asignado a esta ventana (`dfAsig`)
+      const paretoVentana = {};
+      qProbs.forEach(qp => {
+        paretoVentana[qp.id] = evaluarCatalogoProbabilidad(qp, dfAsig);
+      });
+
+      // Moda de opción de destino (o frontera de Pareto si la pregunta es `probabilidad-opcion`)
       const freqOpts = {};
       dfAsig.forEach(v => {
         (v.opcionesList || []).forEach(op => { freqOpts[op] = (freqOpts[op] || 0) + 1; });
@@ -736,23 +1002,76 @@ function ejecutarMotorFactibilidad(model) {
         strOpcion = `${modas.join(' / ')} (${maxV} votos)`;
       }
 
-      // Evaluación de casas (Precio Cooperativo vs Precio Coalición)
-      const mapCasas = new Map();
-      dfAsig.forEach(v => {
-        (v.casasParsed || []).forEach(c => {
-          const k = `${c.nombre}||${c.precio_num}`;
-          const prev = mapCasas.get(k) || { nombre: c.nombre, precio_total: c.precio_num, votos: 0 };
-          prev.votos += 1;
-          mapCasas.set(k, prev);
-        });
-      });
+      // Si hay una pregunta `probabilidad-opcion` de destino/plan, enriquecer `strOpcion` con la frontera de Pareto
+      const qProbPlan = qProbs.find(qp => qp !== qCasas) || qProbs[0];
+      const analisisPlan = qProbPlan ? paretoVentana[qProbPlan.id] : null;
+      if (analisisPlan && analisisPlan.frontera.length) {
+        if (analisisPlan.predilecta) {
+          const p = analisisPlan.predilecta;
+          strOpcion = `★ ${p.label} (E=${p.E.toFixed(1)}, P25=${p.P25.toFixed(2)})`;
+        } else {
+          strOpcion = analisisPlan.frontera
+            .map(o => `${o.label} (E=${o.E.toFixed(1)}, P25=${o.P25.toFixed(2)})`)
+            .join(' · ');
+        }
+      }
 
-      const casasEvaluadas = [...mapCasas.values()].map(c => {
-        const pCoop = c.precio_total / Math.max(1, nTotal);
-        const pCoal = c.precio_total / Math.max(1, c.votos);
-        const viable = pMaxGrupo == null ? true : (pCoop <= pMaxGrupo);
-        return { ...c, p_coop: pCoop, p_coal: pCoal, viable };
-      }).sort((a, b) => (Number(b.viable) - Number(a.viable)) || (b.votos - a.votos) || (a.p_coop - b.p_coop));
+      // Evaluación de casas (compatible con `casas` clásico y con `probabilidad-opcion`)
+      let casasEvaluadas = [];
+      if (qCasas && qCasas.tipo === 'probabilidad-opcion' && paretoVentana[qCasas.id]) {
+        const paretoCasas = paretoVentana[qCasas.id];
+        casasEvaluadas = paretoCasas.opciones
+          .filter(c => c.precio_num != null && c.precio_num > 0 && c.nOpt > 0)
+          .map(c => {
+            const pCoop    = c.precio_num / Math.max(1, nTotal);
+            const pCoopEsp = c.precio_num / Math.max(1, c.E);
+            const viable   = (pMaxGrupo == null ? true : (pCoop <= pMaxGrupo)) && !c.inviableGrupoPequeno;
+            const comoda   = pIdealGrupo == null ? true : (pCoop <= pIdealGrupo);
+            return {
+              nombre: c.label,
+              precio_total: c.precio_num,
+              votos: Math.round(c.E * 10) / 10,
+              E: c.E,
+              P25: c.P25,
+              enFronteraPareto: !c.dominadaPor && !c.inviableGrupoPequeno,
+              esPredilecta: !!(paretoCasas.predilecta && paretoCasas.predilecta.key === c.key),
+              cuadrante: c.cuadrante,
+              msgE: c.msgE,
+              msgP25: c.msgP25,
+              alertas: c.alertas,
+              probPorViajero: c.probPorViajero,
+              p_coop: pCoop,
+              p_coal: pCoopEsp,
+              viable,
+              comoda,
+            };
+          })
+          .sort((a, b) =>
+            (Number(b.viable) - Number(a.viable)) ||
+            (Number(b.enFronteraPareto) - Number(a.enFronteraPareto)) ||
+            (b.E - a.E) ||
+            (b.P25 - a.P25) ||
+            (a.p_coop - b.p_coop)
+          );
+      } else {
+        const mapCasas = new Map();
+        dfAsig.forEach(v => {
+          (v.casasParsed || []).forEach(c => {
+            const k = `${c.nombre}||${c.precio_num}`;
+            const prev = mapCasas.get(k) || { nombre: c.nombre, precio_total: c.precio_num, votos: 0 };
+            prev.votos += 1;
+            mapCasas.set(k, prev);
+          });
+        });
+
+        casasEvaluadas = [...mapCasas.values()].map(c => {
+          const pCoop  = c.precio_total / Math.max(1, nTotal);
+          const pCoal  = c.precio_total / Math.max(1, c.votos);
+          const viable = pMaxGrupo == null ? true : (pCoop <= pMaxGrupo);
+          const comoda = pIdealGrupo == null ? true : (pCoop <= pIdealGrupo);
+          return { ...c, p_coop: pCoop, p_coal: pCoal, viable, comoda };
+        }).sort((a, b) => (Number(b.viable) - Number(a.viable)) || (b.votos - a.votos) || (a.p_coop - b.p_coop));
+      }
 
       const incluyeFinde = diasRango.some(isSatSunISO);
 
@@ -772,7 +1091,9 @@ function ejecutarMotorFactibilidad(model) {
         excluidos: viajeros.map(v => v.nombre).filter(n => !(n in asig)),
         opcionVotada: strOpcion,
         pMaxGrupo,
+        pIdealGrupo,
         casasEvaluadas,
+        paretoVentana,
         flujo: sol.flujo,
         objetivo: sol.objetivo,
         asignacion: asig,
@@ -781,12 +1102,10 @@ function ejecutarMotorFactibilidad(model) {
     }
   }
 
-  // Ordenar priorizando mayor asistencia total N, mayor núcleo N_full, mayor duración L y mejor objetivo
   candidatosBrutos.sort((a, b) =>
     (b.N - a.N) || (b.N_full - a.N_full) || (b.L - a.L) || (a.objetivo - b.objetivo)
   );
 
-  // Filtrar soluciones redundantes (subventanas dominadas en el mismo rango con igual o menor gente)
   const soluciones = [];
   for (const cand of candidatosBrutos) {
     const dominada = soluciones.some(s =>
@@ -795,7 +1114,17 @@ function ejecutarMotorFactibilidad(model) {
        (Math.abs(diffDaysISO(cand.fIni, s.fIni)) <= 1 && Math.abs(diffDaysISO(cand.fFin, s.fFin)) <= 1))
     );
     if (!dominada) {
-      cand.fragilidad = simularFragilidad(cand.asignacion, cand.viajerosAsignados);
+      // Si hay una opción líder en la frontera de Pareto (casa o plan), inyectar sus probabilidades condicionales en Monte Carlo
+      let probCondMap = null;
+      const topCasaProb = cand.casasEvaluadas && cand.casasEvaluadas.find(c => c.viable && c.probPorViajero);
+      if (topCasaProb) {
+        probCondMap = topCasaProb.probPorViajero;
+      } else if (cand.paretoVentana) {
+        const firstPareto = Object.values(cand.paretoVentana).find(pv => pv && pv.frontera && pv.frontera.length);
+        if (firstPareto) probCondMap = firstPareto.frontera[0].probPorViajero;
+      }
+
+      cand.fragilidad = simularFragilidad(cand.asignacion, cand.viajerosAsignados, 250, 0.12, 100, 23, probCondMap);
       soluciones.push(cand);
       if (soluciones.length >= 4) break;
     }
@@ -810,7 +1139,7 @@ function computeTopologyAndSensitivity(model, soluciones) {
   const nombres = viajeros.map(v => v.nombre);
   const n = nombres.length;
   const hayLog = viajeros.some(v => v.tieneLogistica);
-  // Matriz C = A^T * A (días compartidos entre pares de participantes)
+
   const compat = Array.from({ length: n }, () => new Array(n).fill(0));
   for (let i = 0; i < n; i++) {
     for (let j = i; j < n; j++) {
@@ -823,7 +1152,6 @@ function computeTopologyAndSensitivity(model, soluciones) {
     }
   }
 
-  // Aislamiento topológico: norma L1 de la fila excluyendo la diagonal
   let nomAislado = 'Ninguno', valAislado = Infinity;
   for (let i = 0; i < n; i++) {
     let l1 = 0;
@@ -834,7 +1162,6 @@ function computeTopologyAndSensitivity(model, soluciones) {
   }
   if (valAislado === Infinity) valAislado = 0;
 
-  // Cuello de botella logístico diario
   let diaCritico = 'N/A', minHolgura = Infinity;
   const serieLogistica = indiceFechas.map(f => {
     let oferta = 0, demanda = 0;
@@ -852,17 +1179,14 @@ function computeTopologyAndSensitivity(model, soluciones) {
   });
   if (minHolgura === Infinity) minHolgura = 0;
 
-  // Restricción económica activa
   const conPrecio = viajeros.filter(v => v.precioMaxPP != null).sort((a, b) => a.precioMaxPP - b.precioMaxPP);
   const nomEco = conPrecio.length ? conPrecio[0].nombre : 'Ninguno';
   const valEco = conPrecio.length ? conPrecio[0].precioMaxPP : 0;
 
-  // Menor disponibilidad temporal
   const porDisp = [...viajeros].sort((a, b) => a.conjuntoFechas.size - b.conjuntoFechas.size);
   const nomT = porDisp.length ? porDisp[0].nombre : 'Ninguno';
   const valT = porDisp.length ? porDisp[0].conjuntoFechas.size : 0;
 
-  // Índice de Imprescindibilidad agregado entre soluciones óptimas (como render_indispensables en reporte.py)
   const acumIndis = {};
   let nSolsConFrag = 0;
   soluciones.forEach(s => {
