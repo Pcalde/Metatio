@@ -58,6 +58,7 @@ function collectGeoDestinations() {
     if (v == null) return false;
     if (q.tipo === 'voto-ponderado') return Number(v[dest.nombre]) > 0;
     if (q.tipo === 'casas') return Array.isArray(v) && v.some(c => (typeof c === 'string' ? c : c.nombre) === dest.nombre);
+    if (q.tipo === 'probabilidad-opcion') return Number(v[dest.nombre] ?? 0) >= 0.5;
     if (Array.isArray(v)) return v.includes(dest.nombre);
     return String(v) === dest.nombre;
   };

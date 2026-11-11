@@ -7,9 +7,15 @@
 // ══════════════════════════════════════════════════════════════════════════
 (function () {
   var TIPOS_TXT = {
-    'checkbox': 'Múltiple', 'voto-ponderado': 'Puntos',
-    'radio': 'Única', 'casas': 'Alojamientos', 'slider': 'Rango',
-    'disponibilidad': 'Fechas', 'horarios': 'Horarios', 'textarea': 'Texto',
+    'checkbox': 'Múltiple',
+    'voto-ponderado': 'Puntos',
+    'probabilidad-opcion': 'Prob.',
+    'radio': 'Única',
+    'casas': 'Alojamientos',
+    'slider': 'Rango',
+    'disponibilidad': 'Fechas',
+    'horarios': 'Horarios',
+    'textarea': 'Texto',
   };
 
   const esMarca = q => !!(q.config && q.config.esEncabezado);
@@ -34,17 +40,36 @@
     return (c.no ? 'NO ' : '') + verbo + ' ' + vals;
   }
 
-  function cumpleRegla(raw, c) {
-    let ok = false;
-    try { ok = _condMatch(raw, c.op || 'incluye', c.valor); } catch (e) {}
-    return c.no ? !ok : ok;
-  }
-
-  function elige(raw, key) {
+  // Umbral > 0.5 (o q.config.umbralElige):
+  // - En `voto-ponderado` filtra +1 y +3 (excluyendo -1).
+  // - En `probabilidad-opcion` filtra >= 0.75 (Probable, Casi seguro, Seguro),
+  //   excluyendo 0.00 (Nunca), 0.20 (Poco probable) y 0.50 (Quizás).
+  function elige(raw, key, q = null) {
     if (raw == null) return false;
     if (Array.isArray(raw)) return raw.some(c => (typeof c === 'string' ? c : (c && c.nombre)) === key);
-    if (typeof raw === 'object') return 'estado' in raw ? raw.estado === key : Number(raw[key]) > 0;
+    if (typeof raw === 'object') {
+      if ('estado' in raw) return raw.estado === key;
+      const umbral = (q && q.config && q.config.umbralElige != null) ? Number(q.config.umbralElige) : 0.5;
+      return Number(raw[key]) > umbral;
+    }
     return String(raw) === key;
+  }
+
+  function cumpleRegla(raw, c, qPadre = null) {
+    let ok = false;
+    try {
+      if (qPadre && qPadre.tipo === 'probabilidad-opcion') {
+        const vals = valoresDe(c);
+        const op = c.op || 'incluye';
+        if (raw && typeof raw === 'object') {
+          if (op === 'alguno') ok = vals.some(v => elige(raw, v, qPadre));
+          else ok = vals.length > 0 && vals.every(v => elige(raw, v, qPadre));
+        }
+      } else {
+        ok = _condMatch(raw, c.op || 'incluye', c.valor);
+      }
+    } catch (e) {}
+    return c.no ? !ok : ok;
   }
 
   function respondio(v) {
@@ -73,8 +98,6 @@
         return;
       }
 
-      // El primer padre válido define su columna en el subárbol DOM;
-      // todas las reglas generan su flecha SVG correspondiente.
       const primaryParentId = validRules[0].qid;
       childrenMap.get(primaryParentId).push(q);
 
@@ -92,7 +115,6 @@
       });
     });
 
-    // Si hubiera algún ciclo aislado no alcanzable desde roots, lo añadimos como raíz de rescate
     const visitados = new Set();
     function marcar(q) {
       if (visitados.has(q.id)) return;
@@ -114,9 +136,10 @@
       const { logic } = reglasEfectivas(q);
       const filtrados = gente.filter(resp => {
         const evals = padres.map(p => {
-          const base = calcAlcance(byId.get(p.fromId));
+          const qPadre = byId.get(p.fromId);
+          const base = calcAlcance(qPadre);
           if (!base.includes(resp)) return false;
-          return cumpleRegla(extractAnswer(resp.answers || {}, byId.get(p.fromId)), p.rule);
+          return cumpleRegla(extractAnswer(resp.answers || {}, qPadre), p.rule, qPadre);
         });
         return logic === 'AND' ? evals.every(Boolean) : evals.some(Boolean);
       });
@@ -128,10 +151,9 @@
     branchEdges.forEach(e => {
       const base = alcance.get(e.fromId) || gente;
       const qPadre = byId.get(e.fromId);
-      e.viajeros = base.filter(r => cumpleRegla(extractAnswer(r.answers || {}, qPadre), e.rule));
+      e.viajeros = base.filter(r => cumpleRegla(extractAnswer(r.answers || {}, qPadre), e.rule, qPadre));
     });
 
-    // Construir etapas de la Ruta Base (A1, A2, ...) y aristas de reconvergencia
     const returnEdges = [];
     const stages = [];
     const codeMap = new Map();
@@ -141,7 +163,7 @@
       codeMap.set(rootQ.id, { code: aCode, isTrunk: true, depth: 0 });
 
       const leaves = [];
-      const depthCounters = new Map(); // depth -> contador para B1, B2... C1, C2...
+      const depthCounters = new Map();
       const seenInStage = new Set([rootQ.id]);
 
       function walkSubtree(u, depth) {
@@ -153,7 +175,7 @@
         hijos.forEach(h => {
           seenInStage.add(h.id);
           const d = depth + 1;
-          const letra = String.fromCharCode(65 + Math.min(25, d)); // 1->B, 2->C, 3->D...
+          const letra = String.fromCharCode(65 + Math.min(25, d));
           const cnt = (depthCounters.get(d) || 0) + 1;
           depthCounters.set(d, cnt);
           codeMap.set(h.id, { code: `${letra}${cnt}`, isTrunk: false, depth: d });
@@ -162,11 +184,9 @@
       }
       walkSubtree(rootQ, 0);
 
-      // ¿A qué nodo de la Ruta Base reconvergen las ramas de esta etapa?
       const nextTargetId = (rIdx + 1 < roots.length) ? roots[rIdx + 1].id : '__FIN__';
 
       if (!leaves.length) {
-        // Etapa sin ramificaciones: paso directo por la Ruta Base A_i -> A_{i+1}
         if (nextTargetId !== '__FIN__') {
           returnEdges.push({
             type: 'trunk',
@@ -176,7 +196,6 @@
           });
         }
       } else {
-        // Todas las hojas de las ramificaciones (ej. C1, C2, B2, B3) se enrutan de vuelta a la Ruta Base
         leaves.forEach(leaf => {
           returnEdges.push({
             type: 'return',
@@ -186,7 +205,6 @@
           });
         });
 
-        // Si en la raíz A_i hay opciones que NO abren ninguna rama, también fluyen directo a A_{i+1}
         const optsSinRama = (rootQ.opciones || []).filter(op => {
           const key = optVal(rootQ, op);
           return !abre.has(rootQ.id + '\u0000' + key);
@@ -222,7 +240,7 @@
 
     const optsHtml = (q.opciones || []).map(op => {
       const key = optVal(q, op);
-      const n = raws.filter(v => elige(v, key)).length;
+      const n = raws.filter(v => elige(v, key, q)).length;
       const nRamas = topo.abre.get(q.id + '\u0000' + key) || 0;
       return `<div class="grafo-opt${n ? ' has' : ''}${nRamas ? ' is-branch' : ''}" data-port="${esc(q.id + ':::' + key)}">` +
         `<span class="grafo-opt-txt">${esc(key)}</span>` +
@@ -248,7 +266,6 @@
     `</article>`;
   }
 
-  // Renderiza recursivamente un nodo y sus hijos en columnas paralelas debajo de él
   function renderSubtreeHtml(q, topo, visitedDom) {
     if (visitedDom.has(q.id)) return '';
     visitedDom.add(q.id);
@@ -350,7 +367,6 @@
     vp.addEventListener('pointerup', endDrag);
     vp.addEventListener('pointercancel', endDrag);
 
-    // Zoom suave con rueda centrado en el cursor
     vp.addEventListener('wheel', e => {
       e.preventDefault();
       const rect = vp.getBoundingClientRect();
@@ -429,7 +445,6 @@
     const vp = document.getElementById('grafo-viewport');
     vp.appendChild(pop);
 
-    // Posicionar junto a la píldora dentro del viewport
     const vpRect = vp.getBoundingClientRect();
     const bRect = anchorEl.getBoundingClientRect();
     pop.style.left = `${Math.max(12, Math.min(vpRect.width - 290, bRect.left - vpRect.left - 80))}px`;
@@ -446,7 +461,7 @@
       let nuevosValores = [];
       if (opcionesPadre.length) {
         nuevosValores = Array.from(pop.querySelectorAll('.gep-opt-chip input:checked')).map(i => i.value);
-        if (!nuevosValores.length) return; // Evita dejar condición vacía sin querer
+        if (!nuevosValores.length) return;
       } else {
         const raw = (pop.querySelector('#gep-free-val')?.value || '').trim();
         if (raw) nuevosValores = [raw];
@@ -469,7 +484,7 @@
     });
   }
 
-  let _linkingSource = null; // { qPadre, optKey }
+  let _linkingSource = null;
 
   function iniciarModoEnlace(qPadre, optKey) {
     cerrarPopoverArista();
@@ -477,7 +492,6 @@
     const vp = document.getElementById('grafo-viewport');
     if (vp) vp.classList.add('is-linking');
 
-    // Mostrar banner guía en la parte superior del lienzo
     let banner = document.getElementById('grafo-link-banner');
     if (!banner && vp) {
       banner = document.createElement('div');
@@ -513,7 +527,6 @@
     const nuevaRegla = { qid: qPadre.id, op: 'incluye', valor: optKey, no: false };
     const actual = reglasEfectivas(qDestino);
 
-    // Si ya tenía condiciones de otra rama (ej. B1 y B2 van a C1), las combinamos en OR
     const yaExiste = actual.rules.some(r => r.qid === qPadre.id && valoresDe(r).includes(String(optKey)));
     if (!yaExiste) {
       const combinadas = [...actual.rules, nuevaRegla];
@@ -525,8 +538,6 @@
     cancelarModoEnlace();
   }
 
-
-  // ── Trazado de flechas SVG (apertura de ramas + reconvergencia a Ruta Base) ──
   function trazarFlechas(stage, topo, totalGente) {
     const svg = stage.querySelector('.grafo-svg-edges');
     const labelsHost = stage.querySelector('.grafo-labels-layer');
@@ -537,7 +548,7 @@
     svg.innerHTML = '';
     labelsHost.innerHTML = '';
 
-    topo.edges.forEach((e, i) => {
+    topo.edges.forEach(e => {
       const fromNode = stage.querySelector(`.grafo-node[data-qid="${CSS.escape(e.fromId)}"]`);
       const toNode = stage.querySelector(`.grafo-node[data-qid="${CSS.escape(e.toId)}"]`);
       if (!fromNode || !toNode) return;
@@ -555,7 +566,6 @@
 
       const x1 = (r1.left + r1.width / 2 - stageRect.left) / z;
       const y1 = (r1.bottom - stageRect.top) / z;
-      // Borde inferior real de la tarjeta padre completa (debajo de todas las respuestas)
       const yCardBottom = (rParentCard.bottom - stageRect.top) / z;
       const x2 = (r2.left + r2.width / 2 - stageRect.left) / z;
       const y2 = (r2.top - stageRect.top) / z;
@@ -575,7 +585,6 @@
         const yBand = y2 - 68;
         d = `M ${x1} ${y1} L ${x1} ${yBand} C ${x1} ${yBand + 34}, ${x2} ${y2 - 34}, ${x2} ${y2}`;
       } else if (e.type === 'branch') {
-        // Baja primero hasta salir de la tarjeta padre y luego curva en el canal libre
         const yExit = Math.max(y1, yCardBottom + 6);
         const dy = Math.max(38, (y2 - yExit) * 0.55);
         d = `M ${x1} ${y1} L ${x1} ${yExit} C ${x1} ${yExit + dy}, ${x2} ${y2 - dy}, ${x2} ${y2}`;
@@ -595,8 +604,6 @@
         path.setAttribute('marker-end', active ? 'url(#grafo-arrow-active)' : 'url(#grafo-arrow-muted)');
         svg.appendChild(path);
 
-        // Posicionar la etiqueta SIEMPRE en el canal vacío entre el final de la tarjeta padre y el inicio de la hija,
-        // alineada a la entrada del nodo destino (t = 0.68 del hueco libre) para que cada hijo tenga su cartel encima.
         const yExit = Math.max(y1, yCardBottom + 6);
         const t = 0.68;
         const mt = 1 - t;
@@ -615,13 +622,11 @@
           `<span class="grafo-edge-count">${n}p</span>` +
           `<button type="button" class="grafo-edge-del" title="Eliminar condición (devolver a Ruta Base)">✕</button>`;
 
-        // Clic en la✕: elimina esta regla directamente
         badge.querySelector('.grafo-edge-del').addEventListener('click', ev => {
           ev.stopPropagation();
           eliminarReglaDeNodo(e.toId, e.fromId, e.rule);
         });
 
-        // Clic en el cuerpo de la píldora: abre el popover de edición in-situ
         badge.addEventListener('click', ev => {
           ev.stopPropagation();
           abrirPopoverArista(e, badge);
@@ -648,7 +653,6 @@
     });
   }
 
-  // Comprueba si 'targetId' puede alcanzar a 'sourceId' (evita crear ciclos A -> B -> A)
   function creariaCiclo(sourceId, targetId, preguntas) {
     if (sourceId === targetId) return true;
     const visitados = new Set([targetId]);
@@ -669,7 +673,6 @@
     return false;
   }
 
-  // Guarda la nueva condición en la pregunta, sincroniza UI y persiste en servidor si procede
   async function actualizarCondicionPregunta(q, nuevoMostrarSi) {
     if (!q.config) q.config = {};
     if (!nuevoMostrarSi || (Array.isArray(nuevoMostrarSi.rules) && !nuevoMostrarSi.rules.length)) {
@@ -678,18 +681,15 @@
       q.config.mostrarSi = nuevoMostrarSi;
     }
 
-    // 1. Re-renderizar el grafo inmediatamente conservando pan y zoom
     const prevZoom = _zoom, prevPanX = _panX, prevPanY = _panY;
     render(true);
     _zoom = prevZoom; _panX = prevPanX; _panY = prevPanY;
     aplicarTransform();
 
-    // 2. Sincronizar cuestionario y raíl lateral
     if (typeof renderAllQuestions === 'function') renderAllQuestions();
     if (typeof restoreDraft === 'function') restoreDraft();
     if (typeof renderRail === 'function') renderRail();
 
-    // 3. Persistir en backend si existe helper global o apiPost
     try {
       if (typeof saveQuestionCondition === 'function') {
         await saveQuestionCondition(q.id, q.config.mostrarSi || null);
@@ -776,7 +776,6 @@
     const vp = document.getElementById('grafo-viewport');
     if (vp) bindPanZoom(vp);
 
-    // Botones del HUD de zoom
     document.getElementById('grafo-z-in')?.addEventListener('click', () => {
       _zoom = Math.min(2.2, _zoom * 1.2);
       aplicarTransform();
@@ -789,14 +788,12 @@
       centrarMapa(true);
     });
 
-    // Iniciar enlace desde una opción hacia una pregunta existente
     host.querySelectorAll('.grafo-opt-link').forEach(b => b.addEventListener('click', e => {
       e.preventDefault(); e.stopPropagation();
       const q = schema[parseInt(b.dataset.idx, 10)];
       if (q && b.dataset.opt) iniciarModoEnlace(q, b.dataset.opt);
     }));
 
-    // Si estamos en modo enlace, hacer clic en cualquier tarjeta destino cierra el circuito
     host.querySelectorAll('.grafo-node:not(.is-end-node)').forEach(card => {
       card.addEventListener('click', e => {
         if (!_linkingSource) return;
@@ -806,7 +803,6 @@
       });
     });
 
-    // Eventos de las tarjetas
     host.querySelectorAll('.arbol-go').forEach(b => b.addEventListener('click', e => {
       e.preventDefault(); e.stopPropagation();
       cerrar();

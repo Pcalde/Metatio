@@ -254,9 +254,16 @@ function condicionDependeDe(schemaArr, qid, depOn) {
 // (array), voto-ponderado (dict; "incluye" ⇒ puntos > 0, "igual" ⇒ el punto
 // exacto) y radio (string u objeto {estado}). `valor` puede ser un valor
 // suelto o una lista (operador 'alguno').
-function _condMatch(raw, op, valor) {
+function _condMatch(raw, op, valor, tipoFuente = null) {
   const list = (Array.isArray(valor) ? valor : [valor]).map(String);
   if (raw == null) return false;
+
+  // Preguntas probabilísticas: raw = { optKey: p ∈ [0,1] }
+  // Interpretación: "incluye/igual/alguno X" ⇔ p(X) >= UMBRAL_PROB_VOTO
+  if (_esRawProbabilidad(raw, tipoFuente)) {
+    return list.some(k => Number(raw[k] ?? 0) >= UMBRAL_PROB_VOTO);
+  }
+
   switch (op) {
     case 'igual':
       if (Array.isArray(raw)) return raw.map(String).some(v => list.includes(v));
@@ -309,7 +316,7 @@ function esVisible(q, answers) {
     // La fuente puede estar condicionada a su vez: se evalúa en cascada.
     const srcQ = schema.find(x => x.id === cond.qid);
     if (srcQ && !esVisible(srcQ, st)) return false;
-    const ok = _condMatch(st[cond.qid], cond.op || 'incluye', cond.valor);
+    const ok = _condMatch(st[cond.qid], cond.op || 'incluye', cond.valor, srcQ && srcQ.tipo);
     return cond.no ? !ok : ok;
   } catch (e) {
     return true;
@@ -614,6 +621,23 @@ function syncCondicionesTrasCambioEsquema() {
   refreshSecciones();
 }
 
+// Umbral por defecto para interpretar el voto en pregunta probabilística.
+// Mantener alineado con mapa.js y arbol.js.
+const UMBRAL_PROB_VOTO = 0.5;
+
+function _esRawProbabilidad(raw, tipoFuente) {
+  if (tipoFuente) return tipoFuente === 'probabilidad-opcion';
+  // Fallback si no se pasa tipo: heurística por forma
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return false;
+  if ('estado' in raw) return false;
+  const vals = Object.values(raw).filter(v => v != null && !isNaN(v));
+  if (!vals.length) return false;
+  return vals.every(v => {
+    const n = Number(v);
+    return n >= 0 && n <= 1 && n !== 3;
+  });
+}
+
 // ── Estado de respuesta de una pregunta (para el raíl ✓/○) ─────────────────
 function _secHasAnswer(raw, tipo) {
   if (raw == null) return false;
@@ -631,6 +655,10 @@ function _secHasAnswer(raw, tipo) {
   if (typeof raw === 'object') {
     if ('estado' in raw) return true;
     return Object.values(raw).some(v => Number(v) !== 0);
+  }
+  if (tipo === 'probabilidad-opcion') {
+    return raw && typeof raw === 'object' &&
+      Object.values(raw).some(v => v != null && !isNaN(v));
   }
   return String(raw).length > 0;
 }
