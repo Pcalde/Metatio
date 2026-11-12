@@ -12,6 +12,13 @@ function renderMarkdown(texto) {
   return DOMPurify.sanitize(htmlCrudo, { USE_PROFILES: { html: true } });
 }
 
+// Respuestas propias ya enviadas (o el borrador actual): dato de UI, no del motor.
+function getMySubmittedAnswers() {
+  if (!user) return null;
+  const mine = respuestas.find(r => r.nombre.toLowerCase() === user.nombre.toLowerCase());
+  return mine ? mine.answers : collectAnswers();
+}
+
 function renderReformulario() {
   const container = $('consensus-container');
   if (!container) return;
@@ -234,7 +241,27 @@ function bindAlertExpandButtons(rootEl) {
   });
 }
 
-// ── RENDER DE SOLUCIONES ÓPTIMAS (Port visual de reporte.py + Pareto §5/§7) ──
+const renderVoterValuationChip = (det) => {
+  // El color del chip debe reflejar el VALOR del voto (+3 / +1 / 0 / −1),
+  // no el rol (núcleo/satélite), que se mantiene como tag aparte [★]/[sat].
+  const txt = String(det.texto || '').trim();
+  const numMatch = txt.match(/[+-]?\d+/);
+  const pts = numMatch ? parseInt(numMatch[0], 10) : null;
+
+  const isVeto   = det.veto === true || (pts != null && pts < 0);
+  const isStrong = !isVeto && pts != null && pts >= 3;
+  const isNeutral = !isVeto && !isStrong && pts === 0;
+
+  const voteCls = isVeto    ? 'veto'
+                : isStrong  ? 'vote-star'   // +3 → azul
+                : isNeutral ? 'vote-neutral'// 0  → neutro
+                : 'vote-pos';               // +1 o positivo desconocido
+
+  const rolTag = det.esNucleo ? '★' : 'sat';
+  return `<span class="voter-chip ${voteCls}" title="${det.esNucleo ? 'Miembro del núcleo' : 'Satélite'}">${esc(det.nombre)} <small style="opacity:0.75">[${rolTag}]</small> <b>${esc(det.texto)}</b></span>`;
+};
+
+// ── RENDER DE SOLUCIONES ÓPTIMAS (Con Presupuesto Núcleo, Doble Barra, Coherencia Plan->Casa y Matching Coches) ──
 function buildFeasibleSolutionsSection(soluciones, diagnosticos, topo) {
   const wrap = div('ref-solutions-wrap');
 
@@ -255,6 +282,8 @@ function buildFeasibleSolutionsSection(soluciones, diagnosticos, topo) {
     return wrap;
   }
 
+  
+
   soluciones.forEach((sol, idx) => {
     const card = div('card sol-card');
     const tagFinde = sol.incluyeFinde ? 'Incluye Fin de Semana' : 'Solo entre semana';
@@ -262,32 +291,83 @@ function buildFeasibleSolutionsSection(soluciones, diagnosticos, topo) {
     const cruceStr = sol.cruceHorario
       ? ` · Cruce horario: ${sol.cruceHorario.texto} (${sol.cruceHorario.solape.toFixed(1).replace(/\.0$/, '')} h)`
       : '';
-    const pStr = sol.pMaxGrupo != null
-      ? (sol.pIdealGrupo != null && sol.pIdealGrupo < sol.pMaxGrupo
-          ? `${sol.pIdealGrupo} € (Tope ${sol.pMaxGrupo} €)`
-          : `${sol.pMaxGrupo} €`)
-      : 'N/A';
+
+    // Formateo explícito del presupuesto mínimo del NÚCLEO vs GRUPO TOTAL
+    const fmtBudgetPair = (ideal, max, autor) => {
+      if (max == null && ideal == null) return 'Sin dato';
+      const base = ideal != null && max != null && ideal < max
+        ? `${ideal} € cómodo / ${max} € máx.`
+        : `${max ?? ideal} €`;
+      return autor ? `${base} (${autor})` : base;
+    };
+
+    const strPresuNucleo = fmtBudgetPair(sol.pIdealNucleo, sol.pMaxNucleo, sol.autorMinNucleo);
+    const strPresuGrupo  = fmtBudgetPair(sol.pIdealGrupo, sol.pMaxGrupo, sol.autorMinGrupo);
+
     const logOn = !(sol.flujo && sol.flujo.sinLogistica);
     const sinDato = logOn ? sol.viajerosAsignados.filter(v => !v.tieneLogistica).map(v => v.nombre) : [];
     const mapViajeros = new Map(sol.viajerosAsignados.map(v => [v.nombre, v]));
 
-    // Tablas de logística (Idas y Vueltas + Notas de ruta y afinidad)
+    // ── 1. TABLAS DE LOGÍSTICA (IDAS Y VUELTAS CON PREFERENCIAS DE COCHES/PASAJEROS) ──
+    const renderPasajeroConPreferencia = (conductorName, paxName, detPrecalculado) => {
+      let prefCond = 0, prefPax = 0, notaPax = '';
+      if (detPrecalculado) {
+        prefCond = detPrecalculado.prefCond || 0;
+        prefPax  = detPrecalculado.prefPax  || 0;
+        notaPax  = detPrecalculado.notaPax  || '';
+      } else {
+        const dObj = mapViajeros.get(conductorName);
+        const pObj = mapViajeros.get(paxName);
+        if (dObj && dObj.prefPasajeros && paxName in dObj.prefPasajeros) prefCond = Number(dObj.prefPasajeros[paxName]) || 0;
+        if (pObj && pObj.prefCoches && conductorName in pObj.prefCoches) prefPax = Number(pObj.prefCoches[conductorName]) || 0;
+        if (pObj && pObj.notaRuta) notaPax = pObj.notaRuta;
+      }
+
+      let prefBadge = '';
+      if (prefCond > 0 && prefPax > 0) { // lo he anonimizado por inseguridad: no sé si la gente querrá saber o que sepan
+        prefBadge = ` <span class="sol-badge ok" style="font-size:0.68rem;padding:1px 6px" title="Conductor y pasajero se eligieron mutuamente"><i class="fa-solid fa-people-pulling"></i> Asignado</span>`;
+      } else if (prefPax > 0) {
+        prefBadge = ` <span class="sol-badge ok" style="font-size:0.68rem;padding:1px 6px" title="${esc(paxName)} pidió ir en el coche de ${esc(conductorName)}"><i class="fa-solid fa-people-pulling"></i> Asignado</span>`;
+      } else if (prefCond > 0) {
+        prefBadge = ` <span class="sol-badge ok" style="font-size:0.68rem;padding:1px 6px" title="${esc(conductorName)} pidió llevar a ${esc(paxName)}"><i class="fa-solid fa-people-pulling"></i> Asignado</span>`;
+      } else if (prefCond < 0 || prefPax < 0) {
+        prefBadge = ` <span class="sol-badge err" style="font-size:0.68rem;padding:1px 6px" title="Asignado por falta de plazas alternativas pese a preferencia negativa"><i class="fa-solid fa-link"></i> Forzado por plazas</span>`;
+      }
+
+      const notaHtml = notaPax ? ` <small style="color:var(--muted)">(${esc(notaPax)})</small>` : '';
+      return `<span style="display:inline-flex;align-items:center;gap:4px;margin-right:6px"><b>${esc(paxName)}</b>${prefBadge}${notaHtml}</span>`;
+    };
+
     const renderTablaViajes = (viajes, titulo, badgeCls) => {
       if (!viajes || !viajes.length) return `<div class="muted-note">Sin desplazamientos en coche requeridos.</div>`;
       return `
         <div class="sol-log-box">
           <div class="sol-log-title ${badgeCls}">${titulo}</div>
           <table class="sol-log-table">
-            <thead><tr><th>Fecha</th><th>Conductor</th><th>Pasajeros asignados</th></tr></thead>
+            <thead><tr><th>Fecha</th><th>Conductor (Plazas)</th><th>Pasajeros asignados y afinidad</th></tr></thead>
             <tbody>
               ${viajes.map(v => {
-                const dObj = mapViajeros.get(v.conductor);
-                const notaD = dObj && dObj.notaRuta ? ` <small style="color:var(--muted)">(${esc(dObj.notaRuta)})</small>` : '';
+                const dObj  = mapViajeros.get(v.conductor);
+                const notaD = (v.notaConductor || (dObj && dObj.notaRuta))
+                  ? ` <div style="font-size:0.72rem;color:var(--muted)"><i class="fa-solid fa-map-pin"style="color:var(--accent-600, #491209); font-size:0.85em; margin-right:0.35em; vertical-align:-0.05em;"></i> ${esc(v.notaConductor || dObj.notaRuta)}</div>`
+                  : '';
+                const ocupadas = v.pasajeros ? v.pasajeros.length : 0;
+                const totales  = v.plazasTotales ?? (dObj ? dObj.plazasLibres : ocupadas);
+                const detMap   = new Map((v.pasajerosDetalle || []).map(d => [d.nombre, d]));
+
+                const paxHtml = v.pasajeros && v.pasajeros.length
+                  ? v.pasajeros.map(pName => renderPasajeroConPreferencia(v.conductor, pName, detMap.get(pName))).join(' · ')
+                  : '<em style="color:var(--muted)">Viaja solo (0 pasajeros asignados)</em>';
+
                 return `
                   <tr>
                     <td class="mono-cell">${fmtShortDate(v.fecha)}</td>
-                    <td><b>${esc(v.conductor)}</b>${notaD}</td>
-                    <td>${v.pasajeros.length ? v.pasajeros.map(esc).join(', ') : '<em style="color:var(--muted)">solo</em>'}</td>
+                    <td>
+                      <b><i class="fa-solid fa-car-side"style="color:var(--accent2-600, #f59e0b); font-size:0.85em; margin-right:0.35em; vertical-align:-0.05em;"></i>
+                         ${esc(v.conductor)}</b> <small style="color:var(--muted)">(${ocupadas}/${totales})</small>
+                      ${notaD}
+                    </td>
+                    <td>${paxHtml}</td>
                   </tr>
                 `;
               }).join('')}
@@ -297,46 +377,141 @@ function buildFeasibleSolutionsSection(soluciones, diagnosticos, topo) {
       `;
     };
 
-    // Evaluación de casas (Soporta tanto `casas` clásico como `probabilidad-opcion` con E[X], P25[X] y alertas)
-    const casasHtml = sol.casasEvaluadas.length
-      ? sol.casasEvaluadas.map(c => {
-          const isProbModel = c.E != null && c.P25 != null;
-          const budgetBadge = c.viable
-            ? (c.comoda === false
-                ? `<span class="sol-badge" style="background:rgba(245,158,11,0.16);color:#f59e0b">⚡ Dentro de Hard Cap (> ideal)</span>`
-                : `<span class="sol-badge ok">✓ Viable en presupuesto</span>`)
-            : `<span class="sol-badge err">✗ Excede presupuesto / veto</span>`;
+    // ── 2. DESGLOSE DE PLANES VOTADOS EN LA VENTANA (CON NÚCLEO Y PUNTOS/PROB) ──
+    const planesHtml = (sol.planesEvaluados && sol.planesEvaluados.length)
+      ? `
+        <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px">
+          ${sol.planesEvaluados.map((pl, pIdx) => `
+            <div style="padding:8px 10px;border-radius:8px;border:1px solid ${pIdx === 0 ? 'var(--accent2)' : 'var(--border)'};background:rgba(128,128,128,0.03)">
+              <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:4px">
+                <div>
+                  <strong style="font-size:0.88rem">
+                    ${pIdx === 0 ? '<i class="fa-solid fa-trophy plan-ico" style="color:var(--accent4, #f59e0b); font-size:1.15em; margin-right:0.35em; vertical-align:-0.05em;"></i> ' : ''}${esc(pl.label)}
+                  </strong>
+                  ${pIdx === 0 ? `<span class="sol-badge ok" style="margin-left:6px">Plan principal en ventana</span>` : ''}
+                </div>
+                <span style="font-size:0.78rem;color:var(--muted)">
+                  <b>${pl.apoyosNucleo + pl.apoyosSat}</b> <i class="fa-solid fa-thumbs-up"></i>
+                  ${pl.vetos > 0 ? `<b style="color:var(--accent)">${pl.vetos} <i class="fa-solid fa-thumbs-down"></i></b>` : ''}
+                </span>
+              </div>
+              <div class="ref-voters" style="gap:4px">
+                ${pl.detallesVotantes.map(renderVoterValuationChip).join('')}
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      `
+      : `<div style="font-size:0.82rem;color:var(--muted);margin-bottom:8px">Plan en ventana: <strong style="color:var(--ink)">${esc(sol.opcionVotada)}</strong></div>`;
 
-          return `
-            <div class="sol-casa-item ${c.viable ? 'viable' : 'inviable'}">
-              <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
-                <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-                  <strong>${esc(c.nombre)}</strong>
-                  ${c.esPredilecta ? `<span class="prob-pred-badge">★ Opción predilecta</span>` : ''}
-                  ${isProbModel && c.enFronteraPareto && !c.esPredilecta ? `<span class="prob-quad-badge ganador">Frontera de Pareto</span>` : ''}
-                  ${isProbModel && c.cuadrante ? `<span class="prob-quad-badge ${c.cuadrante.id}">${esc(c.cuadrante.label)}</span>` : ''}
+    // ── 3. EVALUACIÓN DE ALOJAMIENTOS (COHERENCIA CONDICIONAL + DOS BARRAS DE PRESUPUESTO + VOTOS DEL NÚCLEO) ──
+    let casasHtml = '';
+    if (sol.casasSonCoherentes === false) {
+      casasHtml = `<div class="muted-note"><i class="fa-solid fa-circle-info"></i> ${esc(sol.motivoOcultarCasas || 'Las opciones de alojamiento no aplican para el plan seleccionado.')}</div>`;
+    } else if (sol.casasEvaluadas && sol.casasEvaluadas.length) {
+      casasHtml = sol.casasEvaluadas.map(c => {
+        const isProbModel = c.E != null && c.P25 != null;
+        const bp = c.barrasPresupuesto;
+
+        let budgetBadge = '';
+        if (c.viable && c.comoda !== false) {
+          budgetBadge = `<span class="sol-badge ok">✓ Dentro del presupuesto aceptado</span>`;
+        } else if (c.viable && c.comoda === false) {
+          budgetBadge = `<span class="sol-badge" style="background:rgba(245,158,11,0.16);color:#f59e0b"><i class="fa-regular fa-circle-check"></i> Se lo pueden permitir</span>`;
+        } else if (c.viableNucleo && !c.viable) {
+          budgetBadge = `<span class="sol-badge" style="background:rgba(245,158,11,0.16);color:#f59e0b"><i class="fa-solid fa-person-circle-exclamation"></i> Viable para el Núcleo (excede a un satélite)</span>`;
+        } else {
+          budgetBadge = `<span class="sol-badge err"><i class="fa-solid fa-skull-crossbones"></i> Excede presupuesto máximo / Veto</span>`;
+        }
+
+        // Renderizado de las DOS barras de presupuesto:
+        // 1) "Precio aceptado (cómodo)" (siempre que haya datos de presupuesto)
+        // 2) "Se lo pueden permitir (Hard Cap)" (solo si existe respuesta a esa segunda barra)
+        let barrasPresuHtml = '';
+        if (bp && bp.totalConPresu > 0) {
+          const fuerzanNombres = bp.enEsfuerzoHardCap.map(x => `${x.nombre} (cómodo ${x.ideal}€ → tope ${x.cap}€)`).join(', ');
+          const excluidosNombres = bp.noPuedenPermitirse.map(x => `${x.nombre} (máx ${x.cap}€)`).join(', ');
+
+          barrasPresuHtml = `
+            <div style="margin-top:8px;padding:8px 10px;border-radius:6px;background:rgba(128,128,128,0.05);display:flex;flex-direction:column;gap:6px">
+              <div>
+                <div style="display:flex;justify-content:space-between;font-size:0.75rem;margin-bottom:2px">
+                  <span><i class="fa-solid fa-hand-peace"></i> <b>Precio aceptado / cómodo</b>:</span>
+                  <span><b>${bp.nComodo}/${bp.totalConPresu}</b> asistentes (Núcleo: <b>${bp.nucleoComodo}/${bp.nucleoConPresu}</b>) · <b>${bp.pctComodo}%</b></span>
                 </div>
-                ${budgetBadge}
-              </div>
-              <div class="sol-casa-meta">
-                <span>Total: <b>${c.precio_total.toFixed(0)}€</b></span>
-                <span>Cooperativo (entre ${sol.N}): <b>${c.p_coop.toFixed(1)}€/pers</b></span>
-                ${isProbModel
-                  ? `<span>Por E[X]=${c.E.toFixed(1)}: <b>${c.p_coal.toFixed(1)}€/pers</b></span>
-                     <span>P25: <b>${c.P25.toFixed(2)}</b></span>`
-                  : `<span>Coalición (${c.votos} votantes): <b>${c.p_coal.toFixed(1)}€/pers</b></span>`}
-              </div>
-              ${isProbModel ? `
-                <div style="font-size:0.77rem;color:var(--muted);margin-top:4px;line-height:1.35">
-                  <div>• ${esc(c.msgE)}</div>
-                  <div>• ${esc(c.msgP25)}</div>
+                <div class="ref-bar-track" style="height:6px">
+                  <div class="ref-bar-fill" style="width:${bp.pctComodo}%;background:#10b981"></div>
                 </div>
-                ${buildAlertBlockHtml(c.alertas)}
+              </div>
+
+              ${bp.hayDobleBarra ? `
+                <div>
+                  <div style="display:flex;justify-content:space-between;font-size:0.75rem;margin-bottom:2px">
+                    <span><i class="fa-regular fa-thumbs-up"></i> <b>Se lo pueden permitir — Límite estricto (Hard Cap)</b> (${c.p_coop.toFixed(1)}€ ≤ tope máx.):</span>
+                    <span><b>${bp.nPermitido}/${bp.totalConPresu}</b> asistentes (Núcleo: <b>${bp.nucleoPermitido}/${bp.nucleoConPresu}</b>) · <b>${bp.pctPermitido}%</b></span>
+                  </div>
+                  <div class="ref-bar-track" style="height:6px">
+                    <div class="ref-bar-fill" style="width:${bp.pctPermitido}%;background:#f59e0b"></div>
+                  </div>
+                </div>
               ` : ''}
+
+              ${fuerzanNombres ? `<div style="font-size:0.72rem;color:#f59e0b"><i class="fa-solid fa-face-meh" style="color:var(--accent2, #f59e0b); font-size:0.85em; margin-right:0.35em; vertical-align:-0.05em></i> Por encima del ideal: <b>${esc(fuerzanNombres)}</b></div>` : ''}
+              ${excluidosNombres ? `<div style="font-size:0.72rem;color:var(--accent)"><i class="fa-solid fa-skull-crossbones"></i> No se lo pueden permitir: <b>${esc(excluidosNombres)}</b></div>` : ''}
             </div>
           `;
-        }).join('')
-      : `<div class="muted-note">No hay casas con precio numérico votadas por este subgrupo.</div>`;
+        }
+
+        const sobrecosteBajas = Math.max(0, c.p_coal - c.p_coop);
+
+        return `
+          <div class="sol-casa-item ${c.viable ? 'viable' : 'inviable'}" style="margin-top:8px">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+              <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+                <strong><i class="fa-solid fa-house-flag" style="color:var(--accent3-600, #09518b); font-size:1.15em; margin-right:0.35em; vertical-align:-0.05em;"></i> ${esc(c.nombre)}</strong>
+                ${c.esPredilecta ? `<span class="prob-pred-badge">★ Opción predilecta</span>` : ''}
+                ${isProbModel && c.enFronteraPareto && !c.esPredilecta ? `<span class="prob-quad-badge ganador">Frontera de Pareto</span>` : ''}
+                ${isProbModel && c.cuadrante ? `<span class="prob-quad-badge ${c.cuadrante.id}">${esc(c.cuadrante.label)}</span>` : ''}
+              </div>
+              ${budgetBadge}
+            </div>
+
+            <div class="sol-casa-meta" style="margin-top:4px">
+              <span>Precio total: <b>${c.precio_total.toFixed(0)}€</b></span>
+              <span title="Precio por persona si van y pagan todos los asistentes de la ventana (${sol.N})">
+                Si pagan los ${sol.N} asistentes: <b>${c.p_coop.toFixed(1)}€/pers</b>
+              </span>
+              <span title="Precio por persona si solo van/pagan quienes votaron a favor de esta casa (mide el riesgo si el resto se baja)">
+                Si solo pagan quienes la apoyan (${isProbModel ? `E[X]=${c.E.toFixed(1)}` : `${c.votos}p`}): <b>${c.p_coal.toFixed(1)}€/pers</b>
+                ${sobrecosteBajas >= 1 ? `<small style="color:var(--accent)">(+${sobrecosteBajas.toFixed(0)}€ de riesgo)</small>` : ''}
+              </span>
+              <span>
+                Apoyo del Núcleo: <b>${c.apoyosNucleo ?? c.votos}/${sol.N_full}</b>
+                ${sol.N_convoy > 0 && c.apoyosSat != null ? ` · Satélites: <b>${c.apoyosSat}/${sol.N_convoy}</b>` : ''}
+              </span>
+            </div>
+
+            ${c.detallesVotantes && c.detallesVotantes.length ? `
+              <div class="ref-voters" style="margin-top:6px;gap:4px">
+                ${c.detallesVotantes.map(renderVoterValuationChip).join('')}
+              </div>
+            ` : ''}
+
+            ${barrasPresuHtml}
+
+            ${isProbModel ? `
+              <div style="font-size:0.77rem;color:var(--muted);margin-top:6px;line-height:1.35">
+                <div>• ${esc(c.msgE)}</div>
+                <div>• ${esc(c.msgP25)}</div>
+              </div>
+              ${buildAlertBlockHtml(c.alertas)}
+            ` : ''}
+          </div>
+        `;
+      }).join('');
+    } else {
+      casasHtml = `<div class="muted-note">No hay alojamientos con precio numérico votados por este subgrupo.</div>`;
+    }
 
     // Resiliencia Monte Carlo
     const frag = sol.fragilidad;
@@ -389,14 +564,19 @@ function buildFeasibleSolutionsSection(soluciones, diagnosticos, topo) {
           <span class="sol-pill">Total <b>${sol.N}</b></span>
           <span class="sol-pill">Núcleo <b>${sol.N_full}</b></span>
           <span class="sol-pill">Satélites <b>${sol.N_convoy}</b></span>
-          <span class="sol-pill">Tope Coop. <b>${esc(pStr)}</b></span>
+          <span class="sol-pill" title="Presupuesto más bajo dentro del Núcleo">Mín. Núcleo: <b>${esc(strPresuNucleo)}</b></span>
+          ${sol.N_convoy > 0 && sol.pMaxGrupo !== sol.pMaxNucleo
+            ? `<span class="sol-pill" title="Presupuesto más bajo incluyendo Satélites">Mín. Grupo: <b>${esc(strPresuGrupo)}</b></span>`
+            : ''}
         </div>
       </div>
 
       <div class="sol-group-chips">
         <div><small>Núcleo (${sol.N_full}):</small> ${sol.asistentesNucleo.map(n => `<span class="voter-chip star">${esc(n)}</span>`).join(' ')}</div>
-        ${sol.satelitesAsignados.length ? `<div><small>Satélites (${sol.N_convoy}):</small>${sol.satelitesAsignados.map(n => `<span class="voter-chip">${esc(n)} (${fmtShortDate(sol.asignacion[n][0])}→${fmtShortDate(sol.asignacion[n][sol.asignacion[n].length - 1])})</span>`).join(' ')}</div>` : ''}
-        ${sol.excluidos.length ? `<div><small>Ausentes (${sol.excluidos.length}):</small>${sol.excluidos.map(n => `<span class="voter-chip veto">${esc(n)}</span>`).join(' ')}</div>` : `<div><span style="color:var(--accent2);font-size:0.8rem">✓ ¡Asistencia perfecta del grupo!</span></div>`}
+        ${sol.satelitesAsignados.length ? `<div><small>Satélites (${sol.N_convoy}):</small>${sol.satelitesAsignados.map(n => `<span class="voter-chip satelite">${esc(n)} (${fmtShortDate(sol.asignacion[n][0])}→${fmtShortDate(sol.asignacion[n][sol.asignacion[n].length - 1])})</span>`).join(' ')}</div>` : ''}
+        ${sol.excluidos.length
+          ? `<div><small>Ausentes (${sol.excluidos.length}):</small>${sol.excluidos.map(n => `<span class="voter-chip ausente">${esc(n)}</span>`).join(' ')}</div>`
+          : `<div><span style="color:var(--accent2);font-size:0.8rem">✓ ¡Asistencia perfecta del grupo!</span></div>`}
       </div>
 
       ${logOn ? `
@@ -405,11 +585,16 @@ function buildFeasibleSolutionsSection(soluciones, diagnosticos, topo) {
           ${renderTablaViajes(sol.flujo.vueltas, '↙ Viajes de Vuelta', 'vuelta')}
         </div>
         ${sinDato.length ? `<div class="muted-note">Sin dato de transporte (no entran en el reparto de coches): <b>${sinDato.map(esc).join(', ')}</b></div>` : ''}
-      ` : `<div class="muted-note">🚫 Logística no considerada: nadie ha indicado transporte, así que la factibilidad solo depende de fechas.</div>`}
+      ` : `<div class="muted-note"><i class="fa-solid fa-notdef"></i> Logística no considerada: nadie ha indicado transporte, así que la factibilidad solo depende de fechas.</div>`}
 
       <div style="margin-top:14px">
-        <div style="font-size:0.82rem;color:var(--muted);margin-bottom:6px">
-          Plan / Candidatas en ventana: <strong style="color:var(--ink)">${esc(sol.opcionVotada)}</strong>
+        <div style="font-size:0.8rem;font-weight:600;color:var(--muted);text-transform:uppercase;margin-bottom:6px">
+          1. Planes votados por los asistentes de esta ventana
+        </div>
+        ${planesHtml}
+
+        <div style="font-size:0.8rem;font-weight:600;color:var(--muted);text-transform:uppercase;margin:10px 0 6px">
+          2. Alojamientos / Opciones vinculadas al plan
         </div>
         ${casasHtml}
       </div>
@@ -418,7 +603,7 @@ function buildFeasibleSolutionsSection(soluciones, diagnosticos, topo) {
 
       <div style="margin-top:12px;display:flex;justify-content:flex-end">
         <button type="button" class="btn-propose btn-propose-sol" style="padding:6px 12px;font-size:0.8rem">
-          📌 Llevar esta solución como Propuesta a la Sala de Debate →
+          <i class="fa-solid fa-thumbtack" style="margin-right: 0.25em;"></i> Llevar esta solución como Propuesta a la Sala de Debate →
         </button>
       </div>
     `;
@@ -438,7 +623,7 @@ function buildFeasibleSolutionsSection(soluciones, diagnosticos, topo) {
   return wrap;
 }
 
-// ── TARJETA DE SENSIBILIDAD, TOPOLOGÍA (A^T A) E IMPRESCINDIBLES ────────────
+// ── TARJETA DE SENSIBILIDAD, TOPOLOGÍA E IMPRESCINDIBLES ────────────
 function buildTopologyAndSensitivityCard(model, topo) {
   const card = div('card');
   const s = topo.sensibilidad;
@@ -558,19 +743,19 @@ function buildAnalyticalCard(q, idx, myAns) {
 function buildProbabilidadOpcionConsensus(card, q, myVal) {
   const pcIdx  = pcIndex();
   const escala = typeof getEscalaProbabilidad === 'function' ? getEscalaProbabilidad(q) : [
-    { label: 'Nunca', val: 0.00, pct: '0%' },
+    { label: 'No voy', val: 0.00, pct: '0%' },
     { label: 'Poco probable', val: 0.20, pct: '20%' },
-    { label: 'Quizás', val: 0.50, pct: '50%' },
-    { label: 'Probable', val: 0.75, pct: '75%' },
+    { label: 'Quizás / ns', val: 0.50, pct: '50%' },
+    { label: 'Probable', val: 0.75, pct: '70%' },
     { label: 'Casi seguro', val: 0.90, pct: '90%' },
-    { label: 'Seguro', val: 0.95, pct: '95%*' },
+    { label: 'Seguro', val: 0.98, pct: '98%*' },
   ];
   const myDict = typeof normProbOpcion === 'function' ? normProbOpcion(myVal) : (myVal || {});
 
-  // Evaluar métricas E[X], P25[X], frontera de Pareto, cuadrantes y alertas
-  const evalRes = typeof window.evaluarProbabilidadOpcion === 'function'
-    ? window.evaluarProbabilidadOpcion(q)
-    : (typeof evaluarCatalogoProbabilidad === 'function' ? evaluarCatalogoProbabilidad(q, buildModelData().viajeros) : null);
+  // Evaluar métricas E[X], P25[X], frontera de Pareto, cuadrantes y alertas desde el motor único
+  const evalFn = (window.EngineCore && window.EngineCore.evaluarCatalogoProbabilidad)
+    || (typeof evaluarCatalogoProbabilidad === 'function' ? evaluarCatalogoProbabilidad : null);
+  const evalRes = evalFn ? evalFn(q, null, true) : null;
 
   if (!evalRes || (!evalRes.frontera.length && !evalRes.descartadas.length && !(q.opciones || []).length)) {
     card.innerHTML += `<p style="color:var(--muted);font-size:0.85rem">Sin opciones o valoraciones registradas aún.</p>`;
@@ -1142,14 +1327,6 @@ function buildTextareaConsensus(card, q) {
   card.appendChild(wrap);
 }
 
-// ── OPTIMIZADOR DE VENTANAS HORARIAS Y RESTRICCIONES (Comidas, Cine, Clases…) ──
-function parseHHMM(str) {
-  if (!str) return null;
-  const [h, m] = String(str).split(':').map(Number);
-  if (isNaN(h) || isNaN(m)) return null;
-  return h + m / 60;
-}
-
 function fmtHourFloat(h) {
   const norm = h >= 24 ? h - 24 : h;
   const hh = String(Math.floor(norm)).padStart(2, '0');
@@ -1311,7 +1488,7 @@ function buildHorariosConsensus(card, q, myVal) {
           ${todasRestricciones.map(r => `
             <span class="voter-chip ${r.meUnoAlSalir ? '' : 'veto'}">
               ${ICONO_MOTIVO[r.motivo] || '⏳'} <b>${esc(r.nombre)}</b>: ${esc(rangoRest(r))} ${esc(r.desde)}–${esc(r.hasta)}
-              ${r.meUnoAlSalir ? '(⚡ se une al salir)' : '(bloqueo total)'}
+              ${r.meUnoAlSalir ? '(se une al salir)' : '(bloqueo total)'}
             </span>`).join('')}
         </div>` : ''}`;
   } else {
@@ -1361,7 +1538,7 @@ function buildHorariosConsensus(card, q, myVal) {
           </div>
           <label class="toggle-label" style="font-size:0.78rem;color:var(--muted)">
             <input type="checkbox" class="mr-join" ${r.meUnoAlSalir ? 'checked' : ''}><span class="toggle-pill"></span>
-            <span>⚡ Me incorporo al salir</span>
+            <span><i class="fa-solid fa-car-burst"></i> Me incorporo al salir</span>
           </label>
         </div>`).join('')}
     </div>
