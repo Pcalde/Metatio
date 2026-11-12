@@ -71,7 +71,7 @@ function renderDebate() {
   // 1. Tarjeta de Propuestas Formales
   const propCard = div('card');
   propCard.innerHTML = `
-    <div class="card-title"><span class="num">📌</span> Propuestas de Decisión (Diferido)</div>
+    <div class="card-title"><span class="num"><i class="fa-solid fa-landmark"></i></span> Propuestas de Decisión (Diferido)</div>
     <p style="font-size:0.82rem;color:var(--muted);margin-bottom:12px">
       Plantea acuerdos concretos (fechas, casa elegida, presupuesto) para que el grupo los vote sin que se pierdan en la conversación.
     </p>
