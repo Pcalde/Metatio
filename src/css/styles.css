@@ -1875,3 +1875,25 @@ body.map-modal-open { overflow: hidden; }
   /* En pantallas muy estrechas, solo el icono para no saturar la barra */
   .sec-rail-fab .sec-btn-txt { display: none; }
 }
+
+ .trips-wrap { max-width: 520px; } .trips-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; margin-bottom: 18px; } .trips-item { display: flex; flex-direction: column; justify-content: space-between; gap: 12px; padding: 14px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); } .trips-item.trips-dead { opacity: .55; border-style: dashed; } .trips-item-nombre { display: flex; flex-direction: column; gap: 2px; overflow-wrap: anywhere; } .trips-item-nombre em { font-style: normal; font-size: .75rem; color: var(--muted); } .trips-item-tools { display: flex; gap: 6px; align-items: center; } .trips-item-tools .trips-btn-entrar { flex: 1; align-self: auto; } .trips-empty { grid-column: 1 / -1; color: var(--muted); font-size: .85rem; font-style: italic; } .trips-tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; background: var(--bg); padding: 4px; border-radius: 8px; border: 1px solid var(--border); } .trips-tab { justify-content: center; font-size: .8rem; padding: 9px 6px; } .trips-tab.active { background: var(--card); color: var(--ink); box-shadow: var(--shadow-sm); } .trips-panel { display: none; flex-direction: column; gap: 12px; margin-top: 14px; } .trips-panel.open { display: flex; } .trips-panel .login-field { margin-bottom: 0; }
+
+ .trips-tab {
+  border: none;
+  background: transparent;
+  padding: 8px 14px;
+  cursor: pointer;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.85rem;
+  color: var(--muted);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+.trips-tab.active {
+  color: var(--ink);
+  border-bottom-color: var(--accent);
+  font-weight: 500;
+}
+.trips-tab:hover:not(.active) { color: var(--ink-soft); }
+.trips-panel { display: none; }
+.trips-panel.open { display: block; }
