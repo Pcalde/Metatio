@@ -1,69 +1,71 @@
 // ══════════════════════════════════════════════════════════════════════════
-//  ENVOLTORIO DEL MOTOR — src/js/engine/index.js  (FASE 2, aún NO enlazado)
+//  FAÇADE DEL MOTOR — src/js/engine/index.js   (FASE 2: ENLAZADO)
 //
-//  Único punto donde la capa matemática (engine/optimizador.js, pura) toca
-//  el estado global de la app (state.js) y la config (config.js). Con este
-//  patrón, el optimizador podrá migrar a un ES module o a un Web Worker sin
-//  tocar una sola línea de matemáticas.
+//  ÚNICO archivo de engine/ que lee estado global (state.js, types.js,
+//  config.js). Cada llamada construye un `ctx` plano y se lo inyecta a
+//  EngineCore (optimizador.js, encapsulado en IIFE: sus `schema`,
+//  `respuestas`, `mcUseEmpiricalProb`… son variables privadas del motor).
 //
-//  Cableado propuesto en index.html (orden):
-//    <script src="src/js/config.js"></script>
-//    <script src="src/js/state.js"></script>          // globals + $ + esc
-//    <script src="src/js/types.js"></script>          // getFranjas, div…
-//    <script src="src/js/proscontras.js"></script>    // pcParts (pcIndex lo mueve engine→ui)
-//    <script src="src/js/engine/optimizador.js"></script>
-//    <script src="src/js/engine/index.js"></script>   // ← este archivo
-//    <script src="src/js/ui/consensusView.js"></script>
-//  …y se elimina src/js/reformulario.js del HTML.
+//  Orden de carga: config → shared/format → … → engine/probabilidades →
+//  engine/optimizador → engine/index → ui/consensusView.
 // ══════════════════════════════════════════════════════════════════════════
+(function (root) {
+  const Core = root.EngineCore, Prob = root.EngineProb;
+  const overrides = {};
 
-(function () {
-  'use strict';
+  // Lectura única del mundo exterior → objeto plano.
+  function snapshot() {
+    return {
+      schema, respuestas, respondentes, ausencias,
+      lastHorariosRange: (typeof lastHorariosRange !== 'undefined') ? lastHorariosRange : null,
+      weightByProb: overrides.weightByProb ?? weightByProb,
+      mcEmpirico:   overrides.mcEmpirico   ?? mcUseEmpiricalProb,
+      params: Object.assign({}, ENGINE_PARAMS,
+        overrides.umbralHoraSolape != null ? { UMBRAL_HORA_SOLAPE: overrides.umbralHoraSolape } : {}),
+    };
+  }
+  const withCtx = fn => { Core.configure(snapshot()); return fn(); };
 
-  window.Engine = {
-    configure(overrides = {}) {
-      UMBRAL_HORA_SOLAPE = overrides.umbralHoraSolape ?? ENGINE_PARAMS.UMBRAL_HORA_SOLAPE;
-      weightByProb       = overrides.weightByProb     ?? weightByProb;
-      mcUseEmpiricalProb = overrides.mcEmpirico       ?? mcUseEmpiricalProb;
-    },
+  const Engine = {
+    configure(o = {}) { Object.assign(overrides, o); },
 
-    // Pipeline completo: estado global → modelo (incluyendo Pareto global) → soluciones → topología.
     run() {
-      this.configure();
-      const model     = buildModelData();
-      const { soluciones, diagnosticos } = ejecutarMotorFactibilidad(model);
-      const topo      = computeTopologyAndSensitivity(model, soluciones);
-      return {
-        model,
-        soluciones,
-        diagnosticos,
-        topo,
-        probabilidades: model.probGlobal || {},
-      };
+      return withCtx(() => {
+        const model = Core.buildModelData();
+        const { soluciones, diagnosticos } = Core.ejecutarMotorFactibilidad(model);
+        const topo = Core.computeTopologyAndSensitivity(model, soluciones);
+        return { model, soluciones, diagnosticos, topo, probabilidades: model.probGlobal || {} };
+      });
     },
 
-    // Evalúa bajo demanda una pregunta `probabilidad-opcion` para todo el grupo o para un subconjunto de nombres
     evaluarProbabilidad(qOrId, filtroNombres = null) {
-      const q = typeof qOrId === 'object' ? qOrId : (schema || []).find(x => x.id === qOrId);
-      if (!q) return null;
-      const model = buildModelData();
-      const subgrupo = Array.isArray(filtroNombres)
-        ? model.viajeros.filter(v => filtroNombres.includes(v.nombre))
-        : model.viajeros;
-      return evaluarCatalogoProbabilidad(q, subgrupo);
+      return withCtx(() => {
+        const q = typeof qOrId === 'object' ? qOrId : (schema || []).find(x => x.id === qOrId);
+        if (!q) return null;
+        const model = Core.buildModelData();
+        const sub = Array.isArray(filtroNombres)
+          ? model.viajeros.filter(v => filtroNombres.includes(v.nombre)) : model.viajeros;
+        return Core.evaluarCatalogoProbabilidad(q, sub);
+      });
     },
 
-    // Re-cálculo puntual tras cambiar un voto aislado
     recomputeForQ(qid) {
       const q = (schema || []).find(x => x.id === qid);
       if (q && q.tipo === 'probabilidad-opcion') {
-        if (typeof window.refreshProbabilidadCards === 'function') window.refreshProbabilidadCards();
+        if (typeof root.refreshProbabilidadCards === 'function') root.refreshProbabilidadCards();
         return this.evaluarProbabilidad(q);
       }
-      if (q && q.tipo === 'radio' && typeof window.refreshTransportCards === 'function') {
-        window.refreshTransportCards();
-      }
+      if (q && q.tipo === 'radio' && typeof root.refreshTransportCards === 'function') root.refreshTransportCards();
       return this.run();
-    }
+    },
   };
-})();
+  root.Engine = Engine;
+
+  // ── Nombres globales heredados (los usan ui/, mapa.js, secciones.js) ─────
+  root.buildModelData              = () => withCtx(() => Core.buildModelData());
+  root.ejecutarMotorFactibilidad   = m => withCtx(() => Core.ejecutarMotorFactibilidad(m));
+  root.computeTopologyAndSensitivity = (m, s) => Core.computeTopologyAndSensitivity(m, s);
+  root.evaluarCatalogoProbabilidad = (q, v) => withCtx(() => Core.evaluarCatalogoProbabilidad(q, v));
+  root.getEffectiveProb = n => Prob.efectiva(n, respondentes, ausencias);
+  root.userWeight       = n => Prob.peso(n, respondentes, ausencias, weightByProb);
+})(typeof window !== 'undefined' ? window : globalThis);

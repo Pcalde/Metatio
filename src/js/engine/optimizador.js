@@ -1,3 +1,22 @@
+(function (root) {
+// ── CONTEXTO PRIVADO DEL MOTOR ─────────────────────────────────────────────
+// Estas variables SOMBREAN a los globals homónimos: el cuerpo del motor (más
+// abajo, sin tocar) ya no ve state.js/types.js. Las rellena configure(ctx),
+// llamado por engine/index.js antes de cada ejecución.
+let schema = [], respuestas = [], respondentes = [], ausencias = [];
+let lastHorariosRange = null, mcUseEmpiricalProb = true, UMBRAL_HORA_SOLAPE = 1.5;
+const { extractAnswer, getRadioStepperConfig, getFranjas, dispToMap, optVal } = root.Esquema;
+let P = {};
+const par = (k, d) => (P[k] != null ? P[k] : d);
+function getEffectiveProb(nombre) { return root.EngineProb.efectiva(nombre, respondentes, ausencias); }
+function configure(ctx) {
+  schema = ctx.schema || []; respuestas = ctx.respuestas || [];
+  respondentes = ctx.respondentes || []; ausencias = ctx.ausencias || [];
+  lastHorariosRange = ctx.lastHorariosRange || null;
+  mcUseEmpiricalProb = ctx.mcEmpirico !== false;
+  UMBRAL_HORA_SOLAPE = (ctx.params && ctx.params.UMBRAL_HORA_SOLAPE != null) ? ctx.params.UMBRAL_HORA_SOLAPE : 1.5;
+  P = ctx.params || {};
+}
 // ══════════════════════════════════════════════════════════════════════════
 //  MOTOR MATEMÁTICO PURO — src/js/engine/optimizador.js
 //
@@ -20,7 +39,6 @@
 //  · Emparejamiento bilateral de transporte (prefPasajeros + prefCoches).
 // ══════════════════════════════════════════════════════════════════════════
 
-var UMBRAL_HORA_SOLAPE = 1.5;   // θ (R7): horas mínimas de solape horario
 
 function createSeededRNG(seed = 22) {
   let a = seed >>> 0;
@@ -30,34 +48,6 @@ function createSeededRNG(seed = 22) {
     t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
-}
-
-function fmtShortDate(iso) {
-  if (!iso) return '';
-  const [, m, d] = String(iso).split('-');
-  return `${d}/${m}`;
-}
-
-function diffDaysISO(isoA, isoB) {
-  const tA = Date.UTC(+isoA.slice(0, 4), +isoA.slice(5, 7) - 1, +isoA.slice(8, 10));
-  const tB = Date.UTC(+isoB.slice(0, 4), +isoB.slice(5, 7) - 1, +isoB.slice(8, 10));
-  return Math.round((tB - tA) / 86400000);
-}
-
-function isWeekendISO(iso) {
-  const d = new Date(iso + 'T00:00:00Z').getUTCDay();
-  return d === 5 || d === 6;
-}
-
-function isSatSunISO(iso) {
-  const d = new Date(iso + 'T00:00:00Z').getUTCDay();
-  return d === 0 || d === 6;
-}
-
-function parsePrecioNumerico(raw) {
-  if (raw == null) return null;
-  const m = String(raw).match(/(\d+(?:[.,]\d+)?)/);
-  return m ? parseFloat(m[1].replace(',', '.')) : null;
 }
 
 // Acota la probabilidad individual al rango operativo [0.00, 0.95] (§3)
@@ -158,12 +148,6 @@ function cruzarHorariosPareja(vA, vB, diasRango, durH, franjas) {
              + (mismoDia ? '' : ` → ${fFin}`)
              + ` (${pad(hFin)}:${pad(mFin)})`;
   return best;
-}
-
-function addDaysISO(iso, n) {
-  const dt = new Date(iso + 'T00:00:00Z');
-  dt.setUTCDate(dt.getUTCDate() + n);
-  return dt.toISOString().slice(0, 10);
 }
 
 // ── 2c. EVALUADOR PARETO DE PROBABILIDAD POR OPCIÓN (§4, §5, §6 y §7) ──────
@@ -736,14 +720,14 @@ function resolverVentana(viajerosCandidatos, matriz, indiceFechas, nombresNucleo
   const pesosDias = {};
   indiceFechas.forEach(f => {
     if (rangoSet.has(f)) {
-      pesosDias[f] = 100;
+      pesosDias[f] = par('W_NUCLEO', 100);
     } else {
       const disp = viajerosCandidatos.reduce((acc, v) => acc + (matriz[f]?.[v.nombre] || 0), 0);
-      pesosDias[f] = disp >= mitad ? 10 : -50;
+      pesosDias[f] = disp >= mitad ? par('W_EXPANSION', 10) : par('W_MINORIA', -50);
     }
   });
 
-  const scoreTraj = traj => traj.reduce((s, d) => s + (pesosDias[d] ?? -50), 0);
+  const scoreTraj = traj => traj.reduce((s, d) => s + (pesosDias[d] ?? par('W_MINORIA', -50)), 0);
 
   const baseAsignacion = {};
   let baseScore = 0;
@@ -1124,9 +1108,9 @@ function ejecutarMotorFactibilidad(model) {
         if (firstPareto) probCondMap = firstPareto.frontera[0].probPorViajero;
       }
 
-      cand.fragilidad = simularFragilidad(cand.asignacion, cand.viajerosAsignados, 250, 0.12, 100, 23, probCondMap);
+      cand.fragilidad = simularFragilidad(cand.asignacion, cand.viajerosAsignados, par('MC_N_SIM', 250), par('MC_P_GLOBAL', 0.12), par('MC_N_CADENA', 100), par('MC_SEED', 23), probCondMap);
       soluciones.push(cand);
-      if (soluciones.length >= 4) break;
+      if (soluciones.length >= par('MAX_SOLUCIONES', 4)) break;
     }
   }
 
@@ -1212,3 +1196,9 @@ function computeTopologyAndSensitivity(model, soluciones) {
     rankingIndispensables,
   };
 }
+root.EngineCore = {
+  configure, buildModelData, ejecutarMotorFactibilidad, computeTopologyAndSensitivity,
+  evaluarCatalogoProbabilidad, simularFragilidad, construirFlujoTransporte,
+  resolverVentana, generarTrayectoriasOptimas,
+};
+})(typeof window !== 'undefined' ? window : globalThis);
