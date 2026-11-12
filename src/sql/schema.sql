@@ -54,7 +54,8 @@ update preguntas p set pos = o.n from orden_inicial o where p.eid = o.eid and p.
 -- nuevas (p.ej. 'horarios') funcionan sin migración tras ejecutar este script.
 alter table preguntas drop constraint if exists preguntas_tipo_check;
 alter table preguntas add constraint preguntas_tipo_check check (tipo in
-  ('checkbox','voto-ponderado','radio','casas','slider','disponibilidad','horarios','textarea'));
+  ('checkbox','voto-ponderado','radio','casas','slider','disponibilidad',
+  'horarios','textarea', 'probabilidad-opcion'));
 
 create table if not exists respuestas (
   eid     text not null references encuestas on delete cascade,
@@ -170,7 +171,7 @@ end $$;
 -- ¿Tiene sentido que las opciones sean objetos para este tipo de pregunta?
 create or replace function _tipo_admite_objetos(p_tipo text) returns boolean
 language sql immutable as $$
-  select p_tipo in ('casas', 'checkbox', 'voto-ponderado', 'radio')
+  select p_tipo in ('casas', 'checkbox', 'voto-ponderado', 'radio', 'probabilidad-opcion')
 $$;
 
 create or replace function _auth(p_eid text, p_nombre text, p_pin text, p_crear boolean default false)
@@ -392,7 +393,7 @@ begin
 
   select * into q from preguntas where eid = p_eid and id = p_qid for update;
   if not found then return jsonb_build_object('error', 'Pregunta no encontrada'); end if;
-  if q.tipo not in ('checkbox', 'voto-ponderado', 'radio', 'casas') then
+  if q.tipo not in ('checkbox', 'voto-ponderado', 'radio', 'casas', 'probabilidad-opcion') then
     return jsonb_build_object('error', 'Esta pregunta no admite opciones');
   end if;
   if p_opcion is null or pg_column_size(p_opcion) > 2000 then
@@ -434,7 +435,7 @@ begin
 
   select * into q from preguntas where eid = p_eid and id = p_qid for update;
   if not found then return jsonb_build_object('error', 'Pregunta no encontrada'); end if;
-  if q.tipo not in ('checkbox', 'voto-ponderado', 'radio', 'casas') then
+  if q.tipo not in ('checkbox', 'voto-ponderado', 'radio', 'casas', 'probabilidad-opcion') then
     return jsonb_build_object('error', 'Esta pregunta no admite opciones');
   end if;
 
@@ -503,7 +504,7 @@ begin
 
   select * into q from preguntas where eid = p_eid and id = p_qid for update;
   if not found then return jsonb_build_object('error', 'Pregunta no encontrada'); end if;
-  if q.tipo not in ('checkbox', 'voto-ponderado', 'radio', 'casas') then
+  if q.tipo not in ('checkbox', 'voto-ponderado', 'radio', 'casas', 'probabilidad-opcion') then
     return jsonb_build_object('error', 'Esta pregunta no admite opciones');
   end if;
 
@@ -574,7 +575,7 @@ begin
 
   if v_id is null or v_id !~ '^[a-z0-9_-]{1,80}$'
      or v_tipo not in ('checkbox','voto-ponderado','radio','casas','slider',
-                       'disponibilidad','horarios','textarea')
+                       'disponibilidad','horarios','textarea','probabilidad-opcion')
      or char_length(v_label) not between 1 and 200
      or jsonb_typeof(v_op) <> 'array' or jsonb_typeof(v_cfg) <> 'object' then
     return jsonb_build_object('error', 'Pregunta inválida');
