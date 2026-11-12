@@ -1,7 +1,7 @@
 /* ══════════════════════════════════════════════════════════════════════════
    REGISTRO DE TIPOS DE PREGUNTA (Generalizado + Edición/Borrado de Opciones)
    + Slider Dual (Ideal/Hard-Cap) + Mini-Calendario + Matching Coche/Pasajero
-   + Probabilidad por Opción (E[X], P25[X], Frontera de Pareto y Alertas)
+   + Probabilidad por Opción (Solo captura de escala absoluta sin sesgo)
    ══════════════════════════════════════════════════════════════════════════ */
 
 function div(cls, txt) {
@@ -61,7 +61,7 @@ function div(cls, txt) {
     .trans-add-person { display:inline-flex; gap:4px; align-items:center; }
     .trans-add-person input { width:115px; font-size:0.76rem; padding:3px 7px; border-radius:6px; border:1px solid var(--border); background:transparent; color:inherit; }
 
-    /* Probabilidad por Opción (Escala Absoluta + Frontera de Pareto + Alertas) */
+    /* Probabilidad por Opción (Escala de entrada + Clases reutilizadas en Consenso) */
     .prob-item { display:flex; flex-direction:column; gap:6px; padding:8px 0; border-bottom:1px solid rgba(128,128,128,0.12); }
     .prob-top-row { display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; }
     .prob-scale-row { display:flex; flex-wrap:wrap; gap:4px; margin-top:2px; }
@@ -76,12 +76,7 @@ function div(cls, txt) {
     .btn-prob-cat.active[data-prob="0.95"] { background:rgba(16,185,129,0.16); border-color:#10b981; color:#10b981; font-weight:600; }
     .btn-prob-cat.active small { color:inherit; opacity:0.85; }
 
-    .prob-pareto-panel { margin-top:14px; padding:12px; border-radius:10px; border:1px solid var(--border); background:rgba(128,128,128,0.03); display:flex; flex-direction:column; gap:10px; }
-    .prob-pareto-head { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px; font-size:0.82rem; font-weight:600; }
-    .prob-cand-card { padding:10px 12px; border-radius:8px; border:1px solid var(--border); background:rgba(128,128,128,0.04); display:flex; flex-direction:column; gap:6px; }
-    .prob-cand-card.predilecta { border-color:#10b981; background:rgba(16,185,129,0.05); }
-    .prob-cand-top { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px; }
-    .prob-cand-title { font-weight:600; font-size:0.9rem; display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+    /* Clases de soporte para consensusView.js */
     .prob-metrics-pills { display:flex; gap:6px; align-items:center; font-size:0.76rem; font-variant-numeric:tabular-nums; }
     .prob-metric-pill { padding:2px 8px; border-radius:6px; border:1px solid var(--border); background:rgba(128,128,128,0.08); }
     .prob-quad-badge { font-size:0.71rem; font-weight:600; padding:2px 8px; border-radius:99px; }
@@ -102,13 +97,10 @@ function div(cls, txt) {
     .prob-alert-extra.open { display:flex; flex-direction:column; gap:3px; }
     .prob-discarded-details { font-size:0.78rem; color:var(--muted); margin-top:4px; }
     .prob-discarded-details summary { cursor:pointer; font-weight:500; user-select:none; padding:4px 0; }
-    .prob-discarded-list { display:flex; flex-direction:column; gap:6px; margin-top:6px; }
   `;
   document.head.appendChild(st);
 })();
 
-// Muestra una opción enriquecida ({nombre, precio, geo}) como texto plano editable.
-// El valor de un input <input> debe ser string; si no, [object Object] corrompería la clave.
 function genOptLabel(rawOp, q = null) {
   if (q) return normalizeOption(q, rawOp).label;
   if (rawOp && typeof rawOp === 'object') {
@@ -125,14 +117,12 @@ function pcParts() {
   return [badge, panel];
 }
 
-// Helper interno para usar apiAuth si existe (con retry de credenciales) o api como fallback
 function callApiAuth(payload) {
   if (typeof apiAuth === 'function') return apiAuth(payload);
   if (typeof apiPost === 'function') return apiPost(payload);
   return api(payload);
 }
 
-// Renumera secuencialmente las tarjetas de alojamiento (1..N) tras borrar o añadir
 function renumberCasas(listEl) {
   if (!listEl) return;
   listEl.querySelectorAll('.casa-num').forEach((el, idx) => {
@@ -140,7 +130,6 @@ function renumberCasas(listEl) {
   });
 }
 
-// Renderiza los badges secundarios de metadatos (precio y distancia al punto de partida)
 function appendMetaBadges(targetEl, rawOp) {
   if (rawOp && typeof rawOp === 'object' && rawOp.precio) {
     const precio = document.createElement('span');
@@ -159,7 +148,6 @@ function appendMetaBadges(targetEl, rawOp) {
 }
 
 // ── EDITOR VISUAL INLINE Y BORRADO DE OPCIONES (Sin prompt/confirm) ─────────
-// Franja de la última respuesta propia (para no perderla al repintar el formulario)
 var lastHorariosRange = null;
 
 function addGeoFieldsToDrawer(drawerOrHost, rawOp) {
@@ -229,7 +217,7 @@ function addGeoFieldsToDrawer(drawerOrHost, rawOp) {
     const direct = parseCoordStr(q);
     if (direct) {
       showPrev(direct);
-      status.textContent = '✓ Coordenadas válidas';
+      status.innerHTML = '<i class="fa-solid fa-check"></i> Coordenadas válidas';
       return;
     }
 
@@ -256,7 +244,7 @@ function addGeoFieldsToDrawer(drawerOrHost, rawOp) {
         const c = { lat: parseFloat(arr[0].lat), lng: parseFloat(arr[0].lon) };
         inpGeo.value = arr[0].display_name;
         showPrev(c);
-        status.textContent = '✓ Encontrado';
+        status.innerHTML = '<i class="fa-solid fa-check"></i> Encontrado';
       } else {
         hidePrev();
         status.textContent = '✗ Sin resultados';
@@ -299,7 +287,7 @@ function createOptionCrudControls(item, q, rawOp) {
   const bEdit = document.createElement('button');
   bEdit.type = 'button'; bEdit.className = 'btn-opt-crud'; bEdit.title = 'Editar opción'; bEdit.textContent = '✎';
   const bDel  = document.createElement('button');
-  bDel.type  = 'button'; bDel.className  = 'btn-opt-crud danger'; bDel.title = 'Eliminar opción'; bDel.textContent = '✕';
+  bDel.type  = 'button'; bDel.className  = 'btn-opt-crud danger'; bDel.title = 'Eliminar opción'; bDel.innerHTML = '<i class="fa-solid fa-xmark"></i>';
   wrap.append(bEdit, bDel);
 
   const drawer = div('opt-edit-drawer');
@@ -478,7 +466,6 @@ function createOptionCrudControls(item, q, rawOp) {
         item.remove();
         if (parentList) renumberCasas(parentList);
         if (q.tipo === 'voto-ponderado' && card) updatePondRulesBar(card);
-        if (q.tipo === 'probabilidad-opcion' && card) renderProbabilidadParetoPanel(card, q);
         if (isRad && card) {
           const checked = card.querySelector('input[type=radio]:checked');
           toggleConditionalStepper(card, checked ? checked.value : null);
@@ -676,33 +663,31 @@ function createRadioItem(card, q, rawOp) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════
-// NUEVO TIPO: `probabilidad-opcion` (Escalas absolutas, E[X], P25[X], Pareto)
+// TIPO: `probabilidad-opcion` (Solo captura individual; cálculo en optimizador.js)
 // ══════════════════════════════════════════════════════════════════════════
 
-// Escala verbal absoluta (§3). El valor 1.00 jamás se almacena: se trunca en 0.95
-// para no contaminar Monte Carlo con certezas absolutas.
 const ESCALA_PROB_6 = [
-  { id: 'nunca',       label: 'Nunca',         val: 0.00, pct: '0%',   desc: 'Veto duro: no iría bajo ningún concepto' },
-  { id: 'poco_prob',   label: 'Poco probable', val: 0.20, pct: '20%',  desc: 'Preferencia fuerte en contra' },
-  { id: 'quizas',      label: 'Quizás',        val: 0.50, pct: '50%',  desc: 'Indecisión genuina' },
-  { id: 'probable',    label: 'Probable',      val: 0.75, pct: '75%',  desc: 'Aprobación clara' },
-  { id: 'casi_seguro', label: 'Casi seguro',   val: 0.90, pct: '90%',  desc: 'Aprobación fuerte, casi compromiso' },
-  { id: 'seguro',      label: 'Seguro',        val: 0.95, pct: '95%*', desc: 'Compromiso total (truncado internamente a 0.95)' },
+  { id: 'nunca',       label: 'No voy',                 val: 0.00, pct: '0%',   desc: 'Veto: no iría bajo ningún concepto' },
+  { id: 'poco_prob',   label: 'Poco probable',          val: 0.20, pct: '20%',  desc: 'Preferencia fuerte en contra' },
+  { id: 'quizas',      label: 'Quizás / ns',            val: 0.40, pct: '40%',  desc: 'Indecisión genuina a la baja' },
+  { id: 'probable',    label: 'Probable',               val: 0.6, pct: '60%',  desc: 'Indecisión genuina a la alta' },
+  { id: 'casi_seguro', label: 'Bastante seguro',        val: 0.80, pct: '80%',  desc: 'Aprobación fuerte' },
+  { id: 'seguro',      label: 'Seguro',                 val: 0.98, pct: '98%*', desc: 'Compromiso total (truncado internamente a 0.98)' },
 ];
 
 const ESCALA_PROB_5 = [
-  { id: 'nunca',       label: 'Nunca',         val: 0.00, pct: '0%',   desc: 'Veto duro: no iría bajo ningún concepto' },
-  { id: 'poco_prob',   label: 'Poco probable', val: 0.20, pct: '20%',  desc: 'Preferencia fuerte en contra' },
-  { id: 'quizas',      label: 'Quizás',        val: 0.50, pct: '50%',  desc: 'Indecisión genuina' },
-  { id: 'probable',    label: 'Probable',      val: 0.75, pct: '75%',  desc: 'Aprobación clara' },
-  { id: 'casi_seguro', label: 'Casi seguro',   val: 0.95, pct: '95%',  desc: 'Compromiso firme (máximo operativo 0.95)' },
+  { id: 'nunca',       label: 'No voy',             val: 0.00, pct: '0%',   desc: 'Veto: no iría bajo ningún concepto' },
+  { id: 'poco_prob',   label: 'Poco probable',      val: 0.25, pct: '25%',  desc: 'Preferencia fuerte en contra' },
+  { id: 'quizas',      label: 'Quizás / ns',        val: 0.50, pct: '50%',  desc: 'Indecisión genuina' },
+  { id: 'probable',    label: 'Probable',           val: 0.75, pct: '75%',  desc: 'Aprobación clara' },
+  { id: 'casi_seguro', label: 'Casi seguro',        val: 0.98, pct: '98%',  desc: 'Compromiso firme (máximo operativo 0.98)' },
 ];
 
-// Garantiza que ningún valor almacenado supere 0.95 ni sea negativo (§3)
+// Garantiza que ningún valor almacenado supere 0.98 ni sea negativo (§3)
 function clipProbabilidad(p) {
   const n = Number(p);
   if (!isFinite(n) || n <= 0) return 0.00;
-  return Math.min(0.95, Math.round(n * 100) / 100);
+  return Math.min(0.98, Math.round(n * 100) / 100);
 }
 
 function getEscalaProbabilidad(q) {
@@ -720,7 +705,6 @@ function getEscalaProbabilidad(q) {
   return ESCALA_PROB_6;
 }
 
-// Normaliza diccionarios de respuestas (incluyendo migración si una pregunta antes era checkbox o voto-ponderado)
 function normProbOpcion(v) {
   if (!v) return {};
   if (Array.isArray(v)) {
@@ -733,461 +717,12 @@ function normProbOpcion(v) {
   Object.entries(v).forEach(([k, rawVal]) => {
     const num = Number(rawVal);
     if (!isFinite(num)) return;
-    // Compatibilidad por si la pregunta tenía datos históricos de voto-ponderado (-1, +1, +3)
     if (num === -1)     out[k] = 0.20;
     else if (num === 3) out[k] = 0.95;
     else if (num > 1 && num <= 100) out[k] = clipProbabilidad(num / 100);
     else out[k] = clipProbabilidad(num);
   });
   return out;
-}
-
-// Cálculo exacto de P25[X] según §4.2 y §5.5:
-// - Para n in [4, 7] usa el segundo valor más bajo del vector ordenado.
-// - Para n <= 3 usa el mínimo (primer valor).
-// - Para n >= 8 usa interpolación lineal estándar del percentil 25.
-function calcP25(sortedProbs) {
-  const n = sortedProbs.length;
-  if (n === 0) return 0;
-  if (n <= 3)  return sortedProbs[0];
-  if (n < 8)   return sortedProbs[1];
-  const pos = 0.25 * (n - 1);
-  const lo  = Math.floor(pos);
-  const hi  = Math.ceil(pos);
-  const a   = pos - lo;
-  return sortedProbs[lo] + a * (sortedProbs[hi] - sortedProbs[lo]);
-}
-
-// Clasificación en la matriz de decisión 2x2 (§4.3 y §7)
-function classifyProbQuadrant(E, P25, nVotantes, eBase) {
-  const refE   = eBase > 0 ? eBase * 0.75 : nVotantes * 0.55;
-  const highE  = nVotantes > 0 ? (E >= refE) : false;
-  const highP  = P25 >= 0.50;
-
-  if (highE && highP) {
-    return {
-      id: 'ganador',
-      label: 'Ganador claro',
-      tradeoff: 'Alta asistencia media esperada y sólido compromiso en la cola baja del grupo.',
-    };
-  }
-  if (highE && !highP) {
-    return {
-      id: 'polarizante',
-      label: 'Popular pero polarizante',
-      tradeoff: 'Lleva a más gente en media, pero depende de que los indecisos se animen o asume posibles bajas.',
-    };
-  }
-  if (!highE && highP) {
-    return {
-      id: 'tibio',
-      label: 'Consensuado pero tibio',
-      tradeoff: 'Nadie expresa rechazo fuerte, pero el entusiasmo general y la asistencia total son moderados.',
-    };
-  }
-  return {
-    id: 'rechazar',
-    label: 'Rechazar / Baja tracción',
-    tradeoff: 'Baja asistencia esperada y escasa garantía entre los votantes.',
-  };
-}
-
-// Gestión de snapshots en localStorage para la Alerta 6.3 (Deriva temporal >= 24h)
-function checkAndUpdateTemporalDrift(qid, currentEMap) {
-  const eid = (typeof user !== 'undefined' && user && user.eid) ? user.eid : 'default';
-  const key = `viajes:prob_snap:${eid}:${qid}`;
-  const now = Date.now();
-  const H24 = 24 * 3600 * 1000;
-  const drifts = {};
-
-  try {
-    const raw = localStorage.getItem(key);
-    if (!raw) {
-      localStorage.setItem(key, JSON.stringify({ ts: now, eMap: currentEMap }));
-      return drifts;
-    }
-    const snap = JSON.parse(raw);
-    if (!snap || !snap.ts || !snap.eMap) {
-      localStorage.setItem(key, JSON.stringify({ ts: now, eMap: currentEMap }));
-      return drifts;
-    }
-    const elapsedMs = now - snap.ts;
-    if (elapsedMs >= H24) {
-      const horas = Math.round(elapsedMs / 3600000);
-      Object.entries(currentEMap).forEach(([optKey, curE]) => {
-        const prevE = Number(snap.eMap[optKey]);
-        if (isFinite(prevE)) {
-          const delta = curE - prevE;
-          if (delta < -0.8) {
-            drifts[optKey] = { delta, prevE, curE, horas };
-          }
-        }
-      });
-      // Si el snapshot supera las 72h, rotamos ventana para mantener referencia fresca
-      if (elapsedMs >= H24 * 3) {
-        localStorage.setItem(key, JSON.stringify({ ts: now, eMap: currentEMap }));
-      }
-    }
-  } catch (e) {}
-  return drifts;
-}
-
-/**
- * Recopila las respuestas de todo el grupo para una pregunta `probabilidad-opcion`
- * y la probabilidad base `prob_asistencia_propia` de cada participante.
- */
-function collectGroupProbData(q, card = null) {
-  const qid    = q.id;
-  const myName = (typeof user !== 'undefined' && user && user.nombre) ? String(user.nombre).trim() : '__yo__';
-  const voters = new Map(); // nombre -> { probs: {optKey: p}, baseProb: number }
-
-  const parseBaseProb = (ansObj) => {
-    if (!ansObj || typeof ansObj !== 'object') return null;
-    const raw = ansObj.prob_asistencia_propia ?? ansObj.probAsistencia ?? ansObj.asistencia;
-    if (raw == null) return null;
-    const val = (typeof raw === 'object') ? (raw.ideal ?? raw.value) : Number(raw);
-    if (!isFinite(val)) return null;
-    return val > 1 ? clipProbabilidad(val / 100) : clipProbabilidad(val);
-  };
-
-  const registerVoter = (nombreRaw, ansObj) => {
-    const nombre = String(nombreRaw || '').trim();
-    if (!nombre || !ansObj || typeof ansObj !== 'object') return;
-    const rawQ = (qid in ansObj) ? ansObj[qid] : null;
-    const probs = normProbOpcion(rawQ);
-    const baseProb = parseBaseProb(ansObj);
-    if (Object.keys(probs).length || baseProb != null) {
-      const prev = voters.get(nombre) || { probs: {}, baseProb: null };
-      voters.set(nombre, {
-        probs: Object.keys(probs).length ? probs : prev.probs,
-        baseProb: baseProb ?? prev.baseProb,
-      });
-    }
-  };
-
-  const candidates = [
-    typeof respuestas !== 'undefined' ? respuestas : null,
-    typeof allRespuestas !== 'undefined' ? allRespuestas : null,
-    window.respuestas, window.allRespuestas, window.surveyResponses,
-    window.pollData && window.pollData.respuestas,
-    window.estadoGrupo && window.estadoGrupo.respuestas,
-    window.data && window.data.respuestas,
-  ].filter(Boolean);
-
-  candidates.forEach(src => {
-    if (Array.isArray(src)) {
-      src.forEach(entry => {
-        if (!entry || typeof entry !== 'object') return;
-        const name = entry.nombre || entry.user || entry.usuario || entry.name;
-        const ansObj = entry.respuestas || entry.datos || entry.answers || entry;
-        if (name) registerVoter(name, ansObj);
-      });
-    } else if (typeof src === 'object') {
-      Object.entries(src).forEach(([k, val]) => {
-        if (val && typeof val === 'object' && (val.respuestas || val.datos)) {
-          registerVoter(val.nombre || k, val.respuestas || val.datos);
-        } else {
-          registerVoter(k, val);
-        }
-      });
-    }
-  });
-
-  // Incorporar en vivo la respuesta de la tarjeta actual del usuario
-  if (card && TIPOS['probabilidad-opcion']) {
-    const liveAns = TIPOS['probabilidad-opcion'].read(card, q);
-    let myBase = null;
-    const baseCard = typeof cardFor === 'function' ? cardFor('prob_asistencia_propia') : null;
-    if (baseCard && baseCard.state && baseCard.state.slider) {
-      const v = +baseCard.state.slider.value;
-      myBase = v > 1 ? clipProbabilidad(v / 100) : clipProbabilidad(v);
-    }
-    if (Object.keys(liveAns).length) {
-      const prev = voters.get(myName) || {};
-      voters.set(myName, { probs: liveAns, baseProb: myBase ?? prev.baseProb ?? null });
-    }
-  }
-
-  return voters;
-}
-
-/**
- * Motor principal de evaluación de `probabilidad-opcion` (§4, §5, §6 y §7).
- * Expuesto en `window.evaluarProbabilidadOpcion` para consumo directo por `reformulario.js` / Monte Carlo.
- */
-window.evaluarProbabilidadOpcion = function evaluarProbabilidadOpcion(q, customVotersMap = null, card = null) {
-  const votersMap = customVotersMap instanceof Map ? customVotersMap : collectGroupProbData(q, card);
-  const opcionesRaw = q.opciones || [];
-
-  // Filtrar participantes que han emitido al menos una valoración en esta pregunta
-  const activeVoters = [...votersMap.entries()].filter(([, d]) => d && d.probs && Object.keys(d.probs).length > 0);
-  const nVotantes    = activeVoters.length;
-
-  // Expectativa a priori (suma de prob_asistencia_propia; si un votante no la tiene declarada, usa su máximo en catálogo o 0.80)
-  const eBase = activeVoters.reduce((acc, [, d]) => {
-    if (d.baseProb != null && isFinite(d.baseProb)) return acc + d.baseProb;
-    const vals = Object.values(d.probs);
-    const fallback = vals.length ? Math.max(...vals) : 0.80;
-    return acc + fallback;
-  }, 0);
-
-  const currentEMap = {};
-  const items = opcionesRaw.map(rawOp => {
-    const norm = normalizeOption(q, rawOp);
-    const key  = norm.key;
-    const vec  = [];
-    const porUsuario = {};
-
-    activeVoters.forEach(([nombre, d]) => {
-      if (key in d.probs) {
-        const p = clipProbabilidad(d.probs[key]);
-        vec.push(p);
-        porUsuario[nombre] = p;
-      }
-    });
-
-    const sorted = [...vec].sort((a, b) => a - b);
-    const nOpt   = sorted.length;
-    const E      = sorted.reduce((a, b) => a + b, 0);
-    const P25    = calcP25(sorted);
-    const nVetos = sorted.filter(p => p === 0).length;
-    const nBajos = sorted.filter(p => p <= 0.20).length;
-
-    currentEMap[key] = E;
-
-    // Escalado proporcional de eBase si algún votante dejó esta opción en blanco
-    const eBaseOpt = nVotantes > 0 ? eBase * (nOpt / nVotantes) : 0;
-    const deltaBase = E - eBaseOpt;
-
-    // §5.5 Regla para grupos pequeños (n <= 4): un 0.00 marca la opción como inviable
-    const inviableGrupoPequeno = (nOpt > 0 && nOpt <= 4 && nVetos > 0);
-
-    // §5.3 Mensajes operativos obligatorios (siempre en pareja: E[X] y P25[X])
-    const diffAbs = Math.abs(deltaBase).toFixed(1);
-    let diffPhrase = `igual a lo que se esperaba a priori (${eBaseOpt.toFixed(1)})`;
-    if (deltaBase <= -0.05) diffPhrase = `lo cual es ${diffAbs} menos de lo que se esperaba a priori (${eBaseOpt.toFixed(1)})`;
-    else if (deltaBase >= 0.05) diffPhrase = `lo cual es ${diffAbs} más de lo que se esperaba a priori (${eBaseOpt.toFixed(1)})`;
-
-    const msgE   = `Se espera que a este viaje asistáis ${E.toFixed(1)} personas, ${diffPhrase}.`;
-    const msgP25 = `El 75% de los votantes tienen como mínimo ${P25.toFixed(2)} de probabilidad de asistir a esta opción.`;
-
-    const cuadrante = classifyProbQuadrant(E, P25, nOpt, eBaseOpt);
-
-    return {
-      key,
-      label: norm.label,
-      precio: norm.precio,
-      norm,
-      nOpt,
-      E,
-      P25,
-      eBaseOpt,
-      deltaBase,
-      nVetos,
-      nBajos,
-      inviableGrupoPequeno,
-      vectorProbabilidades: sorted,
-      porUsuario,
-      msgE,
-      msgP25,
-      cuadrante,
-      alertas: [],
-      dominadaPor: null,
-    };
-  });
-
-  // §6 Sistema de alertas (Orden de prioridad: 1. Colapso de cola, 2. Caída respecto al plan base, 3. Deriva temporal)
-  const drifts = checkAndUpdateTemporalDrift(q.id, currentEMap);
-
-  items.forEach(it => {
-    if (it.nOpt === 0) return;
-
-    // 6.1 Colapso de cola (P25 = 0 o P25 < 0.15)
-    if (it.P25 === 0 || it.P25 < 0.15) {
-      const detalleVeto = it.nVetos > 0
-        ? `${it.nVetos} ${it.nVetos === 1 ? 'persona declara' : 'personas declaran'} «Nunca» (0.00)`
-        : `${it.nBajos} ${it.nBajos === 1 ? 'persona tiene' : 'personas tienen'} probabilidad ≤ 0.20`;
-      it.alertas.push({
-        tipo: 'colapso_cola',
-        prioridad: 1,
-        titulo: 'Colapso de cola',
-        mensaje: `⚠️ Colapso de cola (P25 = ${it.P25.toFixed(2)}): ${detalleVeto}. Riesgo real de bajas si se elige esta opción.`,
-      });
-    }
-
-    // 6.2 Caída respecto al plan base (Δ < -1.5)
-    if (it.deltaBase < -1.5) {
-      it.alertas.push({
-        tipo: 'caida_base',
-        prioridad: 2,
-        titulo: 'Caída respecto al plan base',
-        mensaje: `📉 Caída respecto al plan base: Se pierden ${Math.abs(it.deltaBase).toFixed(1)} asistentes esperados respecto a la disposición general al viaje (${it.eBaseOpt.toFixed(1)} → ${it.E.toFixed(1)}).`,
-      });
-    }
-
-    // 6.3 Deriva temporal (caída > 0.8 en >= 24h)
-    if (drifts[it.key]) {
-      const d = drifts[it.key];
-      it.alertas.push({
-        tipo: 'deriva_temporal',
-        prioridad: 3,
-        titulo: 'Deriva temporal',
-        mensaje: `⏳ Deriva temporal: E[X] ha caído ${Math.abs(d.delta).toFixed(1)} puntos en las últimas ${d.horas}h. El grupo está cambiando de opinión sobre esta opción.`,
-      });
-    }
-  });
-
-  // §5.2 Frontera de Pareto (A domina a B si E[A] >= E[B] y P25[A] >= P25[B] con al menos una desigualdad estricta)
-  const EPS = 1e-9;
-  const evaluables = items.filter(it => it.nOpt > 0 && !it.inviableGrupoPequeno);
-
-  evaluables.forEach(b => {
-    const dom = evaluables.find(a =>
-      a.key !== b.key &&
-      a.E >= b.E - EPS &&
-      a.P25 >= b.P25 - EPS &&
-      (a.E > b.E + EPS || a.P25 > b.P25 + EPS)
-    );
-    if (dom) b.dominadaPor = dom.label;
-  });
-
-  const frontera = evaluables
-    .filter(it => !it.dominadaPor)
-    .sort((a, b) => (b.E - a.E) || (b.P25 - a.P25));
-
-  const descartadas = items
-    .filter(it => it.nOpt > 0 && (it.dominadaPor || it.inviableGrupoPequeno))
-    .sort((a, b) => (b.E - a.E) || (b.P25 - a.P25));
-
-  // §5.4 Opción predilecta: cuando la frontera contiene una única opción y hay al menos 2 opciones evaluadas
-  const totalConVotos = items.filter(it => it.nOpt > 0).length;
-  const predilecta    = (frontera.length === 1 && totalConVotos >= 2) ? frontera[0] : null;
-
-  return {
-    questionId: q.id,
-    nVotantes,
-    eBase,
-    opciones: items,
-    frontera,
-    descartadas,
-    predilecta,
-  };
-};
-
-// Renderiza una tarjeta individual dentro del panel de resultados de Pareto (§5 y §7)
-function renderProbCandidateCard(it, isPredilecta, isDescartada = false) {
-  const box = div('prob-cand-card' + (isPredilecta ? ' predilecta' : ''));
-
-  const reasonBadge = isDescartada
-    ? (it.inviableGrupoPequeno
-        ? `<span class="prob-quad-badge rechazar">Inviable (veto 0.00 en grupo ≤ 4)</span>`
-        : `<span class="prob-quad-badge tibio">Dominada por «${esc(it.dominadaPor)}»</span>`)
-    : `<span class="prob-quad-badge ${it.cuadrante.id}">${esc(it.cuadrante.label)}</span>`;
-
-  box.innerHTML = `
-    <div class="prob-cand-top">
-      <div class="prob-cand-title">
-        <span>${esc(it.label)}</span>
-        ${it.precio ? `<span class="casa-precio">${esc(it.precio)}</span>` : ''}
-        ${isPredilecta ? `<span class="prob-pred-badge">★ Opción predilecta</span>` : ''}
-        ${reasonBadge}
-      </div>
-      <div class="prob-metrics-pills">
-        <span class="prob-metric-pill" title="Asistencia esperada E[X] = Σ p_i">E[X]: <b>${it.E.toFixed(1)}</b></span>
-        <span class="prob-metric-pill" title="Percentil 25 de las probabilidades">P25: <b>${it.P25.toFixed(2)}</b></span>
-      </div>
-    </div>
-    <div class="prob-cand-msgs">
-      <div>• ${esc(it.msgE)}</div>
-      <div>• ${esc(it.msgP25)}</div>
-    </div>
-    <div class="prob-cand-tradeoff">${esc(it.cuadrante.tradeoff)}</div>
-  `;
-
-  // §6.4 Renderizado de alertas con priorización estricta (muestra la más grave y pliega el resto)
-  if (it.alertas && it.alertas.length) {
-    const topAlert = it.alertas[0];
-    const rest     = it.alertas.slice(1);
-    const alertEl  = div(`prob-alert-box sev-${topAlert.prioridad}`);
-
-    const mainRow = div('prob-alert-main');
-    const txtSpan = document.createElement('span');
-    txtSpan.textContent = topAlert.mensaje;
-    mainRow.appendChild(txtSpan);
-
-    if (rest.length) {
-      const moreBtn = document.createElement('button');
-      moreBtn.type = 'button';
-      moreBtn.className = 'prob-alert-more-btn';
-      moreBtn.textContent = `+${rest.length} ${rest.length === 1 ? 'alerta' : 'alertas'}`;
-      const extraBox = div('prob-alert-extra');
-      rest.forEach(a => {
-        const line = div('', a.mensaje);
-        extraBox.appendChild(line);
-      });
-      moreBtn.addEventListener('click', () => {
-        const open = extraBox.classList.toggle('open');
-        moreBtn.textContent = open ? 'Ocultar' : `+${rest.length} ${rest.length === 1 ? 'alerta' : 'alertas'}`;
-      });
-      mainRow.appendChild(moreBtn);
-      alertEl.append(mainRow, extraBox);
-    } else {
-      alertEl.appendChild(mainRow);
-    }
-    box.appendChild(alertEl);
-  }
-
-  return box;
-}
-
-function renderProbabilidadParetoPanel(card, q) {
-  const host = card.querySelector('.prob-pareto-host');
-  if (!host) return;
-
-  const res = window.evaluarProbabilidadOpcion(q, null, card);
-  if (!res.frontera.length && !res.descartadas.length) {
-    host.innerHTML = '';
-    return;
-  }
-
-  const panel = div('prob-pareto-panel');
-  panel.innerHTML = `
-    <div class="prob-pareto-head">
-      <span>📊 Frontera de Pareto — Candidatas (${res.frontera.length})</span>
-      <span style="font-size:0.75rem;color:var(--muted);font-weight:400">
-        ${res.nVotantes} ${res.nVotantes === 1 ? 'votante' : 'votantes'} · Expectativa a priori: <b>${res.eBase.toFixed(1)}</b> pers.
-      </span>
-    </div>
-    <div class="prob-pareto-front-list" style="display:flex;flex-direction:column;gap:8px"></div>
-  `;
-
-  const frontList = panel.querySelector('.prob-pareto-front-list');
-  if (res.frontera.length) {
-    res.frontera.forEach(it => {
-      const isPred = !!(res.predilecta && res.predilecta.key === it.key);
-      frontList.appendChild(renderProbCandidateCard(it, isPred, false));
-    });
-  } else {
-    const emptyMsg = div('', 'Todas las opciones evaluadas tienen un veto duro (0.00) en este grupo pequeño (n ≤ 4). Revisa las opciones descartadas debajo.');
-    emptyMsg.style.cssText = 'font-size:0.78rem;color:var(--muted)';
-    frontList.appendChild(emptyMsg);
-  }
-
-  if (res.descartadas.length) {
-    const details = document.createElement('details');
-    details.className = 'prob-discarded-details';
-    const summary = document.createElement('summary');
-    summary.textContent = `Ver resto / opciones descartadas (${res.descartadas.length})`;
-    const discList = div('prob-discarded-list');
-    res.descartadas.forEach(it => {
-      discList.appendChild(renderProbCandidateCard(it, false, true));
-    });
-    details.append(summary, discList);
-    panel.appendChild(details);
-  }
-
-  host.innerHTML = '';
-  host.appendChild(panel);
 }
 
 function createProbItem(q, rawOp, n) {
@@ -1253,8 +788,6 @@ function createProbItem(q, rawOp, n) {
     const wasActive = btn.classList.contains('active');
     btns.forEach(b => b.classList.remove('active'));
     if (!wasActive) btn.classList.add('active');
-    const card = item.closest('.card');
-    if (card) renderProbabilidadParetoPanel(card, qObj);
     triggerSave();
   }));
 
@@ -1296,9 +829,9 @@ function updatePondRulesBar(card) {
   const p1  = bar.querySelector('[data-rule="1"]');
   const pm1 = bar.querySelector('[data-rule="-1"]');
 
-  if (p3)  { p3.classList.toggle('used', has3);       p3.innerHTML  = `★ Favorito (+3): <b>${has3 ? 'Asignado' : '1 disp.'}</b>`; }
-  if (p1)  { p1.classList.toggle('used', count1 > 0); p1.innerHTML  = `✓ Me vale (+1): <b>${count1}</b>`; }
-  if (pm1) { pm1.classList.toggle('used', hasM1);      pm1.innerHTML = `✕ Veto (-1): <b>${hasM1 ? 'Asignado' : '1 disp.'}</b>`; }
+  if (p3)  { p3.classList.toggle('used', has3);       p3.innerHTML  = `<i class="fa-solid fa-star"></i> Favorito (+3): <b>${has3 ? 'Asignado' : '1 disp.'}</b>`; }
+  if (p1)  { p1.classList.toggle('used', count1 > 0); p1.innerHTML  = `<i class="fa-solid fa-check"></i> Me vale (+1): <b>${count1}</b>`; }
+  if (pm1) { pm1.classList.toggle('used', hasM1);      pm1.innerHTML = `<i class="fa-solid fa-xmark"></i> Veto (-1): <b>${hasM1 ? 'Asignado' : '1 disp.'}</b>`; }
 }
 
 // ── FEATURE 5: EMPAREJAMIENTO DINÁMICO COCHES <-> PASAJEROS Y BALANCE ────────
@@ -1420,11 +953,10 @@ function renderTransportDynamicPanel(card, q) {
   const curVal  = checked ? checked.value : null;
   const snap    = getGroupTransportSnapshot(q, card);
 
-  // Actualizar barra de balance de plazas en vivo
   const balBar = wrap.querySelector('.trans-balance-bar');
   if (balBar) {
     const net = snap.totalSeats - snap.passengers.length;
-    let badgeCls = 'ok', badgeTxt = `✓ Cubierto (${net >= 0 ? '+' + net : net} plazas)`;
+    let badgeCls = 'ok', badgeTxt = `<i class="fa-solid fa-check"></i> Cubierto (${net >= 0 ? '+' + net : net} plazas)`;
     if (snap.drivers.length === 0 && snap.passengers.length > 0) {
       badgeCls = 'err'; badgeTxt = `⚠️ Faltan ${snap.passengers.length} plazas (0 coches)`;
     } else if (net < 0) {
@@ -1479,7 +1011,6 @@ function renderTransportDynamicPanel(card, q) {
     ? (card.state.prefPasajeros || (card.state.prefPasajeros = {}))
     : (card.state.prefCoches    || (card.state.prefCoches = {}));
 
-  // Asegurar que cualquier nombre ya guardado en preferencias aparezca aunque no esté en el snapshot
   const savedNames = Object.keys(prefStore);
   const poolMap = new Map();
   snap.others.forEach(u => poolMap.set(u.nombre, u));
@@ -1489,7 +1020,6 @@ function renderTransportDynamicPanel(card, q) {
     }
   });
 
-  // Ordenar: si soy pasajero, primero los que llevan coche confirmado; si soy conductor, primero los que buscan plaza
   const candidates = [...poolMap.values()].sort((a, b) => {
     if (isDriver) return (b.isPassenger ? 1 : 0) - (a.isPassenger ? 1 : 0);
     return (b.isDriver ? 1 : 0) - (a.isDriver ? 1 : 0);
@@ -1499,8 +1029,8 @@ function renderTransportDynamicPanel(card, q) {
     ? '<i class="fa-solid fa-taxi" style="color: rgb(252, 255, 47); margin-right:6px;"></i> ¿A quién llevas en tu coche?'
     : '<i class="fa-solid fa-car" style="color: rgb(252, 255, 47); margin-right:6px;"></i> ¿En qué coche prefieres ir?';
   const subTxt = isDriver
-    ? 'Pulsa para marcar a quién te viene de paso llevar (★ Preferido) o evitar (✕).'
-    : 'Pulsa sobre un conductor para pedir ir en su coche (★ Preferido) o evitar (✕).';
+    ? 'Pulsa para marcar a quién te viene de paso llevar (<i class="fa-solid fa-star"></i> Preferido) o evitar (<i class="fa-solid fa-xmark"></i>).'
+    : 'Pulsa sobre un conductor para pedir ir en su coche (<i class="fa-solid fa-star"></i> Preferido) o evitar (<i class="fa-solid fa-xmark"></i>).';
 
   matchHost.innerHTML = `
     <div class="trans-pref-box">
@@ -1564,7 +1094,6 @@ function renderTransportDynamicPanel(card, q) {
 
       chip.addEventListener('click', () => {
         const cur = Number(prefStore[cand.nombre] || 0);
-        // Ciclo: 0 (neutro) -> +1 (preferido) -> -1 (evitar) -> 0 (neutro)
         const next = cur === 0 ? 1 : (cur === 1 ? -1 : 0);
         if (next === 0) {
           delete prefStore[cand.nombre];
@@ -1581,14 +1110,13 @@ function renderTransportDynamicPanel(card, q) {
     });
   }
 
-  // Añadir participante manualmente si aún no ha respondido la encuesta
   const inpAdd = matchHost.querySelector('.inp-add-trans-part');
   const btnAdd = matchHost.querySelector('.btn-add-trans-part');
   const doAddPart = () => {
     const name = inpAdd.value.trim();
     if (!name) return;
     addExtraParticipant(name);
-    prefStore[name] = 1; // Al añadirlo manualmente, lo marca directamente como preferido (+1)
+    prefStore[name] = 1;
     inpAdd.value = '';
     renderTransportDynamicPanel(card, q);
     triggerSave();
@@ -1608,17 +1136,14 @@ function toggleConditionalStepper(card, val) {
   }
 }
 
-// Permite refrescar las tarjetas dinámicas (transporte y probabilidad-opcion) tras cada pollOnce()
 window.refreshTransportCards = function () {
   if (typeof schema === 'undefined' || !Array.isArray(schema)) return;
   schema.forEach(q => {
+    if (q.tipo !== 'radio' || !getRadioStepperConfig(q)) return;
     const c = typeof cardFor === 'function' ? cardFor(q.id) : null;
-    if (!c) return;
-    if (q.tipo === 'radio' && getRadioStepperConfig(q)) renderTransportDynamicPanel(c, q);
-    if (q.tipo === 'probabilidad-opcion') renderProbabilidadParetoPanel(c, q);
+    if (c) renderTransportDynamicPanel(c, q);
   });
 };
-window.refreshProbabilidadCards = window.refreshTransportCards;
 
 // ── FEATURE 3: UTILIDADES DE MINI-CALENDARIO Y COMPACTACIÓN DE RANGOS ───────
 const MESES_ES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
@@ -1669,7 +1194,7 @@ function addDateRange(card, desde = null, hasta = null, skipCalSync = false) {
   if (!list) return;
   const row = div('date-range-row');
   const minAttr = (desde || hasta) ? '' : `min="${hoyLocal()}"`;
-  row.innerHTML = `<label>Desde</label><input type="date" class="range-from" ${minAttr}><span class="sep">→</span><label>Hasta</label><input type="date" class="range-to" ${minAttr}><button type="button" class="btn-remove" title="Quitar">✕</button>`;
+  row.innerHTML = `<label>Desde</label><input type="date" class="range-from" ${minAttr}><span class="sep">→</span><label>Hasta</label><input type="date" class="range-to" ${minAttr}><button type="button" class="btn-remove" title="Quitar"><i class="fa-solid fa-xmark"></i></button>`;
   const from = row.querySelector('.range-from');
   const to   = row.querySelector('.range-to');
   if (desde) from.value = desde;
@@ -1902,7 +1427,6 @@ const TOGGLES_DISP = [
   ['preferirPuente', 'Mejor si hay puente / festivo'],
 ];
 
-// NOTA: `var` es intencional para exponer TIPOS en window entre scripts clásicos.
 var TIPOS = {
 
   checkbox: {
@@ -1930,9 +1454,9 @@ var TIPOS = {
     build(card, q) {
       const rulesBar = div('pond-rules-bar');
       rulesBar.innerHTML = `
-        <span class="rule-pill" data-rule="3">★ Favorito (+3): <b>1 disp.</b></span>
-        <span class="rule-pill" data-rule="1">✓ Me vale (+1): <b>0</b></span>
-        <span class="rule-pill" data-rule="-1">✕ Veto (-1): <b>1 disp.</b></span>
+        <span class="rule-pill" data-rule="3"><i class="fa-solid fa-star"></i> Favorito (+3): <b>1 disp.</b></span>
+        <span class="rule-pill" data-rule="1"><i class="fa-solid fa-check"></i> Me vale (+1): <b>0</b></span>
+        <span class="rule-pill" data-rule="-1"><i class="fa-solid fa-xmark"></i> Veto (-1): <b>1 disp.</b></span>
       `;
       const list = div('options-list'); list.dataset.qid = q.id;
       (q.opciones || []).forEach(op => list.appendChild(createPondItem(q, _rawOptPara(q, op))));
@@ -1964,7 +1488,7 @@ var TIPOS = {
     },
   },
 
-  // ── NUEVO TIPO: `probabilidad-opcion` (Independiente de `voto-ponderado`) ──
+  // ── `probabilidad-opcion`: Solo captura individual sin mostrar el consenso del grupo ──
   'probabilidad-opcion': {
     build(card, q) {
       card.state.question = q;
@@ -1978,15 +1502,13 @@ var TIPOS = {
         list.appendChild(createProbItem(q, _rawOptPara(q, op), i + 1));
       });
 
-      const paretoHost = div('prob-pareto-host');
       const useCasaForm = (q.config && q.config.modoCasas) ||
         (q.opciones || []).some(o => o && typeof o === 'object' && (o.url || o.foto));
       const addForm = (useCasaForm && typeof createAddCasaForm === 'function')
         ? createAddCasaForm(q)
         : createAddOptForm(q);
 
-      card.append(hint, list, addForm, paretoHost);
-      renderProbabilidadParetoPanel(card, q);
+      card.append(hint, list, addForm);
     },
     read(card) {
       const dict = {};
@@ -2004,7 +1526,6 @@ var TIPOS = {
       Object.entries(normDict).forEach(([val, prob]) => {
         const item = findItem(card, val);
         if (!item) return;
-        // Buscar la categoría más cercana de la escala activa
         let bestBtn = item.querySelector(`.btn-prob-cat[data-prob="${prob}"]`);
         if (!bestBtn && escala.length) {
           let bestCat = escala[0];
@@ -2017,7 +1538,6 @@ var TIPOS = {
         }
         if (bestBtn) bestBtn.classList.add('active');
       });
-      renderProbabilidadParetoPanel(card, q);
     },
     addOption(card, q, op, select) {
       const list = card.querySelector('.options-list');
@@ -2031,7 +1551,6 @@ var TIPOS = {
       }
       list.appendChild(item);
       renumberCasas(list);
-      renderProbabilidadParetoPanel(card, q);
       return item;
     },
   },
@@ -2066,7 +1585,6 @@ var TIPOS = {
     },
   },
 
-  // ── horarios (Planificación por franjas + Restricciones + Presets de Finde) ──
   horarios: {
     build(card, q) {
       const cfg = q.config || {};
@@ -2162,7 +1680,6 @@ var TIPOS = {
     },
   },
 
-  // ── FEATURE 2: SLIDER CON PRESUPUESTO EN DOS NIVELES (ÓPTIMO VS HARD CAP) ──
   slider: {
     build(card, q) {
       const cfg  = q.config || {};
@@ -2200,9 +1717,6 @@ var TIPOS = {
       slider.addEventListener('input', () => {
         if (sliderMax && +sliderMax.value < +slider.value) sliderMax.value = slider.value;
         paint();
-        if (q.id === 'prob_asistencia_propia' && window.refreshProbabilidadCards) {
-          window.refreshProbabilidadCards();
-        }
         triggerSave();
       });
 
@@ -2216,7 +1730,11 @@ var TIPOS = {
         toggleLbl.className = 'dual-slider-toggle';
         hardCapToggle = document.createElement('input');
         hardCapToggle.type = 'checkbox';
-        toggleLbl.append(hardCapToggle, document.createTextNode(' 🎯 Fijar también un límite máximo estricto (Hard Cap)'));
+        toggleLbl.append(hardCapToggle);
+
+        const txt = document.createElement('span');
+        txt.innerHTML = ' <i class="fa-solid fa-arrow-up-right-dots" aria-hidden="true" style="margin-right:0.25em;"></i> Fijar también un límite máximo estricto';
+        toggleLbl.appendChild(txt);
 
         dualBox = div('dual-slider-box');
         dualBox.style.display = 'none';
@@ -2289,7 +1807,6 @@ var TIPOS = {
     },
   },
 
-  // ── FEATURE 5: RADIO + LOGÍSTICA DE TRANSPORTE Y EMPAREJAMIENTO DINÁMICO ──
   radio: {
     build(card, q) {
       const wrap = div('transport-opts'); wrap.dataset.qid = q.id;
@@ -2409,7 +1926,6 @@ var TIPOS = {
     write: () => {},
   },
 
-  // ── FEATURE 3: DISPONIBILIDAD CON MINI-CALENDARIO INTERACTIVO ──────────────
   disponibilidad: {
     build(card) {
       card.state.dias = createStepper(1, 30, 5, triggerSave);
@@ -2474,7 +1990,6 @@ var TIPOS = {
 };
 
 // ── FRANJAS, MOTIVOS Y UTILIDADES DE HORARIOS ───────────────────────────────
-
 const MOTIVOS_RESTRICCION = [
   { id: 'clase',   label: '📚 Clase / Prácticas' },
   { id: 'trabajo', label: '💼 Trabajo / Turno' },
@@ -2519,7 +2034,7 @@ function buildFranjasEditor(host, franjas) {
       <input type="time" class="fe-start" value="${fmtHM(f.start)}">
       <span>→</span>
       <input type="time" class="fe-end" value="${fmtHM(f.end)}">
-      <button type="button" class="btn-remove" title="Quitar franja">✕</button>`;
+      <button type="button" class="btn-remove" title="Quitar franja"><i class="fa-solid fa-xmark"></i></button>`;
     row.querySelector('.btn-remove').addEventListener('click', () => row.remove());
     list.appendChild(row);
   };
@@ -2560,7 +2075,7 @@ function addDaySlotRow(card, data = null) {
         <label style="font-size:0.8rem;color:var(--muted)">al</label>
         <input type="date" class="slot-to" value="${esc(hasta)}">
       </div>
-      <button type="button" class="btn-remove" title="Quitar intervalo">✕</button>
+      <button type="button" class="btn-remove" title="Quitar intervalo"><i class="fa-solid fa-xmark"></i></button>
     </div>
     <div class="franjas-pills-row">
       ${franjas.map(f => `
@@ -2604,7 +2119,7 @@ function addRestriccionRow(card, data = null) {
         <span>→</span>
         <input type="time" class="rest-hasta" value="${esc(hasta)}">
       </div>
-      <button type="button" class="btn-remove" title="Eliminar restricción">✕</button>
+      <button type="button" class="btn-remove" title="Eliminar restricción"><i class="fa-solid fa-xmark"></i></button>
     </div>
     <div class="rest-sub-opts">
       <label class="toggle-label" style="font-size:0.78rem;color:var(--muted)">
@@ -2628,4 +2143,3 @@ function addRestriccionRow(card, data = null) {
   row.querySelectorAll('select, input:not(.rest-fd):not(.rest-fh)').forEach(el => el.addEventListener('change', triggerSave));
   list.appendChild(row);
 }
-
