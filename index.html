@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Cuestionador de viajes</title>
+<title>Metatio</title>
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
@@ -23,23 +23,49 @@
 <div id="trips-screen" style="display:none">
   <div class="login-wrap trips-wrap">
     <header>
-      <h1>Cuestionador</h1>
+      <h1>Metatio</h1>
       <p style="margin-top:12px;color:var(--muted);font-size:0.95rem">Mis viajes</p>
     </header>
-    <!-- Bloqueo del perfil: se oculta tras verificar la contraseña -->
-    <form class="card trips-check-card" id="trips-check-card"
+
+    <!-- Card 1: crear perfil (solo si no existe perfil local) -->
+    <div class="card trips-new-card" id="trips-new-card" style="display:none">
+      <div class="card-title"><span class="num"><i class="fa-solid fa-user-plus" aria-hidden="true"></i></span> Crea tu perfil</div>
+      <p style="font-size:0.85rem;color:var(--muted);margin-bottom:14px">
+        Tu perfil se guarda solo en este dispositivo. La contraseña protege los accesos a tus viajes.
+      </p>
+      <div class="login-field">
+        <label for="tp-new-nombre">Tu nombre</label>
+        <input type="text" id="tp-new-nombre" placeholder="Como quieres aparecer" autocomplete="name" maxlength="40">
+      </div>
+      <div class="login-field">
+        <label for="tp-new-pin">Contraseña del perfil <span style="color:var(--muted);font-size:0.78rem;font-weight:400">(mínimo 6 caracteres)</span></label>
+        <input type="password" id="tp-new-pin" placeholder="••••••" maxlength="64" autocomplete="new-password">
+      </div>
+      <div class="login-field">
+        <label for="tp-new-pin2">Repite la contraseña</label>
+        <input type="password" id="tp-new-pin2" placeholder="••••••" maxlength="64" autocomplete="new-password">
+      </div>
+      <button class="btn-generate" id="btn-tp-create" type="button">Crear perfil →</button>
+    </div>
+
+    <!-- Card 2: desbloquear perfil (existe pero bloqueado) -->
+    <form class="card trips-check-card" id="trips-check-card" style="display:none"
           onsubmit="event.preventDefault(); document.getElementById('btn-trips-unlock').click();">
       <div class="login-field">
-        <label for="trips-pass">Contraseña de tu perfil ...</label>
+        <label for="trips-pass">Contraseña de tu perfil <span id="trips-check-nombre" style="color:var(--muted);font-size:0.78rem;font-weight:400"></span></label>
         <input type="password" id="trips-pass" placeholder="••••" maxlength="64" autocomplete="current-password">
       </div>
       <button class="btn-generate" id="btn-trips-unlock" type="button">Desbloquear →</button>
-      <p class="trips-note">...</p>
+      <button type="button" class="btn-link-like" id="btn-trips-forgot" style="margin-top:10px;font-size:0.8rem">
+        He olvidado mi contraseña
+      </button>
+      <p class="trips-note">Tus accesos están cifrados en este dispositivo; solo tú puedes abrirlos.</p>
     </form>
 
-    <div class="card trips-main-card" id="trips-main-card">
+    <!-- Card 3: lista de viajes + paneles -->
+    <div class="card trips-main-card" id="trips-main-card" style="display:none">
       <div class="trips-profile-row">
-        <span class="trips-avatar" id="trips-avatar" aria-hidden="true"><i class="fa-solid fa-user-astronaut"></i></span>
+        <span class="trips-avatar" aria-hidden="true"><i class="fa-solid fa-user-astronaut"></i></span>
         <div class="trips-profile-txt">
           <strong id="trips-nombre">—</strong>
           <button type="button" class="btn-link-like" id="btn-trips-logout">Cambiar de perfil / salir</button>
@@ -49,17 +75,66 @@
       <div class="trips-section-label">Tus viajes</div>
       <div id="trips-list" class="trips-list"></div>
 
-      <div class="trips-actions">
-        <button type="button" class="btn-generate" id="btn-trips-create"><i class="fa-solid fa-plus" aria-hidden="true"></i> Crear viaje nuevo <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></button>
+      <div class="trips-tabs" style="display:flex;gap:6px;margin-top:16px;margin-bottom:10px;border-bottom:1px solid var(--border)">
+        <button type="button" class="trips-tab active" data-panel="unir">Unirme</button>
+        <button type="button" class="trips-tab" data-panel="old">Viaje antiguo</button>
+        <button type="button" class="trips-tab" data-panel="newtrip">Crear nuevo</button>
       </div>
 
-      <details class="trips-join-box">
-        <summary>Unirme con un enlace de invitación o código</summary>
-        <div class="trips-join-fields">
-          <input type="text" id="trips-eid-input" placeholder="código o enlace (p. ej. pirineos-2026 o https://…/?e=pirineos-2026)" autocomplete="off">
-          <button type="button" class="btn-propose" id="btn-trips-unir">Unirme <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></button>
+      <!-- Panel: unirme -->
+      <div class="trips-panel open" data-panel="unir">
+        <div class="login-field">
+          <label for="tp-join-eid">Código o enlace del viaje</label>
+          <input type="text" id="tp-join-eid" placeholder="p. ej. pirineos-2026 o https://…/?e=pirineos-2026" autocomplete="off">
         </div>
-      </details>
+        <div class="login-field">
+          <label for="tp-join-nombre">Tu nombre en ese viaje</label>
+          <input type="text" id="tp-join-nombre" maxlength="40" autocomplete="name">
+        </div>
+        <button type="button" class="btn-propose" id="btn-tp-join">Unirme y entrar →</button>
+      </div>
+
+      <!-- Panel: viaje antiguo (migración con PIN) -->
+      <div class="trips-panel" data-panel="old">
+        <p style="font-size:0.8rem;color:var(--muted);margin-bottom:10px">
+          Si ya estabas en un viaje con un PIN antiguo, entra aquí una vez con ese PIN. Se migrará automáticamente a una credencial aleatoria.
+        </p>
+        <div class="login-field">
+          <label for="tp-old-eid">Código o enlace del viaje</label>
+          <input type="text" id="tp-old-eid" placeholder="p. ej. pirineos-2026" autocomplete="off">
+        </div>
+        <div class="login-field">
+          <label for="tp-old-nombre">Tu nombre en ese viaje</label>
+          <input type="text" id="tp-old-nombre" maxlength="40" autocomplete="name">
+        </div>
+        <div class="login-field">
+          <label for="tp-old-pin">PIN antiguo</label>
+          <input type="password" id="tp-old-pin" placeholder="••••" maxlength="64" autocomplete="current-password">
+        </div>
+        <button type="button" class="btn-propose" id="btn-tp-old">Migrar y entrar →</button>
+      </div>
+
+      <!-- Panel: crear viaje nuevo -->
+      <div class="trips-panel" data-panel="newtrip">
+        <div class="login-field">
+          <label for="tp-new-eid">Código único del viaje</label>
+          <input type="text" id="tp-new-eid" placeholder="p. ej. pirineos-2026 (a-z, 0-9, guiones)" autocomplete="off" maxlength="60">
+        </div>
+        <div class="login-field">
+          <label for="tp-new-titulo">Título del viaje</label>
+          <input type="text" id="tp-new-titulo" placeholder="p. ej. Escapada Rural Diciembre" maxlength="80">
+        </div>
+        <div class="login-field">
+          <label for="tp-new-plantilla">Plantilla inicial</label>
+          <select id="tp-new-plantilla">
+            <option value="vacia">En blanco</option>
+            <option value="minima">Viaje mínimo</option>
+            <option value="completa">Completa de viaje</option>
+            <option value="quedada">Quedada</option>
+          </select>
+        </div>
+        <button type="button" class="btn-propose" id="btn-tp-newtrip">Crear viaje y entrar →</button>
+      </div>
 
       <div class="login-error" id="trips-error"></div>
     </div>
@@ -70,7 +145,7 @@
 <div id="login-screen">
   <div class="login-wrap">
     <header>
-      <h1>Cuestionador</h1>
+      <h1>Metatio</h1>
       <p style="margin-top:12px;color:var(--muted);font-size:0.95rem" id="login-subtitle">Únete a la encuesta de tu grupo o crea un nuevo viaje</p>
     </header>
     <div class="card">
@@ -150,7 +225,7 @@
       <span class="hamburger"></span>
     </button>
     <nav class="side-menu" id="side-menu" aria-label="Secciones">
-      <div class="side-menu-brand">Cuestionador de viajes</div>
+      <div class="side-menu-brand">Metatio <i class="fa-brands fa-fort-awesome-alt" style="margin-left: 0.25em; color: var(--accent);"></i></div>
       <button type="button" class="mode-tab active" data-mode="survey">
         <span><i class="fa-solid fa-clipboard-list" aria-hidden="true"></i> Cuestionario</span>
         <span class="tab-badge" id="badge-draft" style="display:none">● Borrador</span>
