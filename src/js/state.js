@@ -18,6 +18,7 @@ var serverHasV2     = true;  // Detecta si _snapshot devuelve el campo `respuest
 var activeMode      = 'survey';
 var draftDirty      = false;
 var weightByProb    = true;
+var mcUseEmpiricalProb = true;  // true = Monte Carlo con ausencias votadas
 var lastRaw         = '';
 var saveTimer       = null;
 var statusTimer     = null;
@@ -94,30 +95,3 @@ function applyData(data) {
   if (activeMode === 'debate'    && typeof renderDebate === 'function')       renderDebate();
 }
 
-function _extractRaw(ansObj, q) {
-  if (!ansObj) return null;
-  if (ansObj.values && q.id in ansObj.values) {
-    return ansObj.values[q.id];
-  }
-  switch (q.id) {
-    case 'opciones-destino': return ansObj.opciones ?? null;
-    case 'casas':            return ansObj.casas ?? null;
-    case 'precio':           return ansObj.precioMaxPP ?? null;
-    case 'transporte':       return ansObj.transporte ?? null;
-    case 'disponibilidad':
-      if (!ansObj.disponibilidad && !ansObj.rangosFechas && !ansObj.diasMax) return null;
-      return {
-        diasMax: ansObj.diasMax ?? 5,
-        soloFinde: !!(ansObj.disponibilidad && ansObj.disponibilidad.soloFinde),
-        meDaIgual: !!(ansObj.disponibilidad && ansObj.disponibilidad.meDaIgual),
-        preferirPuente: !!(ansObj.disponibilidad && ansObj.disponibilidad.preferirPuente),
-        rangos: ansObj.rangosFechas || [],
-      };
-    default:
-      return (ansObj.extras && q.id in ansObj.extras) ? ansObj.extras[q.id] : null;
-  }
-}
-function extractAnswer(ansObj, q) {
-  const v = _extractRaw(ansObj, q);
-  return q.tipo === 'voto-ponderado' ? normPond(v) : v;
-}

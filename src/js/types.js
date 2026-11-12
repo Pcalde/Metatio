@@ -107,38 +107,6 @@ function div(cls, txt) {
   document.head.appendChild(st);
 })();
 
-/**
- * Normaliza cualquier representación de opción (string plano, string "clave|etiqueta"
- * o objeto enriquecido {nombre, precio, url, foto, geo}) a un objeto canónico.
- * Preserva el formato "clave|etiqueta" dentro de `nombre` en preguntas tipo radio
- * para no perder la clave técnica cuando se añade precio o geolocalización
- * y mantener compatibilidad con `_san_opcion` en el servidor.
- */
-function normalizeOption(q, rawOp) {
-  const isRad  = q && q.tipo === 'radio';
-  const isObj  = rawOp !== null && typeof rawOp === 'object';
-  const rawStr = isObj ? String(rawOp.nombre || '') : String(rawOp ?? '');
-  const hasPipe = isRad && rawStr.includes('|');
-
-  const key   = hasPipe ? rawStr.split('|')[0] : rawStr;
-  const label = hasPipe ? rawStr.split('|').slice(1).join('|') : rawStr;
-
-  return {
-    key,
-    label,
-    hasPipe,
-    precio: isObj && rawOp.precio ? String(rawOp.precio) : '',
-    url:    isObj && rawOp.url    ? String(rawOp.url)    : '',
-    foto:   isObj && rawOp.foto   ? String(rawOp.foto)   : '',
-    geo:    isObj && rawOp.geo    ? rawOp.geo            : null,
-    raw:    rawOp,
-  };
-}
-
-function optVal(q, op) {
-  return normalizeOption(q, op).key;
-}
-
 // Muestra una opción enriquecida ({nombre, precio, geo}) como texto plano editable.
 // El valor de un input <input> debe ser string; si no, [object Object] corrompería la clave.
 function genOptLabel(rawOp, q = null) {
@@ -1297,11 +1265,6 @@ function createProbItem(q, rawOp, n) {
 
 function checkedValues(card) {
   return [...card.querySelectorAll('input[type=checkbox]:checked')].map(i => i.value);
-}
-
-function getRadioStepperConfig(q) {
-  if (q.config && q.config.conditionalStepper) return q.config.conditionalStepper;
-  return null;
 }
 
 function createStepper(min, max, initial, onChange) {
@@ -2511,13 +2474,6 @@ var TIPOS = {
 };
 
 // ── FRANJAS, MOTIVOS Y UTILIDADES DE HORARIOS ───────────────────────────────
-const FRANJAS_HORARIAS = [
-  { id: 'manana', label: '☀️ Mañana', start: 10.0, end: 14.0 },
-  { id: 'comida', label: '🍽️ Comida', start: 14.0, end: 17.0 },
-  { id: 'tarde',  label: '🎬 Tarde',  start: 17.0, end: 20.5 },
-  { id: 'cena',   label: '🍷 Cena',   start: 20.5, end: 24.0 },
-  { id: 'noche',  label: '🌙 Noche',  start: 24.0, end: 26.5 },
-];
 
 const MOTIVOS_RESTRICCION = [
   { id: 'clase',   label: '📚 Clase / Prácticas' },
@@ -2526,11 +2482,6 @@ const MOTIVOS_RESTRICCION = [
   { id: 'otro',    label: '⏳ Otro compromiso' },
 ];
 
-function getFranjas(q) {
-  const f = q && q.config && Array.isArray(q.config.franjas) && q.config.franjas.length ? q.config.franjas : null;
-  return f || FRANJAS_HORARIAS;
-}
-
 function fmtHM(h) {
   const n = ((h % 24) + 24) % 24;
   let hh = Math.floor(n), mm = Math.round((n - hh) * 60);
@@ -2538,22 +2489,6 @@ function fmtHM(h) {
   return String(hh).padStart(2, '0') + ':' + String(mm).padStart(2, '0');
 }
 const franjaSub = f => fmtHM(f.start) + '–' + fmtHM(f.end);
-
-function dispToMap(list) {
-  const m = new Map();
-  (list || []).forEach(d => {
-    const a = d.desde || d.fecha, b = d.hasta || d.fecha || a;
-    if (!a || !Array.isArray(d.franjas) || !d.franjas.length || b < a) return;
-    const cur = new Date(a + 'T00:00:00Z'), end = new Date(b + 'T00:00:00Z');
-    for (let g = 0; cur <= end && g < 366; g++, cur.setUTCDate(cur.getUTCDate() + 1)) {
-      const iso = cur.toISOString().slice(0, 10);
-      const s = m.get(iso) || new Set();
-      d.franjas.forEach(f => s.add(f));
-      m.set(iso, s);
-    }
-  });
-  return m;
-}
 
 function mapToDisp(m) {
   const dias = [...m.keys()].filter(k => m.get(k).size).sort();
@@ -2694,16 +2629,3 @@ function addRestriccionRow(card, data = null) {
   list.appendChild(row);
 }
 
-// Garantiza: un valor por opción, a lo sumo un +3 y un −1. Convierte respuestas antiguas de checkbox (array) en +1.
-function normPond(v) {
-  if (Array.isArray(v)) { const o = {}; v.forEach(k => { o[k] = 1; }); return o; }
-  const out = {}; let fav = false, veto = false;
-  Object.entries(v || {}).forEach(([k, s]) => {
-    s = Number(s);
-    if (![-1, 1, 3].includes(s)) return;
-    if (s === 3  && fav)  return; if (s === 3)  fav = true;
-    if (s === -1 && veto) return; if (s === -1) veto = true;
-    out[k] = s;
-  });
-  return out;
-}
