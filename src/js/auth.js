@@ -17,6 +17,11 @@ function normEid(raw) {
   return raw.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
 }
 
+function _irATrips(msg) {
+  const ls = $('login-screen'); if (ls) ls.style.display = 'none';
+  if (typeof showTripsScreen === 'function') { showTripsScreen(); if (msg) tripsErr(msg); }
+}
+
 // Enlace para compartir: https://…/?e=<id-de-encuesta>
 function eidDeLaUrl() {
   const e = new URLSearchParams(location.search).get('e');
@@ -84,7 +89,7 @@ function tryRestoreSession() {
   $('login-eid').value    = saved.eid;
 
   getSessionPinHash(saved.eid, saved.nombre).then(async pinHash => {
-    if (!pinHash) return;                       // sin credencial: login manual
+    if (!pinHash) { _irATrips(); return; }                       // sin credencial: login manual
     const btn = $('btn-login');
     btn.textContent = 'Cargando…'; btn.disabled = true;
     try {
@@ -97,8 +102,7 @@ function tryRestoreSession() {
       console.warn('Restaurar sesión:', e);
       user = null;
       clearSession();
-      showLoginErr('Sesión caducada: vuelve a introducir tu PIN.');
-      btn.textContent = 'Entrar →'; btn.disabled = false;
+      _irATrips('Sesión caducada: entra desde tu perfil.');
     }
   });
 }
@@ -127,19 +131,19 @@ function enterSurvey() {
 function logout() {
   stopPolling();
   clearTimeout(saveTimer);
-  clearSession();                       // revoca + borra el registro cifrado
-  try { localStorage.removeItem(LS_USER); } catch (e) {}  // clave legada v2
-  _resetUiToLogin('');
+  clearSession();
+  try { localStorage.removeItem(LS_USER); } catch (e) {}
   user = null;
+  if (typeof volverATrips === 'function') volverATrips(); else _resetUiToLogin('');
 }
 
 // Cierre de sesión no voluntario (revocado en otra pestaña): el registro ya
 // fue revocado, solo hay que volver al login con un aviso.
 function forcedLogout(msg) {
-  stopPolling();
-  clearTimeout(saveTimer);
+  stopPolling(); clearTimeout(saveTimer);
   user = null;
-  _resetUiToLogin(msg);
+  if (typeof volverATrips === 'function') { volverATrips(); if (msg) tripsErr(msg); }
+  else _resetUiToLogin(msg);
 }
 
 function _resetUiToLogin(msg) {

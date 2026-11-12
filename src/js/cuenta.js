@@ -11,6 +11,8 @@ function openAccountModal() {
   if (!backdrop || !user) return;
   if ($('acc-nombre')) $('acc-nombre').value = user.nombre || '';
   if ($('acc-pin'))    $('acc-pin').value    = '';
+  const wPin = $('acc-pin') && $('acc-pin').closest('.login-field');
+  if (wPin) wPin.style.display = perfilEstaActivo() ? 'none' : '';
   const p = puntoPartida();
   if ($('acc-partida')) {
     $('acc-partida').placeholder = p
@@ -58,7 +60,7 @@ async function saveAccountChanges() {
   if (!user) return;
   const btn = $('btn-account-save');
   const nuevoNombre = ($('acc-nombre')?.value || '').trim();
-  const nuevoPin    = ($('acc-pin')?.value   || '').trim();
+  const nuevoPin = perfilEstaActivo() ? '' : ($('acc-pin')?.value || '').trim();
 
   accountStatus('', 'ok');
   if (!nuevoNombre)              { accountStatus('El nombre no puede estar vacío.'); return; }
@@ -100,6 +102,7 @@ async function saveAccountChanges() {
         await renameSavedSession(finalName);          // sesión guardada usa el nuevo nombre
         respondentes.forEach(r => { if (r.nombre.toLowerCase() === finalName.toLowerCase()) r.nombre = finalName; });
         respuestas.forEach(r => { if (r.nombre.toLowerCase() === finalName.toLowerCase()) r.nombre = finalName; });
+        perfilActualizarNombre(user.eid, finalName);
       }
     }
 

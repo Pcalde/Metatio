@@ -257,19 +257,15 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   // Enlace de invitación (?e=…) al crear viaje: pre-rellena el ID destino.
   const deLink = eidDeLaUrl();
-  if (deLink) { const te = $('login-eid'); if (te) te.value = deLink; }
-
-  // Orden de pantallas: si hay perfil local Y no hay sesión guardada ni
-  // enlace directo, se arranca en «Mis viajes». El flujo legacy (restaurar
-  // sesión o entrar por ?e=) queda intacto: viaja directo al cuestionario.
   if (typeof initPerfil === 'function') initPerfil();
-  const haySesion   = typeof getSavedSessionRaw === 'function' && !!getSavedSessionRaw();
-  const mostrarTrips = typeof hayPerfilLocal === 'function' && hayPerfilLocal() && !haySesion && !deLink;
-  if (mostrarTrips) {
-    const ls = $('login-screen');
-    if (ls) ls.style.display = 'none';
-    showTripsScreen();
-  } else {
+  if (deLink && typeof perfilSetPendingEid === 'function') perfilSetPendingEid(deLink);
+
+  // Sesión guardada válida (y no contradice un enlace a otro viaje) → directo al viaje.
+  // En cualquier otro caso, la puerta de entrada es siempre «Mis viajes».
+  const saved = typeof getSavedSession === 'function' ? getSavedSession() : null;
+  if (saved && (!deLink || deLink === saved.eid)) {
     tryRestoreSession();
+  } else {
+    showTripsScreen();
   }
 });
