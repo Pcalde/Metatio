@@ -231,8 +231,11 @@
         <span class="tab-badge" id="badge-draft" style="display:none">● Borrador</span>
       </button>
       <button type="button" class="mode-tab" data-mode="consensus">
-        <span><i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i> Reformulario y respuestas</span>
+        <span><i class="fa-solid fa-square-poll-vertical" aria-hidden="true"></i> Resultados</span>
         <span class="tab-count" id="count-resp">0</span>
+      </button>
+      <button type="button" class="mode-tab" data-mode="reformulario">
+        <span><i class="fa-solid fa-sliders" aria-hidden="true"></i> Reformulario</span>
       </button>
       <button type="button" class="mode-tab" data-mode="debate">
         <span><i class="fa-solid fa-comments" aria-hidden="true"></i> Debate</span>
@@ -255,6 +258,9 @@
       </button>
       <button type="button" class="mode-tab side-menu-action" id="btn-arbol-modal">
         <span><i class="fa-solid fa-sitemap" aria-hidden="true"></i> Árbol de ramas</span>
+      </button>
+      <button type="button" class="mode-tab side-menu-action" id="btn-print-report">
+        <span><i class="fa-solid fa-file-pdf" aria-hidden="true"></i> Exportar conclusiones en PDF</span>
       </button>
       <button type="button" class="mode-tab side-menu-action" id="btn-account-modal">
         <span><i class="fa-solid fa-user-gear" aria-hidden="true"></i> Mi cuenta</span>
@@ -504,12 +510,16 @@
     </div>
   </div>
 
-  <!-- -- VISTA 3: CONSENSO, FACTIBILIDAD Y REFORMULARIO ----------------- -->
+  <!-- -- VISTA 2: CONSENSO, FACTIBILIDAD ----------------- -->
   <div class="wide-wrap" id="view-consensus" style="display:none">
     <div id="consensus-container" style="display:flex;flex-direction:column;gap:20px"></div>
   </div>
+  <!-- -- VISTA 3: Reformulario ----------------- -->
+  <div class="wide-wrap" id="view-reformulario" style="display:none">
+    <div id="reformulario-container" style="display:flex;flex-direction:column;gap:20px"></div>
+  </div>
 
-  <!-- -- VISTA 3: SALA DE DEBATE (DIFERIDO + DIRECTO) ------------------- -->
+  <!-- -- VISTA 4: SALA DE DEBATE (DIFERIDO + DIRECTO) ------------------- -->
   <div class="wide-wrap" id="view-debate" style="display:none">
     <div id="debate-container"></div>
   </div>
@@ -535,6 +545,7 @@
 <script src="src/js/engine/optimizador.js"></script>
 <script src="src/js/engine/index.js"></script>
 <script src="src/js/ui/consensusView.js"></script>
+<script src="src/js/ui/reportajePDF.js"></script>
 <script src="src/js/secciones.js?v=16"></script>
 <script src="src/js/arbol.js"></script>
 <script src="src/js/mapa.js"></script>
