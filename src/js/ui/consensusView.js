@@ -19,13 +19,9 @@ function getMySubmittedAnswers() {
   return mine ? mine.answers : collectAnswers();
 }
 
-function renderReformulario() {
-  const container = $('consensus-container');
-  if (!container) return;
-  if (container.querySelector('input[type=range]:active')) return;
-
-  container.innerHTML = '';
-
+// ── Gate común: falta schema.sql o nadie ha respondido aún ────────────────
+// Devuelve true si hay que abortar el render (ya ha pintado el aviso).
+function _renderConsensusGate(container) {
   if (!serverHasV2) {
     const warn = div('card');
     warn.style.borderColor = 'var(--accent)';
@@ -34,23 +30,31 @@ function renderReformulario() {
       <p style="color:var(--ink);font-size:0.9rem;line-height:1.5">
         Hay <b>${respondentes.length}</b> participante(s) en la encuesta, pero el servidor de Supabase sigue ejecutando la función <code>_snapshot</code> antigua (que no enviaba el campo <code>respuestas</code> ni tenía la tabla <code>debate</code>).<br><br>
         👉 Abre <b>Supabase → SQL Editor</b>, pega el nuevo <code>schema.sql</code> completo y pulsa <b>Run</b>. Al recargar la página verás inmediatamente las respuestas y funcionará el debate.
-      </p>
-    `;
+      </p>`;
     container.appendChild(warn);
-    return;
+    return true;
   }
-
   if (!respuestas.length) {
     const empty = div('card');
     empty.innerHTML = `
       <div class="card-title"><span class="num">📊</span> Sin respuestas enviadas aún</div>
       <p style="color:var(--muted);font-size:0.9rem">
         Hay ${respondentes.length} persona(s) registrada(s) en el viaje, pero nadie ha pulsado <b>«Enviar mi respuesta →»</b> todavía.
-      </p>
-    `;
+      </p>`;
     container.appendChild(empty);
-    return;
+    return true;
   }
+  return false;
+}
+
+// ── VISTA RESULTADOS (agregados, soluciones, topología) ───────────────────
+function renderResultados() {
+  const container = $('consensus-container');
+  if (!container) return;
+  if (container.querySelector('input[type=range]:active')) return;
+  container.innerHTML = '';
+
+  if (_renderConsensusGate(container)) return;
 
   const model = buildModelData();
   const { soluciones, diagnosticos } = ejecutarMotorFactibilidad(model);
@@ -58,19 +62,59 @@ function renderReformulario() {
 
   container.appendChild(buildExecutiveSummaryCard(model, soluciones, topo));
   container.appendChild(buildPreferenciasBooleanasCard(model));
+  container.appendChild(buildDiasMaxStatsCard(model));   // ← si la diste de alta
   container.appendChild(buildFeasibleSolutionsSection(soluciones, diagnosticos, topo));
 
   if (model.viajeros.length >= 2) {
     container.appendChild(buildTopologyAndSensitivityCard(model, topo));
   }
+  if (typeof window.openPrintReport === 'function') {
+    const rBtn = document.createElement('button');
+    rBtn.type = 'button';
+    rBtn.className = 'btn-propose';
+    rBtn.style.cssText = 'margin-top:6px;align-self:flex-start';
+    rBtn.innerHTML = '<i class="fa-solid fa-file-pdf"></i> Exportar conclusiones a PDF';
+    rBtn.addEventListener('click', () => window.openPrintReport());
+    container.appendChild(rBtn);
+  }
+}
+
+// ── VISTA REFORMULARIO (tarjetas interactivas por pregunta) ───────────────
+function renderReformularioInteractivo() {
+  const container = $('reformulario-container');
+  if (!container) return;
+  if (container.querySelector('input[type=range]:active')) return;
+  container.innerHTML = '';
+
+  if (_renderConsensusGate(container)) return;
 
   const myAns = getMySubmittedAnswers();
   const secHeader = div('ref-section-divider');
-  secHeader.innerHTML = `<span>Reformulario Interactivo por Pregunta (haz clic para cambiar tu voto en vivo)</span>`;
+  secHeader.innerHTML = `<span>Reformulario interactivo por pregunta (clic para cambiar tu voto en vivo)</span>`;
   container.appendChild(secHeader);
 
   schema.forEach((q, idx) => {
-    // En modo "sección" (wizard.js) solo se pinta la pregunta solicitada.
+    if (typeof _refQidOverride !== 'undefined' && _refQidOverride && q.id !== _refQidOverride) return;
+    const card = buildAnalyticalCard(q, idx, myAns);
+    if (card) container.appendChild(card);
+  });
+}
+
+// ── VISTA REFORMULARIO (tarjetas interactivas por pregunta) ───────────────
+function renderResultadosInteractivo() {
+  const container = $('reformulario-container');
+  if (!container) return;
+  if (container.querySelector('input[type=range]:active')) return;
+  container.innerHTML = '';
+
+  if (_renderConsensusGate(container)) return;
+
+  const myAns = getMySubmittedAnswers();
+  const secHeader = div('ref-section-divider');
+  secHeader.innerHTML = `<span>Reformulario interactivo por pregunta (clic para cambiar tu voto en vivo)</span>`;
+  container.appendChild(secHeader);
+
+  schema.forEach((q, idx) => {
     if (typeof _refQidOverride !== 'undefined' && _refQidOverride && q.id !== _refQidOverride) return;
     const card = buildAnalyticalCard(q, idx, myAns);
     if (card) container.appendChild(card);
@@ -94,7 +138,7 @@ function buildExecutiveSummaryCard(model, soluciones, topo) {
   card.innerHTML = `
     <div class="ref-summary-header">
       <div>
-        <div class="card-title" style="margin-bottom:4px"><span class="num">Σ</span> Síntesis de Factibilidad y Reformulario</div>
+        <div class="card-title" style="margin-bottom:4px"><span class="num"><i class="fa-solid fa-magnifying-glass-chart"></i></span> Síntesis de Factibilidad y Reformulario</div>
         <p style="font-size:0.82rem;color:var(--muted)">
           ${soluciones.length} solución(es) factible(s) encontrada(s) · Máx. N=${nMax} asistentes · L=${lMax} días
           · Logística: ${model.logistica ? `considerada (${model.nLog}/${model.viajeros.length} con dato de transporte)` : 'no considerada'}
@@ -134,11 +178,11 @@ function buildExecutiveSummaryCard(model, soluciones, topo) {
 
   card.querySelector('#toggle-weight-prob').addEventListener('change', e => {
     weightByProb = e.target.checked;
-    renderReformulario();
+    renderResultados();
   });
   card.querySelector('#toggle-mc-empirical').addEventListener('change', e => {
     mcUseEmpiricalProb = e.target.checked;
-    renderReformulario();
+    renderResultados();
   });
 
   return card;
@@ -150,7 +194,7 @@ function buildPreferenciasBooleanasCard(model) {
 
   if (!model.viajeros.length) {
     card.innerHTML = `
-      <div class="card-title"><span class="num">P</span> Preferencias booleanas</div>
+      <div class="card-title"><span class="num"><i class="fa-solid fa-chart-pie"></i></span> Preferencias booleanas</div>
       <p style="color:var(--muted);font-size:0.85rem">Sin viajeros con fechas válidas todavía.</p>`;
     return card;
   }
@@ -169,7 +213,10 @@ function buildPreferenciasBooleanasCard(model) {
     if (col.type === 'num') return `<td><b>${v.diasMax}</b></td>`;
     if (col.type === 'bool') {
       const on = !!v[col.key];
-      return `<td class="${on ? 'pb-yes' : 'pb-no'}">${on ? 'Sí' : 'No'}</td>`;
+      return `<td class="${on ? 'pb-yes' : 'pb-no'}" title="${on ? 'Sí' : 'No'}" style="text-align:center">
+        <i class="fa-solid ${on ? 'fa-thumbs-up' : 'fa-thumbs-down'}"
+           style="color:var(--${on ? 'ok' : 'err'})"></i>
+      </td>`;
     }
     let val;
     if (col.key === '_horarios') val = v.horFranjasPorDia && Object.keys(v.horFranjasPorDia).length;
@@ -178,9 +225,9 @@ function buildPreferenciasBooleanasCard(model) {
   };
 
   card.innerHTML = `
-    <div class="card-title"><span class="num">P</span> Preferencias booleanas por viajero</div>
+    <div class="card-title"><span class="num">P</span> Preferencias de los viajeros</div>
     <p style="font-size:0.82rem;color:var(--muted);margin-bottom:10px">
-      Estado declarado por cada participante. Las columnas "Horarios" y "Fechas" indican
+      Respuestas de cada participante. Las columnas "Horarios" y "Fechas" indican
       qué fuentes alimentan el cruce de soluciones del motor: un viajero sin una de ellas
       se trata con restricción laxa (compatible con quien sí la rellena).
     </p>
@@ -203,6 +250,107 @@ function buildPreferenciasBooleanasCard(model) {
       </table>
     </div>
   `;
+  return card;
+}
+
+// ── TARJETA DE ESTADÍSTICOS DE `diasMax` (media / mediana / Q₁) ─────────────
+function buildDiasMaxStatsCard(model) {
+  const card = div('card');
+
+  if (!model.viajeros.length) {
+    card.innerHTML = `
+      <div class="card-title"><span class="num">📅</span> Días máximos por viajero</div>
+      <p style="color:var(--muted);font-size:0.85rem">Sin viajeros con fechas válidas todavía.</p>`;
+    return card;
+  }
+
+  const entries = model.viajeros
+    .map(v => ({ nombre: v.nombre, val: Number(v.diasMax) }))
+    .filter(e => isFinite(e.val) && e.val > 0);
+
+  if (!entries.length) {
+    card.innerHTML = `
+      <div class="card-title"><span class="num">📅</span> Días máximos por viajero</div>
+      <p style="color:var(--muted);font-size:0.85rem">Ningún viajero ha declarado un máximo de días utilizable.</p>`;
+    return card;
+  }
+
+  entries.sort((a, b) => a.val - b.val);
+  const vals = entries.map(e => e.val);
+  const n = vals.length;
+  const mean = vals.reduce((s, x) => s + x, 0) / n;
+
+  // Percentil con interpolación lineal (método R‑7 / Excel PERCENTILE.INC)
+  const percentile = (arr, p) => {
+    if (!arr.length) return null;
+    const idx = (arr.length - 1) * p;
+    const lo = Math.floor(idx), hi = Math.ceil(idx);
+    return lo === hi ? arr[lo] : arr[lo] + (arr[hi] - arr[lo]) * (idx - lo);
+  };
+
+  const min = vals[0];
+  const max = vals[n - 1];
+  const median = percentile(vals, 0.5);
+  const q1 = percentile(vals, 0.25);
+  const q3 = percentile(vals, 0.75);
+
+  const fmtStat = x => Number.isInteger(x) ? String(x) : x.toFixed(1);
+  const sinDato = model.viajeros.length - entries.length;
+  const span = Math.max(1, max - min);
+  const bottleneck = entries[0]; // quien menos días acepta → techo duro del grupo
+
+  card.innerHTML = `
+    <div class="card-title"><span class="num"><i class="fa-solid fa-calendar"></i></span> Días máximos por viajero: distribución</div>
+    <p style="font-size:0.82rem;color:var(--muted);margin-bottom:10px">
+      Estadísticos sobre el máximo de días que cada participante acepta estar de viaje.
+      La <b>mediana</b> y el <b>Q₁</b> acotan la duración razonable de la ventana; el <b>mínimo</b>
+      es el techo si van todos los asistentes (restricción activa del optimizador).
+      ${sinDato > 0 ? `<br><span style="color:var(--accent)">⚠ ${sinDato} viajero(s) sin dato de <code>diasMax</code>, excluidos del cálculo.</span>` : ''}
+    </p>
+
+    <div class="kpi-grid">
+      <div class="kpi-box">
+        <span class="kpi-label">Media</span>
+        <span class="kpi-val">${mean.toFixed(1)} <small>días</small></span>
+      </div>
+      <div class="kpi-box">
+        <span class="kpi-label">Mediana</span>
+        <span class="kpi-val">${fmtStat(median)} <small>días</small></span>
+        <small>Q3: ${fmtStat(q3)} d</small>
+      </div>
+      <div class="kpi-box">
+        <span class="kpi-label">Q_1 (percentil 25)</span>
+        <span class="kpi-val">${fmtStat(q1)} <small>días</small></span>
+        <small>75% acepta ≥ este valor</small>
+      </div>
+      <div class="kpi-box">
+        <span class="kpi-label">Techo del grupo (mínimo)</span>
+        <span class="kpi-val" style="color:var(--accent)">${min} <small>días</small></span>
+        <small>Limitado por ${esc(bottleneck.nombre)}</small>
+      </div>
+    </div>
+
+    <div class="ref-dist-list" style="margin-top:14px">
+      ${entries.map(e => {
+        const pct = ((e.val - min) / span) * 100;
+        const isBottleneck = e.val === min;
+        const isTop = e.val === max && !isBottleneck;
+        return `
+          <div class="ref-dist-row">
+            <span class="ref-dist-name" style="min-width:140px;max-width:180px;flex:0 0 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(e.nombre)}">${esc(e.nombre)}${isBottleneck ? ' ⚠️' : ''}</span>
+            <div class="ref-bar-track" style="flex:1;min-width:0">
+              <div class="ref-bar-fill ${isBottleneck ? 'negative' : ''}"
+                   style="width:${Math.max(4, Math.min(100, pct))}%"></div>
+            </div>
+            <span class="ref-dist-val" style="width:auto;min-width:60px;text-align:right">
+              <b>${e.val}</b> d${isTop ? ' <small style="color:var(--accent2)">(máx.)</small>' : ''}
+            </span>
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+
   return card;
 }
 
@@ -572,7 +720,7 @@ function buildFeasibleSolutionsSection(soluciones, diagnosticos, topo) {
       </div>
 
       <div class="sol-group-chips">
-        <div><small>Núcleo (${sol.N_full}):</small> ${sol.asistentesNucleo.map(n => `<span class="voter-chip star">${esc(n)}</span>`).join(' ')}</div>
+        <div><small>Núcleo (${sol.N_full}):</small> ${sol.asistentesNucleo.map(n => `<span class="voter-chip nucleo">${esc(n)}</span>`).join(' ')}</div>
         ${sol.satelitesAsignados.length ? `<div><small>Satélites (${sol.N_convoy}):</small>${sol.satelitesAsignados.map(n => `<span class="voter-chip satelite">${esc(n)} (${fmtShortDate(sol.asignacion[n][0])}→${fmtShortDate(sol.asignacion[n][sol.asignacion[n].length - 1])})</span>`).join(' ')}</div>` : ''}
         ${sol.excluidos.length
           ? `<div><small>Ausentes (${sol.excluidos.length}):</small>${sol.excluidos.map(n => `<span class="voter-chip ausente">${esc(n)}</span>`).join(' ')}</div>`
@@ -1030,7 +1178,14 @@ function buildOptionsConsensus(card, q, myVal) {
       </div>
       <div class="ref-opt-meta">
         <div class="ref-voters">
-          ${o.voters.map(v => `<span class="voter-chip ${v.pts === 3 ? 'star' : ''}">${esc(v.nombre)}${v.pts === 3 ? ' ★' : ''}</span>`).join('')}
+          ${o.voters.map(v => {
+            const cls = v.pts === 3 ? 'vote-star'
+                      : v.pts === 0 ? 'vote-neutral'
+                      : (v.pts != null && v.pts < 0) ? 'veto'
+                      : 'vote-pos';
+            const suffix = v.pts === 3 ? ' ★' : '';
+            return `<span class="voter-chip ${cls}">${esc(v.nombre)}${suffix}</span>`;
+          }).join('')}
           ${o.vetoes.map(nombre => `<span class="voter-chip veto">${esc(nombre)} ✕</span>`).join('')}
           ${!o.voters.length && !o.vetoes.length ? `<span style="color:var(--muted);font-size:0.75rem">Sin votos aún</span>` : ''}
         </div>
