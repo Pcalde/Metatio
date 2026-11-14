@@ -114,7 +114,8 @@ async function saveAccountChanges() {
     if (typeof renderAllQuestions === 'function') renderAllQuestions();
     if (typeof restoreDraft === 'function') restoreDraft();
     if (typeof refreshMapMarkers === 'function' && _mapaInstance) refreshMapMarkers();
-    if (activeMode === 'consensus' && typeof renderReformulario === 'function') renderReformulario();
+    if (activeMode === 'consensus'    && typeof renderResultados === 'function')             renderResultados();
+    if (activeMode === 'reformulario' && typeof renderReformularioInteractivo === 'function') renderReformularioInteractivo();
 
     accountStatus('Cambios guardados ✓', 'ok');
     setTimeout(closeAccountModal, 900);

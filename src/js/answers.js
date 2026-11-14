@@ -214,9 +214,8 @@ async function enviarRespuesta(silent = false) {
     const entry = { nombre: user.nombre, answers, ts: answers.timestamp };
     if (idx >= 0) respuestas[idx] = entry;
     else respuestas.push(entry);
-    if (typeof renderReformulario === 'function' && activeMode === 'consensus') {
-      renderReformulario();
-    }
+    if (activeMode === 'consensus'    && typeof renderResultados === 'function')             renderResultados();
+    if (activeMode === 'reformulario' && typeof renderReformularioInteractivo === 'function') renderReformularioInteractivo();
 
     await apiPost({ action: 'submit_response', ...id, answers });
     if (answers.ausencias_predichas) {
@@ -258,7 +257,8 @@ function patchSingleAnswer(qid, newVal) {
   if (idx >= 0) respuestas[idx] = entry;
   else respuestas.push(entry);
 
-  if (typeof renderReformulario === 'function') renderReformulario();
+  if (activeMode === 'consensus'    && typeof renderResultados === 'function')             renderResultados();
+  if (activeMode === 'reformulario' && typeof renderReformularioInteractivo === 'function') renderReformularioInteractivo();
   if (typeof scheduleRefreshSections === 'function') scheduleRefreshSections();
   // Un voto en vivo puede activar/desactivar secciones condicionales.
   if (typeof refreshSecciones === 'function') setTimeout(refreshSecciones, 0);

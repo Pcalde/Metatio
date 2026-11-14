@@ -87,8 +87,9 @@ function applyPollUpdate(data) {
   if (schemaChanged) syncSchemaToDOM();
   if (schemaChanged || pcChanged) refreshAllPC();
   if (typeof renderAusencias === 'function') renderAusencias();
-  if ((schemaChanged || respChanged || pcChanged) && typeof renderReformulario === 'function') {
-    renderReformulario();
+  if (schemaChanged || respChanged || pcChanged) {
+    if (activeMode === 'consensus'    && typeof renderResultados === 'function')             renderResultados();
+    if (activeMode === 'reformulario' && typeof renderReformularioInteractivo === 'function') renderReformularioInteractivo();
   }
   // Estadísticas por sección dentro del propio cuestionario (wizard.js)
   if ((schemaChanged || respChanged || pcChanged) && typeof scheduleRefreshSections === 'function') {

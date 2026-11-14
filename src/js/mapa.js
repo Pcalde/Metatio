@@ -165,7 +165,8 @@ function buildOriginEditor(host) {
     refreshMapMarkers();
     if (typeof renderAllQuestions === 'function') renderAllQuestions();
     if (typeof restoreDraft === 'function') restoreDraft();
-    if (activeMode === 'consensus' && typeof renderReformulario === 'function') renderReformulario();
+    if (activeMode === 'consensus'    && typeof renderResultados === 'function')             renderResultados();
+    if (activeMode === 'reformulario' && typeof renderReformularioInteractivo === 'function') renderReformularioInteractivo();
   };
 
   host.querySelector('.mp-origen-buscar').addEventListener('click', async () => {

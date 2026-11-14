@@ -91,7 +91,9 @@ function applyData(data) {
   if (typeof renderParticipants === 'function') renderParticipants();
 
   // Si estamos viendo Consenso o Debate, repintar inmediatamente
-  if (activeMode === 'consensus' && typeof renderReformulario === 'function') renderReformulario();
-  if (activeMode === 'debate'    && typeof renderDebate === 'function')       renderDebate();
+  
+  if (activeMode === 'consensus'    && typeof renderResultados === 'function')             renderResultados();
+  if (activeMode === 'reformulario' && typeof renderReformularioInteractivo === 'function') renderReformularioInteractivo();
+  if (activeMode === 'debate'       && typeof renderDebate === 'function')                  renderDebate();
 }
 
