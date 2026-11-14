@@ -1049,7 +1049,7 @@ body.map-modal-open { overflow: hidden; }
 .ref-opt-meta { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
 .ref-voters { display: flex; flex-wrap: wrap; gap: 4px; }
 .voter-chip { font-size: 0.74rem; color: var(--accent2);background: var(--accent2-bg); border: 1px solid var(--accent2); padding: 2px 8px; border-radius: 12px; }
-.voter-chip.star { border-color: var(--nucleo); 
+.voter-chip.nucleo { border-color: var(--nucleo); 
   color: var(--nucleo); 
   background: var(--nucleo-100);
   font-weight: 600; }
