@@ -13,6 +13,7 @@
   <link rel="stylesheet" href="src/css/styles.css?v=7">
   <link rel="stylesheet" href="src/css/access.css?v=7">
   <link rel="stylesheet" href="src/css/identity.css?v=7">
+<link rel="stylesheet" href="src/css/options.css?v=8">
 </head>
 <body>
 
@@ -470,7 +471,7 @@
               <option value="voto-ponderado">Votación con puntos (-1, +1, +3)</option>
               <option value="probabilidad-opcion">Votación por probabilidad por opción</option>
               <option value="radio">Selección única (Radio)</option>
-              <option value="casas">Listado de casas (Nombre + Precio + URL)</option>
+              <option value="casas">Alojamientos (selección múltiple)</option>
               <option value="slider">Rango numérico (Slider)</option>
               <option value="horarios">Horarios por franjas (quedadas)</option>
               <option value="disponibilidad">Calendario y fechas (Disponibilidad)</option>
@@ -496,30 +497,10 @@
               <option value="">Al final (predeterminado)</option>
             </select>
           </div>
-          <div id="add-q-opciones-wrap" class="add-q-field">
-            <label>Opciones iniciales</label>
-            <div class="add-q-opts-container" id="add-q-opts-container">
-              <div class="add-q-opt-row">
-                <input type="text" placeholder="Opción 1">
-                <button class="btn-remove" type="button">✕</button>
-              </div>
-            </div>
-            <button class="btn-add-q-opt" type="button" id="btn-add-q-opt">+ Opción</button>
-          </div>
-          <div id="add-q-slider-wrap" style="display:none" class="add-q-field">
-            <label>Configuración del rango</label>
-            <div class="slider-config">
-              <div><label>Mínimo</label><input type="number" id="aq-min" value="0"></div>
-              <div><label>Máximo</label><input type="number" id="aq-max" value="100"></div>
-              <div><label>Paso</label><input type="number" id="aq-step" value="10"></div>
-            </div>
-          </div>
-          <div id="add-q-horarios-wrap" style="display:none" class="add-q-field">
-            <label>Duración ideal del plan (horas)</label>
-            <input type="number" id="aq-dur" value="3" min="1" max="12">
-            <label style="margin-top:10px">Franjas horarias del grupo</label>
-            <div id="aq-franjas-host"></div>
-          </div>
+          <div class="add-q-field" id="add-q-opciones-wrap"><label>Opciones iniciales</label><div class="add-q-opts-container" id="add-q-opts-container"></div><button type="button" class="btn-add-q-opt" id="add-q-add-opt">+ Opción</button></div>
+          <div class="add-q-field" id="add-q-casas-mode" style="display:none"><label><input type="checkbox" id="add-q-modo-casas"> Las opciones son alojamientos (activar análisis de presupuesto de alojamiento)</label></div>
+          <div class="add-q-field" id="add-q-slider-wrap" style="display:none"><label>Configuración del rango</label><div class="slider-config"><div><label>Mínimo</label><input type="number" id="add-q-min" value="0"></div><div><label>Máximo</label><input type="number" id="add-q-max" value="100"></div><div><label>Paso</label><input type="number" id="add-q-step" value="10"></div></div></div>
+          <div class="add-q-field" id="add-q-horarios-wrap" style="display:none"><label>Duración ideal (horas)</label><input type="number" id="add-q-dur" value="3" min="1" max="12"><label>Franjas horarias</label><div id="add-q-franjas-host"></div></div>
           <!-- Condición opcional «mostrar solo si…»: el editor lo pinta
                secciones.js (buildCondEditor) y forms.js lo lee al enviar. -->
           <div id="add-q-cond-host" class="cond-editor-host"></div>
@@ -546,28 +527,17 @@
             <summary>Primera pregunta (opcional)</summary>
             <div class="add-q-field" style="margin-top:8px">
               <label>Tipo de pregunta</label>
-              <select id="add-sec-q-tipo">
-                <option value="checkbox">Selección múltiple (Checkbox)</option>
-                <option value="radio">Selección única (Radio)</option>
-                <option value="voto-ponderado">Votación con puntos (-1, +1, +3)</option>
-                <option value="slider">Rango numérico (Slider)</option>
-                <option value="textarea">Texto libre</option>
-              </select>
+              <select id="add-sec-q-tipo"></select>
             </div>
             <div class="add-q-field">
               <label>Texto de la pregunta</label>
               <input type="text" id="add-sec-q-label" placeholder="p.ej. ¿Qué medio de transporte prefieres?">
             </div>
-            <div class="add-q-field" id="add-sec-q-opts-wrap">
-              <label>Opciones iniciales</label>
-              <div class="add-q-opts-container" id="add-sec-q-opts-container">
-                <div class="add-q-opt-row">
-                  <input type="text" placeholder="Opción 1">
-                  <button class="btn-remove" type="button">✕</button>
-                </div>
-              </div>
-              <button class="btn-add-q-opt" type="button" id="btn-add-sec-q-opt">+ Opción</button>
-            </div>
+          <div class="add-q-field" id="add-sec-q-opciones-wrap"><label>Opciones iniciales</label><div class="add-q-opts-container" id="add-sec-q-opts-container"></div><button type="button" class="btn-add-q-opt" id="add-sec-q-add-opt">+ Opción</button></div>
+          <div class="add-q-field" id="add-sec-q-casas-mode" style="display:none"><label><input type="checkbox" id="add-sec-q-modo-casas"> Las opciones son alojamientos (activar análisis de presupuesto de alojamiento)</label></div>
+          <div class="add-q-field" id="add-sec-q-slider-wrap" style="display:none"><label>Configuración del rango</label><div class="slider-config"><div><label>Mínimo</label><input type="number" id="add-sec-q-min" value="0"></div><div><label>Máximo</label><input type="number" id="add-sec-q-max" value="100"></div><div><label>Paso</label><input type="number" id="add-sec-q-step" value="10"></div></div></div>
+          <div class="add-q-field" id="add-sec-q-horarios-wrap" style="display:none"><label>Duración ideal (horas)</label><input type="number" id="add-sec-q-dur" value="3" min="1" max="12"><label>Franjas horarias</label><div id="add-sec-q-franjas-host"></div></div>
+          <div class="add-q-field"><label>Descripción (opcional)</label><textarea id="add-sec-q-desc" rows="2" maxlength="500"></textarea></div>
           </details>
           <div class="add-q-field">
             <label>Posición de la sección</label>
@@ -664,7 +634,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="src/js/config.js"></script>
 <script src="src/js/shared/format.js"></script>
-<script src="src/js/shared/esquema.js"></script>
+<script src="src/js/shared/esquema.js?v=8"></script>
 <script src="src/js/crypto.js"></script>
 <script src="src/js/api.js?v=7"></script>
 <script src="src/js/state.js?v=3"></script>
@@ -675,20 +645,21 @@
 <script src="src/js/access.js?v=7"></script>
 <script src="src/js/globalProfile.js?v=7"></script>
 <script src="src/js/dashboard.js?v=7"></script>
-<script src="src/js/types.js?v=5"></script>
-<script src="src/js/questions.js?v=5"></script>
+<script src="src/js/types.js?v=8"></script>
+<script src="src/js/optionEditor.js?v=8"></script>
+<script src="src/js/questions.js?v=8"></script>
 <script src="src/js/proscontras.js"></script>
 <script src="src/js/ausencias.js?v=2"></script>
-<script src="src/js/forms.js?v=4"></script>
+<script src="src/js/forms.js?v=8"></script>
 <script src="src/js/answers.js?v=3"></script>
 <script src="src/js/engine/probabilidades.js"></script>
-<script src="src/js/engine/optimizador.js"></script>
+<script src="src/js/engine/optimizador.js?v=8"></script>
 <script src="src/js/engine/index.js"></script>
-<script src="src/js/ui/consensusView.js"></script>
+<script src="src/js/ui/consensusView.js?v=8"></script>
 <script src="src/js/ui/reportajePDF.js"></script>
 <script src="src/js/secciones.js?v=16"></script>
 <script src="src/js/arbol.js"></script>
-<script src="src/js/mapa.js"></script>
+<script src="src/js/mapa.js?v=8"></script>
 <script src="src/js/cuenta.js?v=5"></script>
 <script src="src/js/debate.js"></script>
 <script src="src/js/polling.js"></script>
