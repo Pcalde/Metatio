@@ -263,7 +263,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Sesión guardada válida (y no contradice un enlace a otro viaje) → directo al viaje.
   // En cualquier otro caso, la puerta de entrada es siempre «Mis viajes».
   const saved = typeof getSavedSession === 'function' ? getSavedSession() : null;
-  if (saved && (!deLink || deLink === saved.eid) && !(typeof globalAuthReturning === 'function' && globalAuthReturning())) {
+  if (saved && !deLink && !(typeof globalAuthReturning === 'function' && globalAuthReturning())) {
     tryRestoreSession();
   } else {
     showTripsScreen();

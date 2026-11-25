@@ -110,6 +110,12 @@ function renderAccessControls() {
   document.body.classList.toggle('participant-view', !organizer);
   host.hidden = false;
   $('organizer-controls').hidden = !organizer;
+  const select=$('access-next-organizer');
+  if(organizer && select?.tagName==='SELECT') {
+    const previous=select.value; select.replaceChildren(new Option('Selecciona un participante',''));
+    for(const r of respondentes.filter(r=>r.nombre.toLowerCase()!==user.nombre.toLowerCase())) select.add(new Option(r.nombre,r.nombre));
+    select.value=previous; if(select.selectedIndex<0)select.selectedIndex=0;
+  }
 }
 async function accessUi(action) {
   try { await action(); } catch (e) { showStatus(e.message, 'err', 10000); }
@@ -120,6 +126,7 @@ function bindAccessControls() {
     try { await changeProfilePassword(old.value,next.value); tripsErr('Contraseña cambiada. Descarga una copia nueva de tus accesos.'); }
     finally { old.value=''; next.value=''; }
   }));
+  $('access-copy-invite')?.addEventListener('click',()=>accessUi(async()=>{const url=$('access-invite-url').value;if(!url)throw new Error('Genera primero el enlace.');await navigator.clipboard.writeText(url);showStatus('Enlace copiado.','ok');}));
   $('access-invite')?.addEventListener('click', () => accessUi(async () => {
     const url = await createInvite(user.eid, user.nombre, user.pinHash);
     $('access-invite-url').value = url;
@@ -154,7 +161,7 @@ function bindAccessControls() {
   $('access-transfer')?.addEventListener('click', () => accessUi(async () => {
     const target = $('access-next-organizer').value.trim();
     if (!target || !window.confirm('¿Transferir la organización del viaje a ' + target + '?')) return;
-    await apiPost({ action: 'transfer_organizer', ...user, target }); await pollOnce();
+    await apiPost({ action: 'transfer_organizer', ...user, target }); await pollOnce(); renderAccessControls();
   }));
   $('btn-recover-access')?.addEventListener('click', e => _busy(e.currentTarget, 'Recuperando…', '', async () => {
     const eid = normEid($('recover-eid').value.trim()), nombre = $('recover-name').value.trim();

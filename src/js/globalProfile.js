@@ -105,29 +105,44 @@ async function refreshGlobalProfile() {
     const { data, error }=await globalClient().auth.getSession();
     if (error) throw new Error(error.message);
     if(version!==_globalRefreshVersion) return;
+    const previousOwner=_globalAccount?.id;
     _globalAccount=data.session?.user || null;
+    if(previousOwner && previousOwner!==_globalAccount?.id){mtReset();for(const id of ['global-join-name','global-new-name','global-claim-name','global-claim-secret','mt-request-note','mt-friend-code'])$(id).value='';}
     $('global-auth-form').hidden=!!_globalAccount;
     $('global-account-panel').hidden=!_globalAccount;
-    if(!_globalAccount) { $('global-trips-list').replaceChildren(); return; }
+    $('trips-screen').classList.toggle('mt-signed-in',!!_globalAccount);
+    $('mt-right').hidden=_globalRecovery;
+    $('mt-profile-edit').hidden=_globalRecovery;
+    document.querySelector('.mt-nav').hidden=_globalRecovery;
+    if(!_globalAccount) { mtReset(); $('global-trips-list').replaceChildren(); return; }
     $('global-travel-panel').hidden=_globalRecovery;
     if(_globalRecovery) { $('global-password-details').open=true; }
     $('global-email-label').textContent=_globalAccount.email || 'Cuenta global';
     const name=String(_globalAccount.user_metadata?.nombre || _globalAccount.user_metadata?.full_name || _globalAccount.user_metadata?.name || _perfil.nombre || '').slice(0,40);
     $('global-display-name').textContent=name || 'Mi cuenta';
     if(_globalRecovery) return;
-    for(const id of ['global-join-name','global-new-name','global-claim-name']) if(!$(id).value) $(id).value=name;
+    const dashboard=await mtLoad(version);
+    if(version!==_globalRefreshVersion) return;
+    const displayName=dashboard?.profile?.name||name;
+    for(const id of ['global-join-name','global-new-name']) if(!$(id).value) $(id).value=displayName;
     const eid=eidDeLaUrl();
     const savedInvite=sessionStorage.getItem(GLOBAL_INVITE_KEY);
-    if(savedInvite) sessionStorage.removeItem(GLOBAL_INVITE_KEY);
     const pending=savedInvite || (eid ? (inviteFromText(location.href)?location.href:eid) : '');
-    if(pending && !_globalInviteHandled && !$('global-join-eid').value) {
-      _globalInviteHandled=true;
-      $('global-join-eid').value=pending;
-      if(inviteFromText(pending)) $('global-join-details').open=true;
-      else { $('global-claim-eid').value=_extraerEid(pending); $('global-recover-details').open=true; }
-    }
     const trips=await globalRpc('global_trips');
     if(version!==_globalRefreshVersion) return;
+    if(pending && !_globalInviteHandled) {
+      _globalInviteHandled=true;
+      const destination=_extraerEid(pending);
+      if(trips.some(t=>t.eid===destination)) {
+        try { await entrarViajeGlobal(destination); mtConsumeLink(); return; }
+        catch(e) { globalStatus(e.message); }
+      } else {
+        $('global-join-eid').value=pending;
+        $('global-claim-eid').value=destination;
+        $('global-join-details').open=true;
+        globalStatus('Si ya participabas, recupera tu acceso anterior. Si es un viaje nuevo para ti, puedes entrar con invitación o solicitar acceso.');
+      }
+    }
     const host=$('global-trips-list'); host.replaceChildren();
     if(!trips.length) host.textContent='Todavía no hay viajes vinculados a esta cuenta.';
     for(const trip of trips) {
@@ -138,7 +153,7 @@ async function refreshGlobalProfile() {
       text.append(title,meta);
       const b=document.createElement('button'); b.type='button'; b.className='btn-propose'; b.textContent='Entrar';
       b.addEventListener('click',()=>globalTask(b,()=>entrarViajeGlobal(trip.eid)));
-      row.append(text,b); host.append(row);
+      row.append(text,b); mtDecorateTrip(row,trip); host.append(row);
     }
     renderGlobalLocalChoices();
   } catch(e) { if(version===_globalRefreshVersion) globalStatus(e.message); }
@@ -179,7 +194,13 @@ async function entrarViajeGlobal(eid) {
     throw e;
   }
 }
+function mtConsumeLink(){
+  sessionStorage.removeItem(GLOBAL_INVITE_KEY);
+  const url=new URL(location.href);url.searchParams.delete('e');url.searchParams.delete('i');
+  history.replaceState(null,'',url.pathname+url.search+url.hash);
+}
 function bindGlobalProfile() {
+  bindMetatioDashboard();
   const on=(id,fn)=>$(id)?.addEventListener('click',e=>{e.preventDefault(); void globalTask(e.currentTarget,fn);});
   globalMode('login');
   const authError=new URLSearchParams(location.search).get('error') || new URLSearchParams(location.hash.slice(1)).get('error');
@@ -235,7 +256,7 @@ function bindGlobalProfile() {
   });
   on('global-logout',async()=>{
     const {error}=await globalClient().auth.signOut({scope:'local'}); if(error) throw error;
-    _globalAccount=null; _globalRecovery=false; _globalReturnToRecovery=false; _globalInviteHandled=false; sessionStorage.removeItem(GLOBAL_INVITE_KEY); if(typeof salirDelPerfil==='function' && perfilEstaActivo()) salirDelPerfil(); globalMode('login'); $('legacy-access').open=false; for(const id of ['global-join-eid','global-join-name','global-new-name','global-claim-name','global-claim-eid','global-claim-secret','global-claim-profile-name','global-new-title','global-new-eid','global-next-password']) $(id).value=''; await refreshGlobalProfile(); globalStatus('Cuenta global cerrada en este navegador.');
+    _globalAccount=null; mtReset(); _globalRecovery=false; _globalReturnToRecovery=false; _globalInviteHandled=false; mtConsumeLink(); if(typeof salirDelPerfil==='function' && perfilEstaActivo()) salirDelPerfil(); globalMode('login'); $('legacy-access').open=false; for(const id of ['global-join-eid','global-join-name','global-new-name','global-claim-name','global-claim-eid','global-claim-secret','global-claim-profile-name','global-new-title','global-new-eid','global-next-password']) $(id).value=''; await refreshGlobalProfile(); globalStatus('Cuenta global cerrada en este navegador.');
   });
   on('global-refresh',refreshGlobalProfile);
   $('global-claim-mode').addEventListener('change',globalClaimMode);
@@ -258,8 +279,18 @@ function bindGlobalProfile() {
   });
   on('global-join',async()=>{
     const raw=globalVal('global-join-eid'),eid=_extraerEid(raw),invite=inviteFromText(raw),nombre=globalVal('global-join-name');
-    if(!eid||!nombre||!invite) throw new Error('Introduce tu nombre y el enlace de invitación completo.');
-    await globalRpc('global_join',{p_eid:eid,p_nombre:nombre,p_invite:invite}); $('global-join-eid').value=''; $('global-join-details').open=false; await refreshGlobalProfile(); globalStatus('Ya puedes entrar al viaje desde Mis viajes.');
+    if(!eid||!nombre) throw new Error('Introduce el código del viaje y tu nombre.');
+    const trips=await globalRpc('global_trips');
+    if(trips.some(t=>t.eid===eid)){await entrarViajeGlobal(eid);mtConsumeLink();return;}
+    if(!confirm('Si ya participabas con una versión anterior, usa Recuperar viaje para conservar tus respuestas. ¿Quieres crear una participación nueva?'))return;
+    if(invite){
+      await globalRpc('global_join',{p_eid:eid,p_nombre:nombre,p_invite:invite});
+      mtConsumeLink(); $('global-join-eid').value=''; $('global-join-details').open=false; await entrarViajeGlobal(eid);
+    }else{
+      await mtRpc('trip_request',{eid,alias:nombre,note:globalVal('mt-request-note')});
+      mtConsumeLink(); $('global-join-eid').value=''; $('mt-request-note').value=''; $('global-join-details').open=false;
+      await refreshGlobalProfile(); globalStatus('Solicitud enviada. El organizador debe aprobarla.');
+    }
   });
   on('global-create',async()=>{
     const eid=normEid(globalVal('global-new-eid')),nombre=globalVal('global-new-name');
