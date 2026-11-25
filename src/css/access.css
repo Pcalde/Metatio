@@ -1,0 +1,19 @@
+/* La autorización efectiva se verifica en SQL; esto simplifica la vista invitada. */
+.participant-view .card-q-actions,
+.participant-view .opt-crud-btns,
+.participant-view .opt-edit-drawer,
+.participant-view .add-opt-form,
+.participant-view .sec-rail-manage,
+.participant-view .sec-rail-add,
+.participant-view .sec-rail-add-form,
+.participant-view #add-question-card { display: none !important; }
+#access-controls { max-width: 960px; margin: 16px auto; }
+#access-controls input,
+#trips-screen details input { display: block; width: 100%; box-sizing: border-box; margin: 6px 0 14px; }
+#access-controls label,
+#trips-screen details label { display: block; margin-top: 12px; }
+#access-controls button,
+#trips-screen details button { margin: 8px 8px 8px 0; }
+#access-controls summary,
+#trips-screen details summary { cursor: pointer; font-weight: 600; }
+#access-controls [hidden] { display: none !important; }
