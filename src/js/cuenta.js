@@ -12,7 +12,7 @@ function openAccountModal() {
   if ($('acc-nombre')) $('acc-nombre').value = user.nombre || '';
   if ($('acc-pin'))    $('acc-pin').value    = '';
   const wPin = $('acc-pin') && $('acc-pin').closest('.login-field');
-  if (wPin) wPin.style.display = perfilEstaActivo() ? 'none' : '';
+  if (wPin) wPin.style.display = (user.global || perfilEstaActivo()) ? 'none' : '';
   const p = puntoPartida();
   if ($('acc-partida')) {
     $('acc-partida').placeholder = p
@@ -60,7 +60,7 @@ async function saveAccountChanges() {
   if (!user) return;
   const btn = $('btn-account-save');
   const nuevoNombre = ($('acc-nombre')?.value || '').trim();
-  const nuevoPin = perfilEstaActivo() ? '' : ($('acc-pin')?.value || '').trim();
+  const nuevoPin = (user.global || perfilEstaActivo()) ? '' : ($('acc-pin')?.value || '').trim();
 
   accountStatus('', 'ok');
   if (!nuevoNombre)              { accountStatus('El nombre no puede estar vacío.'); return; }
@@ -85,23 +85,44 @@ async function saveAccountChanges() {
 
     const changedName = nuevoNombre !== user.nombre;
     const changedPin  = !!nuevoPin;
-    if (changedName || changedPin) {
+    // Una identidad guardada no se modifica sin poder actualizar su monedero.
+    if ((changedName || changedPin) && !user.global && !perfilEstaActivo()) {
+      throw new Error('Desbloquea tu perfil en Mis viajes antes de modificar este acceso guardado.');
+    }
+    if (changedName && user.global) {
+      const oldDraft = participantDraftKey(user);
+      if (draftDirty) saveDraft();
+      const res = await api({action:'update_profile', ...id, nuevoNombre});
+      finalName = res.nombre || nuevoNombre; user.nombre = finalName;
+      await renameSavedSession(finalName);
+      const draft = localStorage.getItem(oldDraft);
+      if (draft && oldDraft !== participantDraftKey(user)) { localStorage.setItem(participantDraftKey(user), draft); localStorage.removeItem(oldDraft); }
+      const meta = viajesGuardados()[user.eid];
+      if (perfilEstaActivo() && meta?.nombre?.toLowerCase() === id.nombre.toLowerCase()) perfilActualizarNombre(user.eid,finalName);
+      const datos = await api({action:'all',eid:user.eid,nombre:finalName,pinHash:user.pinHash});
+      lastRaw = JSON.stringify(datos); applyData(datos);
+    } else if (changedName || changedPin) {
       const nuevoPinHash = changedPin ? await sha256(nuevoPin + '|' + user.eid) : null;
-      const res = await apiPost({
+      const credential = nuevoPinHash || await getCredViaje(user.eid);
+      if (!credential) throw new Error('Guarda este acceso en tu perfil antes de modificarlo.');
+      const oldDraft = participantDraftKey(user);
+      if (draftDirty) saveDraft();
+      const res = await accessTransaction(user.eid, nuevoNombre, credential, {
         action: 'update_profile', ...id,
         nuevoNombre: changedName ? nuevoNombre : null,
         nuevoPinHash,
       });
       finalName = res.nombre || nuevoNombre || user.nombre;
       user.nombre = finalName;
-      if (changedPin) {
-        user.pinHash = nuevoPinHash;
-        await storePinHash(user.eid, nuevoPinHash);   // refresca credencial cifrada
+      await beginSession(finalName, user.eid, credential);
+      const draft = localStorage.getItem(oldDraft);
+      if (draft && oldDraft !== participantDraftKey(user)) {
+        localStorage.setItem(participantDraftKey(user), draft); localStorage.removeItem(oldDraft);
       }
       if (changedName) {
         await renameSavedSession(finalName);          // sesión guardada usa el nuevo nombre
-        respondentes.forEach(r => { if (r.nombre.toLowerCase() === finalName.toLowerCase()) r.nombre = finalName; });
-        respuestas.forEach(r => { if (r.nombre.toLowerCase() === finalName.toLowerCase()) r.nombre = finalName; });
+        respondentes.forEach(r => { if (r.nombre.toLowerCase() === id.nombre.toLowerCase()) r.nombre = finalName; });
+        respuestas.forEach(r => { if (r.nombre.toLowerCase() === id.nombre.toLowerCase()) r.nombre = finalName; });
         perfilActualizarNombre(user.eid, finalName);
       }
     }

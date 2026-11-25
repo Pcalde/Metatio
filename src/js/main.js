@@ -13,14 +13,12 @@ function switchMode(mode) {
   const vSurvey    = $('view-survey');
   const vConsensus = $('view-consensus');
   const vDebate    = $('view-debate');
-  const vReformulario = $('view-reformulario');
 
   // Nota: debe ser 'grid' (no 'flex'); el valor inline anterior rompía la
   // cuadrícula de .form-wrap (raíl + columna principal) definida en styles.css.
   if (vSurvey)    vSurvey.style.display    = mode === 'survey'    ? 'grid'  : 'none';
   if (vConsensus) vConsensus.style.display = mode === 'consensus' ? 'block' : 'none';
   if (vDebate)    vDebate.style.display    = mode === 'debate'    ? 'block' : 'none';
-  if (vReformulario) vReformulario.style.display = mode === 'reformulario' ? 'block' : 'none';
 
   // Barra inferior fija: solo acompañar al usuario en la vista del cuestionario.
   // La lógica vive en secciones.js (updateFloatingBars); el fallback cubre el
@@ -33,18 +31,13 @@ function switchMode(mode) {
   }
 
   // Repintar raíl, paginación por secciones y barra tras cambiar de vista.
-  if (mode === 'consensus')    renderResultados();
-  if (mode === 'reformulario') renderReformularioInteractivo();
-  if (mode === 'debate' && typeof renderDebate === 'function') renderDebate();
+  if (mode === 'survey' && typeof refreshSecciones === 'function') refreshSecciones();
+
+  if (mode === 'consensus' && typeof renderReformulario === 'function') renderReformulario();
+  if (mode === 'debate'    && typeof renderDebate === 'function')       renderDebate();
 
   closeSideNav();
   if (pollActive) schedulePoll(currentPollBaseInterval());
-}
-
-function renderCurrentMode() {
-  if (activeMode === 'consensus'    && typeof renderResultados === 'function')             renderResultados();
-  if (activeMode === 'reformulario' && typeof renderReformularioInteractivo === 'function') renderReformularioInteractivo();
-  if (activeMode === 'debate'       && typeof renderDebate === 'function')                  renderDebate();
 }
 
 // ── MENÚ LATERAL (hamburguesa) ───────────────────────────────────────────────
@@ -195,7 +188,7 @@ function bindCreateTripUI() {
         // Cuestionario por secciones: render + raíl + barra (secciones.js)
         renderSecciones();
         if (typeof renderAusencias === 'function') renderAusencias();
-        if (typeof renderResultados === 'function') renderResultados();
+        if (typeof renderReformulario === 'function') renderReformulario();
         if (typeof renderDebate === 'function') renderDebate();
         startPolling();
       } catch (e) {
@@ -239,7 +232,7 @@ function bindNavigation() {
       if (surveyScreen.style.display !== 'none' && user) {
         hydrateFromServerIfNoDraft();
         if (typeof renderAusencias === 'function') renderAusencias();
-        if (typeof renderResultados === 'function') renderResultados();
+        if (typeof renderReformulario === 'function') renderReformulario();
         if (typeof renderDebate === 'function') renderDebate();
       }
     });
@@ -270,7 +263,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Sesión guardada válida (y no contradice un enlace a otro viaje) → directo al viaje.
   // En cualquier otro caso, la puerta de entrada es siempre «Mis viajes».
   const saved = typeof getSavedSession === 'function' ? getSavedSession() : null;
-  if (saved && (!deLink || deLink === saved.eid)) {
+  if (saved && (!deLink || deLink === saved.eid) && !(typeof globalAuthReturning === 'function' && globalAuthReturning())) {
     tryRestoreSession();
   } else {
     showTripsScreen();
