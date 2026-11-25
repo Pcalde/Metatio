@@ -61,20 +61,9 @@ function readState() {
   return Object.assign({ answers }, (typeof readAusencias === 'function' && readAusencias()) || {});
 }
 
-// Estado para GUARDAR borrador: igual que readState() pero leyendo las
-// ausencias aunque la tarjeta esté oculta por la paginación (solo se muestra
-// en la última sección). Así el autoguardado no pierde el slider de
-// probabilidad ni las casillas votadas a mitad del cuestionario. Para el
-// ENVÍO se sigue usando readState()/collectAnswers(), que sí exige que la
-// tarjeta esté visible (el voto emite desde la página donde se ve).
-function readStateForDraft() {
-  const st = readState();
-  if (!st.ausencias_predichas && typeof readAusenciasForzado === 'function') {
-    const aus = readAusenciasForzado();
-    if (aus) Object.assign(st, aus);
-  }
-  return st;
-}
+// Borrador y envío comparten la misma lectura: la probabilidad personal y
+// las predicciones de ausencias no dependen de la página visible.
+function readStateForDraft() { return readState(); }
 
 function saveDraft() {
   if (!user) return;
@@ -107,6 +96,9 @@ function restoreDraft() {
 // Si el usuario no tiene borrador local pero ya respondió antes en servidor, hidrata su formulario
 function hydrateFromServerIfNoDraft() {
   if (!user || !respuestas || !respuestas.length) return;
+  // El observador de main.js también invoca esta función al entrar.
+  // No debe sobrescribir un borrador restaurado con una respuesta anterior.
+  try { if (localStorage.getItem(LS_DRAFT(user.eid))) return; } catch (e) {}
   const mine = respuestas.find(r => r.nombre.toLowerCase() === user.nombre.toLowerCase());
   if (!mine || !mine.answers) return;
 

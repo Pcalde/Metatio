@@ -186,6 +186,8 @@ function bindCreateTripUI() {
         $('survey-screen').style.display = 'block';
 
         // Cuestionario por secciones: render + raíl + barra (secciones.js)
+        resetAusencias();
+        if (typeof SEC_ESTADO !== 'undefined') SEC_ESTADO.idx = 0;
         renderSecciones();
         if (typeof renderAusencias === 'function') renderAusencias();
         if (typeof renderReformulario === 'function') renderReformulario();

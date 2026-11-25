@@ -119,7 +119,21 @@ function syncSubmitBar() {
 // Construye un mini-formulario reutilizable: pregunta previa + operador +
 // valor (poblado con las opciones de aquella). `onlyBefore` limita la lista de
 // preguntas a las que van antes de `qid` en el orden (regla anti-ciclos).
-function buildCondEditor(host, schemaArr, currentQid, initial) {
+function operadoresCondicion(q) {
+  if (!q || q.config?.esEncabezado) return [];
+  if (q.tipo === 'radio') return ['igual'];
+  if (q.tipo === 'voto-ponderado') return ['incluye', 'alguno'];
+  if (['checkbox', 'casas', 'probabilidad-opcion'].includes(q.tipo)) return ['incluye', 'alguno'];
+  return [];
+}
+function fuentesCondicion(schemaArr, currentQid, beforeIdx) {
+  const ci = beforeIdx ?? (currentQid ? schemaArr.findIndex(q => q.id === currentQid) : -1);
+  const target = schemaArr.find(q => q.id === currentQid);
+  return schemaArr.filter((q,i) => q.id !== currentQid && (ci < 0 || i < ci) &&
+    operadoresCondicion(q).length && (q.opciones || []).some(o => optVal(q,o)) &&
+    !(target?.config?.esEncabezado && _secNormNombre(target.config.seccion) === _secNormNombre(q.config?.seccion)));
+}
+function buildCondEditor(host, schemaArr, currentQid, initial, beforeIdx) {
   host.innerHTML = '';
   const cur = initial && typeof initial === 'object' ? initial : null;
 
@@ -138,10 +152,12 @@ function buildCondEditor(host, schemaArr, currentQid, initial) {
   // anti-ciclos). Con `currentQid` vacío (pregunta nueva → se añade al final)
   // cualquier pregunta con opciones sirve. textarea/disponibilidad/horarios
   // no tienen opciones, así que quedan fuera automáticamente.
-  const ci = currentQid ? schemaArr.findIndex(x => x.id === currentQid) : -1;
-  const candidates = (schemaArr || []).filter((q, i) =>
-    q.id !== currentQid && (q.opciones || []).length > 0 &&
-    (ci < 0 || i < ci));
+  const candidates = fuentesCondicion(schemaArr, currentQid, beforeIdx);
+  const note = document.createElement('small');
+  note.className = 'cond-hint';
+  if (!candidates.length) note.textContent = 'No hay preguntas anteriores con opciones compatibles. Cambia la posición o añade primero una pregunta con opciones.';
+  else if (cur?.qid && !candidates.some(q => q.id === cur.qid)) note.textContent = 'La condición anterior ya no está disponible en esta posición. Elige otra o deja Sin condición.';
+  if (cur?.no) selNeg.value = '1';
 
   const fillQ = () => {
     selQ.innerHTML = '<option value="">Sin condición</option>' +
@@ -150,26 +166,22 @@ function buildCondEditor(host, schemaArr, currentQid, initial) {
   };
   // 'alguno' admite una lista de valores; aquí se representa como «incluye
   // CUALQUIERA de…» y se guarda como {op:'alguno', valor:[...]}.
-  const OPS_FOR = q =>
-    !q ? [] :
-    q.tipo === 'checkbox' || q.tipo === 'casas' ? ['incluye', 'alguno'] :
-    q.tipo === 'voto-ponderado' ? ['incluye', 'igual', 'alguno'] :
-    q.tipo === 'radio' ? ['igual'] : [];
-
   const fillOps = q => {
-    const ops = OPS_FOR(q);
+    const ops = operadoresCondicion(q);
+    // Conservar una condición ponderada histórica, sin ofrecer esa operación ambigua en nuevas reglas.
+    if (q?.tipo === 'voto-ponderado' && cur?.qid === q.id && cur.op === 'igual') ops.push('igual');
     selOp.innerHTML = ops.map(o => `<option value="${o}">${
-      o === 'incluye' ? 'incluye la opción' : o === 'alguno' ? 'incluye CUALQUIERA de…' : 'es exactamente'}</option>`).join('');
+      q?.tipo === 'probabilidad-opcion' ? (o === 'alguno' ? 'probabilidad ≥ 50 % en alguna de…' : 'probabilidad ≥ 50 % en') : q?.tipo === 'voto-ponderado' && o !== 'igual' ? (o === 'alguno' ? 'puntos positivos en alguna de…' : 'puntos positivos en') : o === 'incluye' ? 'incluye la opción' : o === 'alguno' ? 'incluye CUALQUIERA de…' : 'es exactamente'}</option>`).join('');
     if (cur && q && cur.qid === q.id && ops.includes(cur.op)) selOp.value = cur.op;
   };
-  const optValsOf = q => (q && q.opciones ? q.opciones : []).map(op => optVal(q, op));
+  const optValsOf = q => (q?.opciones || []).map(op => normalizeOption(q, op)).filter(o => o.key);
   const fillVals = q => {
     const vals = optValsOf(q);
     const multi = selOp.value === 'alguno';
     selVal.multiple = multi;
     selVal.size = multi ? Math.min(Math.max(vals.length, 2), 6) : 1;
     selVal.innerHTML = vals.length
-      ? vals.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('')
+      ? vals.map(v => `<option value="${esc(v.key)}">${esc(v.label)}</option>`).join('')
       : '<option value="">(esta pregunta no tiene opciones aún)</option>';
     if (cur && q && cur.qid === q.id) {
       const list = (Array.isArray(cur.valor) ? cur.valor : [cur.valor]).map(String);
@@ -191,7 +203,7 @@ function buildCondEditor(host, schemaArr, currentQid, initial) {
   fillQ(); sync();
 
   grid.append(selQ, selOp, selVal, selNeg);
-  host.append(lbl, grid);
+  host.append(lbl, grid, note);
   return {
     read() {
       if (!selQ.value) return null;
@@ -221,8 +233,8 @@ function validarMostrarSi(cond, schemaArr, selfId, beforeIdx) {
   if (!src) return 'La pregunta de la condición ya no existe.';
   const si = schemaArr.findIndex(q => q.id === src.id);
   if (bi >= 0 && si >= bi) return `«${src.label}» debe ir antes de «${(schemaArr[bi] || {}).label || selfId}» en el orden.`;
-  if (!['checkbox', 'voto-ponderado', 'radio', 'casas'].includes(src.tipo))
-    return 'Las condiciones solo funcionan sobre checkbox, voto ponderado, radio o casas.';
+  if (!operadoresCondicion(src).length) return 'La pregunta de origen debe admitir opciones de selección, puntos, probabilidades o alojamientos.';
+  if (!operadoresCondicion(src).includes(cond.op) && !(src.tipo === 'voto-ponderado' && cond.op === 'igual')) return 'Operador incompatible con la pregunta de origen.';
   const vals = (src.opciones || []).map(op => optVal(src, op));
   const list = Array.isArray(cond.valor) ? cond.valor : [cond.valor];
   if (!list.length) return 'Elige al menos un valor para la condición.';
@@ -266,7 +278,7 @@ function _condMatch(raw, op, valor, tipoFuente = null) {
 
   switch (op) {
     case 'igual':
-      if (Array.isArray(raw)) return raw.map(String).some(v => list.includes(v));
+      if (Array.isArray(raw)) return raw.some(v => list.includes(String(v && typeof v === 'object' ? v.nombre : v)));
       if (typeof raw === 'object') {
         if ('estado' in raw) return list.includes(String(raw.estado));
         // voto-ponderado: la puntuación de alguna opción coincide exactamente
@@ -274,7 +286,7 @@ function _condMatch(raw, op, valor, tipoFuente = null) {
       }
       return list.includes(String(raw));
     case 'alguno':
-      if (Array.isArray(raw)) return raw.some(r => list.includes(String(r)));
+      if (Array.isArray(raw)) return raw.some(r => list.includes(String(r && typeof r === 'object' ? r.nombre : r)));
       if (typeof raw === 'object') {
         if ('estado' in raw) return list.includes(String(raw.estado));
         const dict = normPond(raw);
@@ -283,7 +295,7 @@ function _condMatch(raw, op, valor, tipoFuente = null) {
       return list.includes(String(raw));
     case 'incluye':
     default:
-      if (Array.isArray(raw)) return raw.map(String).some(v => list.includes(v));
+      if (Array.isArray(raw)) return raw.some(v => list.includes(String(v && typeof v === 'object' ? v.nombre : v)));
       if (typeof raw === 'object') {
         if ('estado' in raw) return list.includes(String(raw.estado));
         return list.some(k => Number(raw[k]) > 0); // voto-ponderado: puntuación > 0
@@ -528,13 +540,8 @@ function prevSection() {
   }
 }
 
-// Tarjetas «meta» del cuestionario que viven FUERA de #questions-container:
-// participantes (intro) y ausencias/predicciones (cierre). Se muestran u
-// ocultan según la sección activa: Participantes solo en la primera sección
-// (hace de intro) y Ausencias solo en la última NAVEGABLE (las secciones que
-// «no aplican» quedan tachadas e inaccesibles, así que el cierre no puede
-// anclarse a ellas o nadie vería nunca las probabilidades). Con una sola
-// sección ambas van en esa misma página.
+// Tarjetas meta: estimación personal y participantes en la primera página;
+// predicciones sobre los demás en la última página navegable.
 function _applyMetaCardVisibility(cur, secs, answers) {
   const st = answers || readState().answers;
   let firstNav = null, lastNav = null;
@@ -542,6 +549,8 @@ function _applyMetaCardVisibility(cur, secs, answers) {
   const hasNav = !!lastNav;
   const isFirstSec = !hasNav || cur === firstNav;
   const isLastSec  = !hasNav || cur === lastNav;
+  const propia = $('asistencia-propia-card');
+  if (propia) propia.style.display = isFirstSec ? '' : 'none';
   const participCard = $('participants-card');
   if (participCard) participCard.style.display = isFirstSec ? '' : 'none';
   const ausCard = $('ausencias-card');
@@ -559,6 +568,7 @@ function _applyMetaCardVisibility(cur, secs, answers) {
 function applySectionPaging() {
   const container = $('questions-container');
   if (!container) return;
+  syncQuestionCardOrder();
   if (!schema.length) { _applyMetaCardVisibility(null, []); renderRail(); renderBottomBar(); return; }
   secClampIndex();
   const st = readState().answers;
@@ -1169,7 +1179,7 @@ async function crearSeccion(nombre) {
     const key = String(nombre).trim().toLowerCase();
     const firstInSec = schema.find(x => x.id !== id && x.config && !x.config.esEncabezado &&
       String(x.config.seccion || '').trim().toLowerCase() === key);
-    if (firstInSec) insertCardTras(card, firstInSec);
+    if (firstInSec && cardFor(firstInSec.id)) cardFor(firstInSec.id).before(card);
     else cont.appendChild(card);
   }
   const emptyNotice = cont && cont.querySelector('[data-empty-notice]');

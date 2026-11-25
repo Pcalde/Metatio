@@ -84,7 +84,10 @@ function applyPollUpdate(data) {
   const respChanged   = JSON.stringify(respuestas) !== oldResp;
   const debateChanged = JSON.stringify(debate) !== oldDebate;
 
-  if (schemaChanged) syncSchemaToDOM();
+  if (schemaChanged) {
+    syncSchemaToDOM();
+    if (typeof refreshNewQuestionConditions === 'function') refreshNewQuestionConditions();
+  }
   if (schemaChanged || pcChanged) refreshAllPC();
   if (typeof renderAusencias === 'function') renderAusencias();
   if (schemaChanged || respChanged || pcChanged) {

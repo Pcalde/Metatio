@@ -104,7 +104,7 @@ function buildQuestionCard(q, idx) {
           <select class="inp-eq-seccion">${opts.join('')}</select>
           <input type="text" class="inp-eq-seccion-nombre" maxlength="60" placeholder="Nombre de la sección nueva…" style="display:none">`;
       })()}
-      ${q.tipo !== 'textarea' ? '<div class="cond-editor-host q-cond-host"></div>' : ''}
+      <div class="cond-editor-host q-cond-host"></div>
       <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px">
         <button type="button" class="btn-pc btn-cancel-eq">Cancelar</button>
         <button type="button" class="btn-propose btn-save-eq" style="padding:6px 14px;font-size:0.8rem">Guardar cambios</button>
@@ -134,19 +134,12 @@ function buildQuestionCard(q, idx) {
   // + operador + valor. Se pinta cuando el panel se abre, con el estado actual.
   let getCond = null;
   const condHost = editBox.querySelector('.q-cond-host');
-  if (condHost && typeof buildCondEditor === 'function') {
-    btnEdit.addEventListener('click', () => {
-      if (editBox.style.display !== 'none') {
-        getCond = buildCondEditor(condHost, schema, q.id, q.config && q.config.mostrarSi);
-      }
-    });
-  }
-
   const toggleEditBox = () => {
     const opening = editBox.style.display === 'none';
     editBox.style.display = opening ? 'flex' : 'none';
     if (opening && condHost && typeof buildCondEditor === 'function') {
-      getCond = buildCondEditor(condHost, schema, q.id, q.config && q.config.mostrarSi);
+      const current = schema.find(x => x.id === q.id) || q;
+      getCond = buildCondEditor(condHost, schema, q.id, current.config?.mostrarSi);
     }
   };
 
@@ -329,14 +322,40 @@ function buildQuestionCard(q, idx) {
   return card;
 }
 
+// Orden de presentación: cabecera primero y preguntas en orden del esquema.
+// No se altera schema ni pos (las condiciones dependen del orden persistido).
+// Se reutilizan nodos existentes para no perder respuestas ni controles.
+function syncQuestionCardOrder() {
+  const cont = $('questions-container');
+  if (!cont) return;
+  const cards = new Map([...cont.querySelectorAll(':scope > .card[data-qid]')].map(c => [c.dataset.qid, c]));
+  const groups = typeof seccionesDelEsquema === 'function' ? seccionesDelEsquema() : [{items: schema.map(q => ({q}))}];
+  const ordered = groups.flatMap(g => [
+    ...g.items.filter(it => secIsHeaderCard(it.q)),
+    ...g.items.filter(it => !secIsHeaderCard(it.q))
+  ]).map(it => cards.get(it.q.id)).filter(Boolean);
+  let cursor = cont.firstElementChild;
+  for (const card of ordered) {
+    if (card !== cursor) cont.insertBefore(card, cursor);
+    cursor = card.nextElementSibling;
+  }
+  renumberCards();
+}
+
 function renumberCards() {
-  document.querySelectorAll('#questions-container > .card')
-    .forEach(c => { if (!c.dataset.emptyNotice) c.hidden = false; });
-  document.querySelectorAll('#questions-container > .card:not([data-empty-notice])')
-    .forEach((c, i) => {
-      const num = c.querySelector('.card-title .num');
-      if (num) num.textContent = i + 1;
-    });
+  const cards = document.querySelectorAll('#questions-container > .card[data-qid]');
+  let n = 0;
+  const secs = typeof seccionesDelEsquema === 'function' ? seccionesDelEsquema() : [];
+  cards.forEach(c => {
+    c.hidden = false;
+    const num = c.querySelector('.card-title .num');
+    if (num) num.textContent = ++n;
+    const secNum = c.querySelector('.sec-section-num');
+    if (secNum) {
+      const i = secs.findIndex(sec => sec.items.some(it => it.q.id === c.dataset.qid));
+      if (i >= 0) secNum.textContent = String(i + 1).padStart(2, '0');
+    }
+  });
 }
 
 function renderAllQuestions() {
@@ -361,6 +380,7 @@ function renderAllQuestions() {
     const card = buildQuestionCard(q, idx);
     if (card) container.appendChild(card);
   });
+  syncQuestionCardOrder();
   refreshAllPC();
 }
 
@@ -415,6 +435,7 @@ function syncSchemaToDOM() {
     const lblEl = card.querySelector('.q-label-text');
     if (lblEl && lblEl.textContent !== q.label) lblEl.textContent = q.label;
 
+    if (secIsHeaderCard(q)) return;
     const desc = (q.config && q.config.descripcion) || '';
     let de = card.querySelector(':scope > .q-desc');
     if (desc) {
@@ -447,15 +468,9 @@ function syncSchemaToDOM() {
     });
   });
 
-  renumberCards();
+  syncQuestionCardOrder();
 }
-function moveCardDom(qid, dir) {
-  const c = cardFor(qid);
-  if (!c) return;
-  if (dir < 0 && c.previousElementSibling) c.parentNode.insertBefore(c, c.previousElementSibling);
-  if (dir > 0 && c.nextElementSibling)     c.nextElementSibling.after(c);
-  renumberCards();
-}
+function moveCardDom(qid, dir) { syncQuestionCardOrder(); }
 
 async function moverPregunta(qid, dir) {
   const i = schema.findIndex(x => x.id === qid), j = i + dir;

@@ -57,18 +57,7 @@
 
   function cumpleRegla(raw, c, qPadre = null) {
     let ok = false;
-    try {
-      if (qPadre && qPadre.tipo === 'probabilidad-opcion') {
-        const vals = valoresDe(c);
-        const op = c.op || 'incluye';
-        if (raw && typeof raw === 'object') {
-          if (op === 'alguno') ok = vals.some(v => elige(raw, v, qPadre));
-          else ok = vals.length > 0 && vals.every(v => elige(raw, v, qPadre));
-        }
-      } else {
-        ok = _condMatch(raw, c.op || 'incluye', c.valor);
-      }
-    } catch (e) {}
+    try { ok = _condMatch(raw, c.op || 'incluye', c.valor, qPadre?.tipo); } catch (e) {}
     return c.no ? !ok : ok;
   }
 

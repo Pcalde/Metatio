@@ -169,19 +169,6 @@ function abrirAddPreguntaCondicionado(parentQ) {
     }
   }
 
-  // Condición pre-rellenada: «mostrar si el padre incluye alguna de sus opciones»
-  const condHost = $('add-q-cond-host');
-  if (condHost && typeof buildCondEditor === 'function') {
-    const allVals = (parentQ.opciones || []).map(o => optVal(parentQ, o));
-    const init = {
-      qid: parentQ.id,
-      op: allVals.length > 1 ? 'alguno' : 'incluye',
-      valor: allVals.length > 1 ? allVals : (allVals[0] || ''),
-    };
-    const ed = buildCondEditor(condHost, schema, null, init);
-    condHost._getCond = ed.read;
-  }
-
   // Posición: por defecto justo después del padre (= antes de la siguiente)
   const posSel = $('add-q-pos');
   if (posSel) {
@@ -189,6 +176,10 @@ function abrirAddPreguntaCondicionado(parentQ) {
     const nextQ = (pIdx >= 0 && pIdx + 1 < schema.length) ? schema[pIdx + 1] : null;
     if (nextQ && [...posSel.options].some(o => o.value === nextQ.id)) posSel.value = nextQ.id;
   }
+
+  const allVals = (parentQ.opciones || []).map(o => optVal(parentQ,o));
+  const op = parentQ.tipo === 'radio' ? 'igual' : allVals.length > 1 ? 'alguno' : 'incluye';
+  rebindAddQCond(false, {qid:parentQ.id, op, valor:op === 'alguno' ? allVals : allVals[0]});
 
   f.scrollIntoView({ behavior: 'smooth', block: 'center' });
   setTimeout(() => $('add-q-label')?.focus(), 250);
@@ -199,10 +190,36 @@ window.abrirAddPreguntaCondicionado = abrirAddPreguntaCondicionado;
 // Reconstruye el editor «mostrar solo si…» del formulario de pregunta nueva.
 // Sin `currentQid`: la pregunta se añadirá al final, así que puede depender
 // de cualquier pregunta existente con opciones. Se expone en host._getCond().
-function rebindAddQCond() {
-  const host = $('add-q-cond-host');
+function addQInsertAt(arr, beforeQid, secElegida) {
+  if (beforeQid) { const i = arr.findIndex(q => q.id === beforeQid); if (i >= 0) return i; }
+  if (secElegida) {
+    for (let i = arr.length - 1; i >= 0; i--) {
+      const q = arr[i];
+      if (!q.config?.esEncabezado && _secNormNombre(q.config?.seccion) === _secNormNombre(secElegida)) return i + 1;
+    }
+  }
+  return arr.length;
+}
+function addSecInsertAt() {
+  const before = $('add-sec-pos')?.value || '';
+  const target = before && seccionesDelEsquema().find(s => _secNormNombre(s.nombre || s.titulo) === _secNormNombre(before));
+  return target ? (target.items[0]?.i ?? schema.length) : schema.length;
+}
+function rebindCondHost(id, idx, keep, initial) {
+  const host = $(id);
   if (!host || typeof buildCondEditor !== 'function') return;
-  host._getCond = buildCondEditor(host, schema, null, null).read;
+  const cur = initial ?? (keep && host._getCond ? host._getCond() : null);
+  host._getCond = buildCondEditor(host, schema, null, cur, idx).read;
+}
+function rebindAddQCond(keep = false, initial = null) {
+  rebindCondHost('add-q-cond-host', addQInsertAt(schema, $('add-q-pos')?.value || '', aqSeccionElegida()), keep, initial);
+}
+function rebindAddSecCond(keep = false) {
+  rebindCondHost('add-sec-q-cond-host', addSecInsertAt(), keep);
+}
+function refreshNewQuestionConditions() {
+  if ($('add-q-form')?.classList.contains('open')) { rebindAddQPosition(); rebindAddQCond(true); }
+  if ($('add-sec-form')?.classList.contains('open')) { rebindAddSecPosition(); rebindAddSecCond(true); }
 }
 
 async function submitNewQuestion() {
@@ -222,29 +239,13 @@ async function submitNewQuestion() {
   const secElegida = aqSeccionElegida();
   if (secElegida) {
     config.seccion = secElegida;
-    if (typeof secHeaderPara === 'function' && !secHeaderPara(secElegida) &&
-        typeof crearSeccion === 'function') {
-      crearSeccion(secElegida);   // fire-and-forget: pollOnce traerá la marca
-    }
+
   }
 
   // Índice de inserción: antes de `beforeQid`; si no se eligió posición pero
   // sí una sección existente, justo tras la última pregunta de esa sección;
   // en cualquier otro caso, al final del esquema.
-  function _calcInsertAt(arr) {
-    if (beforeQid) {
-      const j = arr.findIndex(q => q.id === beforeQid);
-      if (j >= 0) return j;
-    }
-    if (secElegida) {
-      for (let j = arr.length - 1; j >= 0; j--) {
-        const x = arr[j];
-        if (x.config && x.config.esEncabezado) continue;
-        if (String(x.config?.seccion || '').trim().toLowerCase() === secElegida.trim().toLowerCase()) return j + 1;
-      }
-    }
-    return arr.length;
-  }
+
 
   const pregunta = { id, tipo, label, opciones, config };
 
@@ -256,7 +257,7 @@ async function submitNewQuestion() {
   if (condHost && typeof condHost._getCond === 'function') {
     const cond = condHost._getCond();
     if (cond) {
-      const insertAtV = _calcInsertAt(schema);
+      const insertAtV = addQInsertAt(schema, beforeQid, secElegida);
       const virtual = [...schema.slice(0, insertAtV), pregunta, ...schema.slice(insertAtV)];
       const errCond = typeof validarMostrarSi === 'function'
         ? validarMostrarSi(cond, virtual, pregunta.id) : null;
@@ -265,9 +266,16 @@ async function submitNewQuestion() {
     }
   }
 
+  if (secElegida) {
+    if (typeof secHeaderPara === 'function' && !secHeaderPara(secElegida) &&
+        typeof crearSeccion === 'function') {
+      crearSeccion(secElegida);   // fire-and-forget: pollOnce traerá la marca
+    }
+  }
+
   // Optimista, con rollback. Insertar en la posición calculada para que DOM
   // y esquema coincidan hasta que llegue el orden definitivo del servidor.
-  const insertAt = _calcInsertAt(schema);
+  const insertAt = addQInsertAt(schema, beforeQid, secElegida);
   schema.splice(insertAt, 0, pregunta);
   const card = buildQuestionCard(pregunta, insertAt);
   const contQ = $('questions-container');
@@ -331,6 +339,12 @@ async function submitNewSection() {
     let fields; try { fields=questionEditors['add-sec-q'].read(); } catch(e) { showStatus(e.message,'err'); btn.disabled=false; btn.textContent='Crear sección →'; return; }
     fields.config.seccion=nombre;
     primera={id:slug+'_'+Date.now().toString(36),label:qLabel,...fields};
+    const cond = $('add-sec-q-cond-host')?._getCond?.();
+    if (cond) {
+      const err = validarMostrarSi(cond, schema, primera.id, addSecInsertAt());
+      if (err) { showStatus(err,'err',6000); btn.disabled=false; btn.textContent='Crear sección →'; return; }
+      primera.config.mostrarSi = cond;
+    }
   }
 
   // Posición elegida: mover la marca (y su primera pregunta) delante de la
@@ -363,9 +377,7 @@ async function submitNewSection() {
       const targetSec = secs.find(s => _secNormNombre(s.nombre || s.titulo) === _secNormNombre(beforeSec));
       const marca = secHeaderPara(nombre);
       if (targetSec && marca) {
-        const anchorIdx = targetSec.encabezadoIdx >= 0
-          ? targetSec.encabezadoIdx
-          : (targetSec.items[0]?.i ?? schema.length);
+        const anchorIdx = targetSec.items[0]?.i ?? schema.length;
         schema.splice(schema.indexOf(marca), 1);
         schema.splice(Math.min(anchorIdx, schema.length), 0, marca);
         if (primera && schema.includes(primera)) {
@@ -405,6 +417,7 @@ async function submitNewSection() {
     $('add-sec-nombre').value = '';
     $('add-sec-q-label').value = '';
     questionEditors['add-sec-q'].reset();
+    rebindAddSecCond();
     $('add-sec-form').classList.remove('open');
     goToSectionDeNombre(nombre);
     await pollOnce();
@@ -434,7 +447,7 @@ function bindForms() {
       const f = $('add-sec-form');
       const opening = !f.classList.contains('open');
       f.classList.toggle('open');
-      if (opening) rebindAddSecPosition(); // desplegable de posición al día
+      if (opening) { rebindAddSecPosition(); rebindAddSecCond(); } // desplegable de posición al día
     });
   }
   const btnSubmitSec = $('btn-submit-new-sec');
@@ -448,7 +461,10 @@ function bindForms() {
   if (typeof renderSecManageList === 'function') renderSecManageList();
 
   const aqSecSel = $('add-q-seccion');
-  if (aqSecSel) aqSecSel.addEventListener('change', syncAddQSeccionField);
+  if (aqSecSel) aqSecSel.addEventListener('change', () => { syncAddQSeccionField(); rebindAddQCond(true); });
+  $('add-q-pos')?.addEventListener('change', () => rebindAddQCond(true));
+  $('add-q-seccion-nombre')?.addEventListener('change', () => rebindAddQCond(true));
+  $('add-sec-pos')?.addEventListener('change', () => rebindAddSecCond(true));
 
   $('add-sec-q-tipo').replaceChildren(...[...$('add-q-tipo').options].map(o=>o.cloneNode(true)));
   questionEditors['add-q']=bindQuestionFields('add-q');

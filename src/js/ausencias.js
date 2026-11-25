@@ -3,9 +3,17 @@
 // lo que el usuario tenga marcado. El slider solo se rellena desde el servidor
 // la primera vez: los sondeos ya no pisan lo que el usuario está tocando.
 
+let ausInicializado = false;
+let ausMarcados = new Set();
 let ausListSig = null; // firma de la lista pintada; null = aún no construida
 
-function resetAusencias() { ausListSig = null; }
+function resetAusencias() {
+  ausListSig = null;
+  ausInicializado = false;
+  ausMarcados = new Set();
+  if ($('aus-respondentes-list')) $('aus-respondentes-list').replaceChildren();
+  if ($('aus-prob-slider')) setProb(80);
+}
 
 function myVote() {
   return (user && ausencias.find(a => a.votante === user.nombre)) || null;
@@ -19,42 +27,31 @@ function setProb(v) {
 }
 
 function readAusCandidatos() {
-  return [...document.querySelectorAll('#aus-respondentes-list .aus-check:checked')].map(i => i.value);
+  // Los controles visibles son la autoridad; los votos todavía no pintados
+  // se conservan al navegar o mientras se reconstruye la lista por polling.
+  document.querySelectorAll('#aus-respondentes-list .aus-check').forEach(i => {
+    if (i.checked) ausMarcados.add(i.value); else ausMarcados.delete(i.value);
+  });
+  return [...ausMarcados];
 }
 
-// null si la tarjeta no está visible en este momento (solo se muestra en la
-// última sección; ver applySectionPaging en secciones.js). Se comprueba
-// `offsetParent`, que es 0 tanto con display:none como con ancestros ocultos.
+// Probabilidad y predicciones se envían juntas, independientemente de la
+// sección activa. Así actualizar desde la portada no borra votos previos.
 function readAusencias() {
-  const card = $('ausencias-card');
-  if (!card || card.style.display === 'none' || card.offsetParent === null) return null;
-  return {
-    ausencias_predichas:    readAusCandidatos(),
-    prob_asistencia_propia: +$('aus-prob-slider').value,
-  };
-}
-
-// Versión «siempre» del anterior: lee los controles aunque la tarjeta esté
-// oculta por la paginación por secciones. Los borradores (saveDraft) la usan
-// para no perder el slider ni las casillas cuando el usuario guarda mientras
-// está en una sección intermedia; el envío al servidor sigue usando
-// readAusencias(), de modo que las predicciones solo viajan desde la última
-// sección, donde realmente se votan.
-function readAusenciasForzado() {
-  const card = $('ausencias-card');
-  if (!card) return null;
   const slider = $('aus-prob-slider');
   if (!slider) return null;
   return {
-    ausencias_predichas:    readAusCandidatos(),
+    ausencias_predichas: readAusCandidatos(),
     prob_asistencia_propia: +slider.value,
   };
 }
 
+function readAusenciasForzado() { return readAusencias(); }
+
 function writeAusencias(d) {
   if (!d) return;
   if (Array.isArray(d.ausencias_predichas)) {
-    const set = new Set(d.ausencias_predichas);
+    const set = ausMarcados = new Set(d.ausencias_predichas);
     document.querySelectorAll('#aus-respondentes-list .aus-check').forEach(i => { i.checked = set.has(i.value); });
   }
   if (d.prob_asistencia_propia !== undefined) setProb(d.prob_asistencia_propia);
@@ -85,31 +82,20 @@ function buildAusList(marcados) {
 function renderAusencias() {
   const card = $('ausencias-card');
   if (!card) return;
-  if (respondentes.length === 0) {
-    // Sin respondentes la tarjeta nunca debe verse: forzar display:none, ya
-    // que applySectionPaging usa '' (heredado del CSS) para «visible».
-    card.dataset.available = '0';
-    card.style.display = 'none';
-    return;
+  if (!ausInicializado) {
+    const mv = myVote();
+    if (mv) writeAusencias({ausencias_predichas: mv.candidatos, prob_asistencia_propia: mv.mi_probabilidad ?? undefined});
+    ausInicializado = true;
   }
-  card.dataset.available = '1';
-  // La visibilidad real la decide applySectionPaging() (solo última sección).
-  // Si aún no existe (p. ej. modo distinto de encuesta), mostrarla aquí.
-  if (typeof applySectionPaging === 'function') {
-    try { applySectionPaging(); } catch (e) { card.style.display = 'block'; }
-  } else {
-    card.style.display = 'block';
-  }
-
-  const sig = JSON.stringify(respondentes.map(r => [r.nombre, r.prob_asistencia]));
+  card.dataset.available = respondentes.length ? '1' : '0';
+  const sig = JSON.stringify(respondentes.map(r => r.nombre));
   if (sig !== ausListSig) {
-    const primera  = ausListSig === null;
-    const mv       = myVote();
-    const marcados = primera ? new Set((mv && mv.candidatos) || []) : new Set(readAusCandidatos());
+    const marcados = new Set(readAusCandidatos());
     ausListSig = sig;
     buildAusList(marcados);
-    if (primera && mv && mv.mi_probabilidad != null && mv.mi_probabilidad !== '') setProb(mv.mi_probabilidad);
   }
+  if (typeof applySectionPaging === 'function') applySectionPaging();
+  else card.style.display = respondentes.length ? 'block' : 'none';
   renderVotosPublicos();
 }
 
