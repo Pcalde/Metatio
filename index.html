@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8">
@@ -11,6 +11,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;1,9..144,400&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
   <link rel="stylesheet" href="src/css/styles.css?v=7">
+  <link rel="stylesheet" href="src/css/access.css">
+  <link rel="stylesheet" href="src/css/identity.css?v=6">
 </head>
 <body>
 
@@ -27,11 +29,77 @@
       <p style="margin-top:12px;color:var(--muted);font-size:0.95rem">Planificación de viajes: Debate, logística, factibilidad y riesgo.</p>
     </header>
 
+    <section class="card metatio-auth" id="global-profile-card">
+      <div id="global-auth-form">
+        <div class="card-title"><span class="num"><i class="fa-solid fa-user" aria-hidden="true"></i></span> Tu cuenta</div>
+        <p class="trips-note">Accede a los mismos viajes desde el móvil y el ordenador.</p>
+        <button type="button" class="btn-generate ma-google" id="global-google"><span class="ma-google-mark" aria-hidden="true">G</span> Continuar con Google</button>
+        <div class="ma-separator"><span>o con correo electrónico</span></div>
+        <div class="ma-tabs" role="group" aria-label="Modo de acceso">
+          <button type="button" class="mode-tab active" id="global-mode-login" aria-pressed="true">Iniciar sesión</button>
+          <button type="button" class="mode-tab" id="global-mode-register" aria-pressed="false">Crear cuenta</button>
+        </div>
+        <form id="global-email-form" novalidate>
+          <div class="login-field" id="global-name-field" hidden><label for="global-name">Tu nombre</label><input type="text" id="global-name" maxlength="40" autocomplete="name" placeholder="Como quieres aparecer"></div>
+          <div class="login-field"><label for="global-email">Correo electrónico</label><input id="global-email" type="email" autocomplete="email" maxlength="254" placeholder="nombre@correo.com" required></div>
+          <div class="login-field" id="global-password-field"><label for="global-password">Contraseña</label><input id="global-password" type="password" autocomplete="current-password" required><p id="global-password-hint" class="trips-note" hidden>Mínimo 8 caracteres.</p></div>
+          <p class="trips-note" id="global-reset-hint" hidden>Te enviaremos un enlace si el servicio de correo está disponible. Abre el enlace para establecer una contraseña nueva.</p>
+          <button type="submit" class="btn-generate" id="global-login">Entrar</button>
+          <button type="submit" class="btn-generate" id="global-register" hidden>Crear cuenta</button>
+          <button type="submit" class="btn-generate" id="global-reset" hidden>Enviar enlace</button>
+        </form>
+        <button type="button" class="btn-link-like ma-link" id="global-mode-reset">¿Has olvidado tu contraseña?</button>
+      </div>
+      <div id="global-account-panel" hidden>
+        <div class="trips-profile-row ma-account"><span class="trips-avatar" aria-hidden="true"><i class="fa-solid fa-user"></i></span><div class="trips-profile-txt"><strong id="global-display-name"></strong><span id="global-email-label" class="trips-note"></span></div><button type="button" id="global-logout" class="btn-link-like">Cerrar sesión</button></div>
+        <div id="global-travel-panel">
+          <div class="trips-section-label">Mis viajes</div>
+          <div id="global-trips-list" class="trips-list"></div>
+          <button type="button" class="btn-link-like ma-link" id="global-refresh">Actualizar viajes</button>
+          <div class="ma-actions">
+            <details id="global-join-details"><summary><i class="fa-solid fa-link" aria-hidden="true"></i> Unirme a un viaje</summary>
+              <p class="trips-note">Usa la invitación que te ha enviado el organizador. Si ya participabas, recupera tu viaje en lugar de crear otra participación.</p>
+              <div class="login-field"><label for="global-join-eid">Enlace de invitación completo</label><input type="text" id="global-join-eid" autocomplete="off"></div>
+              <div class="login-field"><label for="global-join-name">Tu nombre en el viaje</label><input type="text" id="global-join-name" maxlength="40"></div>
+              <button type="button" class="btn-propose" id="global-join">Unirme</button>
+            </details>
+            <details id="global-create-details"><summary><i class="fa-solid fa-plus" aria-hidden="true"></i> Crear un viaje</summary>
+              <div class="login-field"><label for="global-new-title">Título</label><input type="text" id="global-new-title" maxlength="80" placeholder="Escapada de fin de semana"></div>
+              <div class="login-field"><label for="global-new-eid">Código único</label><input type="text" id="global-new-eid" maxlength="60" autocomplete="off" placeholder="escapada-2026"></div>
+              <div class="login-field"><label for="global-new-name">Tu nombre en el viaje</label><input type="text" id="global-new-name" maxlength="40"></div>
+              <div class="login-field"><label for="global-new-template">Plantilla</label><select id="global-new-template"><option value="vacia">En blanco</option><option value="minima">Viaje mínimo</option><option value="completa">Completa de viaje</option><option value="quedada">Quedada</option></select></div>
+              <button type="button" class="btn-propose" id="global-create">Crear viaje</button>
+            </details>
+            <details id="global-recover-details"><summary><i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i> Recuperar un viaje anterior</summary>
+              <p class="trips-note">Si ya participabas, vincula ese mismo acceso sin perder tus respuestas ni permisos.</p>
+              <div id="global-local-route"><strong>¿Tienes el dispositivo original?</strong><p class="trips-note">Desbloquea sus accesos guardados y selecciona el viaje.</p><button type="button" class="btn-propose" id="global-open-local">Abrir accesos de este dispositivo</button><div id="global-local-list" class="trips-list"></div></div>
+              <div class="ma-separator"><span>o acredita tu acceso</span></div>
+              <div class="login-field"><label for="global-claim-eid">Código del viaje</label><input type="text" id="global-claim-eid" autocomplete="off"></div>
+              <div class="login-field"><label for="global-claim-name">Nombre que usabas en el viaje</label><input type="text" id="global-claim-name" maxlength="40"></div>
+              <div class="login-field"><label for="global-claim-mode">¿Qué conservas?</label><select id="global-claim-mode"><option value="legacy">El PIN original del viaje</option><option value="recovery">Un código de recuperación</option><option value="deterministic">La contraseña del perfil multidispositivo anterior</option></select><p class="trips-note" id="global-claim-hint">El PIN que introducías antes para entrar en ese viaje, no la contraseña de tu cuenta.</p></div>
+              <div class="login-field" id="global-claim-profile-field" hidden><label for="global-claim-profile-name">Nombre del perfil anterior</label><input type="text" id="global-claim-profile-name" maxlength="40"></div>
+              <div class="login-field"><label for="global-claim-secret" id="global-claim-secret-label">PIN original</label><input id="global-claim-secret" type="password" autocomplete="off"></div>
+              <button type="button" class="btn-propose" id="global-claim">Vincular viaje</button>
+              <p class="trips-note">Si no conservas ninguna credencial, pide al responsable de Metatio que compruebe tu identidad. Una invitación nueva no recupera tus respuestas antiguas.</p>
+            </details>
+          </div>
+        </div>
+        <details id="global-password-details"><summary>Contraseña de la cuenta</summary>
+          <p class="trips-note">Si accedes con Google, no necesitas crear una contraseña de Metatio.</p>
+          <div class="login-field"><label for="global-next-password">Nueva contraseña (mínimo 8 caracteres)</label><input id="global-next-password" type="password" autocomplete="new-password"></div>
+          <button type="button" class="btn-propose" id="global-change-password">Guardar contraseña</button>
+        </details>
+      </div>
+      <p id="global-status" class="trips-note ma-status" role="status" aria-live="polite"></p>
+    </section>
+    <details id="legacy-access" class="ma-legacy">
+      <summary>Accesos de versiones anteriores</summary>
+      <p class="trips-note" id="legacy-intro">Si ya tenías viajes guardados en este navegador, puedes abrirlos aquí. Para sincronizarlos, inicia sesión en tu cuenta y elige recuperar un viaje anterior. No necesitas crear un perfil local para usar Google o correo.</p>
     <!-- Card 1: crear perfil (solo si no existe perfil local) -->
     <div class="card trips-new-card" id="trips-new-card" style="display:none">
-      <div class="card-title"><span class="num"><i class="fa-solid fa-user-plus" aria-hidden="true"></i></span> Crea tu perfil</div>
+      <div class="card-title"><span class="num"><i class="fa-solid fa-user-plus" aria-hidden="true"></i></span> Perfil local de compatibilidad</div>
       <p style="font-size:0.85rem;color:var(--muted);margin-bottom:14px">
-        Tu perfil se guarda solo en este dispositivo. La contraseña protege los accesos a tus viajes.
+        Solo si necesitas usar o recuperar el sistema anterior. La cuenta con Google o correo no requiere este perfil.
       </p>
       <div class="login-field">
         <label for="tp-new-nombre">Tu nombre</label>
@@ -68,12 +136,26 @@
         <span class="trips-avatar" aria-hidden="true"><i class="fa-solid fa-user-astronaut"></i></span>
         <div class="trips-profile-txt">
           <strong id="trips-nombre">—</strong>
-          <button type="button" class="btn-link-like" id="btn-trips-logout">Cambiar de perfil / salir</button>
+          <button type="button" class="btn-link-like" id="btn-trips-logout">Cerrar sesión del perfil</button>
         </div>
       </div>
 
       <div class="trips-section-label">Tus viajes</div>
       <div id="trips-list" class="trips-list"></div>
+      <details style="margin-top:12px">
+        <summary>Cambiar contraseña de mi perfil</summary>
+        <div class="login-field"><label for="profile-old-password">Contraseña actual</label><input id="profile-old-password" type="password" autocomplete="current-password" maxlength="64"></div>
+        <div class="login-field"><label for="profile-new-password">Contraseña nueva (mínimo 6 caracteres)</label><input id="profile-new-password" type="password" autocomplete="new-password" minlength="6" maxlength="64"></div>
+        <button type="button" class="btn-propose" id="btn-change-profile-password">Cambiar contraseña</button>
+      </details>
+      <details style="margin-top:12px">
+        <summary>Recuperar un viaje con mi código de seguridad</summary>
+        <p>Usa el código que guardaste fuera del dispositivo. Se recupera este viaje y se cierran sus sesiones anteriores.</p>
+        <div class="login-field"><label for="recover-eid">Código del viaje</label><input id="recover-eid" type="text" maxlength="60"></div>
+        <div class="login-field"><label for="recover-name">Nombre en el viaje</label><input id="recover-name" type="text" maxlength="40"></div>
+        <div class="login-field"><label for="recover-code">Código de recuperación</label><input id="recover-code" type="password" autocomplete="off" maxlength="64"></div>
+        <button type="button" class="btn-propose" id="btn-recover-access">Recuperar acceso</button>
+      </details>
 
       <div class="trips-tabs" style="display:flex;gap:6px;margin-top:16px;margin-bottom:10px;border-bottom:1px solid var(--border)">
         <button type="button" class="trips-tab active" data-panel="unir">Unirme</button>
@@ -136,8 +218,25 @@
         <button type="button" class="btn-propose" id="btn-tp-newtrip">Crear viaje y entrar →</button>
       </div>
 
-      <div class="login-error" id="trips-error"></div>
     </div>
+    <details class="card" style="margin-top:16px">
+      <summary>Copia y traslado de mis accesos</summary>
+      <p class="trips-note">La copia conserva tus accesos cifrados. Necesitarás tu contraseña actual para abrirla. No incluye los borradores ni sustituye una copia de los datos del viaje.</p>
+      <button type="button" class="btn-propose" id="btn-profile-export">Descargar copia cifrada</button>
+      <div class="login-field">
+        <label for="profile-import-file">Restaurar en un navegador sin perfil</label>
+        <input type="file" id="profile-import-file" accept="application/json,.json">
+      </div>
+      <div class="login-field">
+        <label for="profile-import-password">Contraseña de la copia</label>
+        <input type="password" id="profile-import-password" autocomplete="off" maxlength="64">
+      </div>
+      <button type="button" class="btn-propose" id="btn-profile-import">Restaurar accesos</button>
+      <hr>
+      <button type="button" class="btn-link-like" id="btn-trips-delete-profile">Eliminar perfil de este navegador…</button>
+    </details>
+    <div class="login-error" id="trips-error" role="status" aria-live="polite"></div>
+    </details>
   </div>
 </div>
 
@@ -208,6 +307,21 @@
 
 <!-- =========================== SURVEY & POST-SURVEY ===================== -->
 <div id="survey-screen" style="display:none">
+  <details id="access-controls" class="card" hidden>
+    <summary>Acceso y organización</summary>
+    <button type="button" id="access-recovery">Generar código de recuperación</button>
+    <label for="access-recovery-code">Código personal (guárdalo fuera del dispositivo)</label>
+    <input id="access-recovery-code" readonly autocomplete="off">
+    <button type="button" id="access-revoke-sessions">Cerrar todas mis sesiones de este viaje</button>
+    <div id="organizer-controls" hidden>
+      <button type="button" id="access-invite">Crear enlace de invitación</button>
+      <label for="access-invite-url">Enlace válido durante siete días</label><input id="access-invite-url" readonly>
+      <button type="button" id="access-revoke-invites">Revocar todas las invitaciones</button>
+      <button type="button" id="access-archived">Ver preguntas archivadas</button><div id="access-archived-list"></div>
+      <label for="access-next-organizer">Nombre del nuevo organizador</label><input id="access-next-organizer" maxlength="40">
+      <button type="button" id="access-transfer">Transferir organización…</button>
+    </div>
+  </details>
   <header>
     <h1>Cuestionario de <span class="eid" id="utag-eid"></span></h1>
     <div class="user-tag" id="user-tag">
@@ -526,6 +640,7 @@
 
 </div><!-- /survey-screen -->
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="src/js/config.js"></script>
 <script src="src/js/shared/format.js"></script>
 <script src="src/js/shared/esquema.js"></script>
@@ -533,8 +648,11 @@
 <script src="src/js/api.js?v=2"></script>
 <script src="src/js/state.js?v=3"></script>
 <script src="src/js/participants.js"></script>
-<script src="src/js/sesion.js?v=2"></script>
-<script src="src/js/perfil.js?v=1"></script>
+<script src="src/js/sesion.js?v=5"></script>
+<script src="src/js/perfil.js?v=6"></script>
+<script src="src/js/profileBackup.js"></script>
+<script src="src/js/access.js"></script>
+<script src="src/js/globalProfile.js?v=6"></script>
 <script src="src/js/types.js?v=5"></script>
 <script src="src/js/questions.js?v=5"></script>
 <script src="src/js/proscontras.js"></script>
@@ -549,10 +667,10 @@
 <script src="src/js/secciones.js?v=16"></script>
 <script src="src/js/arbol.js"></script>
 <script src="src/js/mapa.js"></script>
-<script src="src/js/cuenta.js"></script>
+<script src="src/js/cuenta.js?v=5"></script>
 <script src="src/js/debate.js"></script>
 <script src="src/js/polling.js"></script>
-<script src="src/js/auth.js?v=2"></script>
-<script src="src/js/main.js?v=2"></script>
+<script src="src/js/auth.js?v=5"></script>
+<script src="src/js/main.js?v=6"></script>
 </body>
 </html>
