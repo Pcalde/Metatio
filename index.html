@@ -446,6 +446,17 @@
     <div class="sec-rail-backdrop" id="sec-rail-backdrop" hidden></div>
     <!-- COLUMNA PRINCIPAL: una sola sección visible cada vez (máx. 720 px) -->
     <main class="sec-main">
+      <!-- Probabilidad personal: antes de mostrar participantes, preguntas y votos ajenos. -->
+      <section class="card survey-intro-card" id="asistencia-propia-card">
+        <div class="card-title"><span class="num"><i class="fa-solid fa-chart-line" aria-hidden="true"></i></span> ¿Qué probabilidad tienes de venir?</div>
+        <p class="participants-note">Estima tu probabilidad de asistencia antes de consultar las demás respuestas. Se usa en las simulaciones del viaje.</p>
+        <div class="aus-prob" style="margin-top:8px">
+          <div class="price-display" id="aus-prob-display">80%</div>
+          <input type="range" id="aus-prob-slider" min="0" max="100" step="5" value="80">
+          <div class="price-labels"><span>0%</span><span>50%</span><span>100%</span></div>
+        </div>
+      </section>
+
       <!-- Resumen inicial: solo se muestra en la portada del cuestionario. -->
       <section class="card survey-intro-card" id="participants-card">
         <div class="card-title"><span class="num"><i class="fa-solid fa-users" aria-hidden="true"></i></span> Participantes y votantes</div>
@@ -537,6 +548,7 @@
           <div class="add-q-field" id="add-sec-q-casas-mode" style="display:none"><label><input type="checkbox" id="add-sec-q-modo-casas"> Las opciones son alojamientos (activar análisis de presupuesto de alojamiento)</label></div>
           <div class="add-q-field" id="add-sec-q-slider-wrap" style="display:none"><label>Configuración del rango</label><div class="slider-config"><div><label>Mínimo</label><input type="number" id="add-sec-q-min" value="0"></div><div><label>Máximo</label><input type="number" id="add-sec-q-max" value="100"></div><div><label>Paso</label><input type="number" id="add-sec-q-step" value="10"></div></div></div>
           <div class="add-q-field" id="add-sec-q-horarios-wrap" style="display:none"><label>Duración ideal (horas)</label><input type="number" id="add-sec-q-dur" value="3" min="1" max="12"><label>Franjas horarias</label><div id="add-sec-q-franjas-host"></div></div>
+          <div id="add-sec-q-cond-host" class="cond-editor-host"></div>
           <div class="add-q-field"><label>Descripción (opcional)</label><textarea id="add-sec-q-desc" rows="2" maxlength="500"></textarea></div>
           </details>
           <div class="add-q-field">
@@ -552,16 +564,10 @@
 
       <!-- AUSENCIAS -->
       <div class="card survey-intro-card" id="ausencias-card" style="display:none">
-        <div class="card-title"><span class="num"><i class="fa-solid fa-chart-line"></i></span> Probabilidades de asistencia</div>
+        <div class="card-title"><span class="num"><i class="fa-solid fa-chart-line"></i></span> Predicciones de ausencias</div>
         <p class="aus-note">Los votos son públicos y alimentan la simulación Monte Carlo de resiliencia del viaje.</p>
         <div style="font-size:0.85rem;color:var(--muted);margin-bottom:10px">¿Quién crees que es más probable que se caiga del plan? <span style="font-size:0.78rem">(puedes votarte a ti mismo)</span></div>
         <div class="options-list" id="aus-respondentes-list"></div>
-        <div class="aus-prob">
-          <div style="font-size:0.85rem;color:var(--muted);margin-bottom:10px">¿Cuánta probabilidad hay de que vayas tú?</div>
-          <div class="price-display" id="aus-prob-display">80%</div>
-          <input type="range" id="aus-prob-slider" min="0" max="100" step="5" value="80">
-          <div class="price-labels"><span>0%</span><span>50%</span><span>100%</span></div>
-        </div>
         <div class="aus-votos" id="aus-votos-publicos" style="display:none">
           <h4>Votos del grupo</h4>
           <div id="aus-votos-candidatos"></div>
@@ -647,23 +653,23 @@
 <script src="src/js/dashboard.js?v=7"></script>
 <script src="src/js/types.js?v=8"></script>
 <script src="src/js/optionEditor.js?v=8"></script>
-<script src="src/js/questions.js?v=8"></script>
+<script src="src/js/questions.js?v=10"></script>
 <script src="src/js/proscontras.js"></script>
-<script src="src/js/ausencias.js?v=2"></script>
-<script src="src/js/forms.js?v=8"></script>
-<script src="src/js/answers.js?v=3"></script>
+<script src="src/js/ausencias.js?v=10"></script>
+<script src="src/js/forms.js?v=10"></script>
+<script src="src/js/answers.js?v=10"></script>
 <script src="src/js/engine/probabilidades.js"></script>
 <script src="src/js/engine/optimizador.js?v=8"></script>
 <script src="src/js/engine/index.js"></script>
 <script src="src/js/ui/consensusView.js?v=8"></script>
 <script src="src/js/ui/reportajePDF.js"></script>
-<script src="src/js/secciones.js?v=16"></script>
-<script src="src/js/arbol.js"></script>
+<script src="src/js/secciones.js?v=10"></script>
+<script src="src/js/arbol.js?v=9"></script>
 <script src="src/js/mapa.js?v=8"></script>
 <script src="src/js/cuenta.js?v=5"></script>
 <script src="src/js/debate.js"></script>
-<script src="src/js/polling.js"></script>
-<script src="src/js/auth.js?v=5"></script>
-<script src="src/js/main.js?v=7"></script>
+<script src="src/js/polling.js?v=9"></script>
+<script src="src/js/auth.js?v=10"></script>
+<script src="src/js/main.js?v=10"></script>
 </body>
 </html>
