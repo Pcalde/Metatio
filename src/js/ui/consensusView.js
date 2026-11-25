@@ -1025,6 +1025,7 @@ function buildProbabilidadOpcionConsensus(card, q, myVal) {
       if (typeof openDebateFor === 'function') openDebateFor(q.id, it.key);
     });
 
+    appendOptionDetails(row, rawOp && typeof rawOp === 'object' ? {...rawOp, foto:''} : rawOp);
     return row;
   };
 
@@ -1085,10 +1086,10 @@ function buildOptionsConsensus(card, q, myVal) {
   const pcIdx = pcIndex();
   const opts  = (q.opciones || []).map(op => {
     const key    = optVal(q, op);
-    const precio = (op && typeof op === 'object' && op.precio) ? op.precio : null;
+    const precio = optionPriceLabel(op);
     const url    = (op && typeof op === 'object' && op.url) ? safeUrl(op.url) : '';
     const foto   = (op && typeof op === 'object' && op.foto) ? safeUrl(op.foto) : '';
-    return { key, precio, url, foto, score: 0, rawScore: 0, voters: [], vetoes: [] };
+    return { key, precio, raw: op, url, foto, score: 0, rawScore: 0, voters: [], vetoes: [] };
   });
 
   const map = new Map(opts.map(o => [o.key, o]));
@@ -1215,7 +1216,7 @@ function buildOptionsConsensus(card, q, myVal) {
           const exists = cur.some(c => (typeof c === 'string' ? c : c.nombre) === o.key);
           const next = exists
             ? cur.filter(c => (typeof c === 'string' ? c : c.nombre) !== o.key)
-            : [...cur, { nombre: o.key, precio: o.precio }];
+            : [...cur, { nombre: o.key, precio: o.raw?.precio || null }];
           patchSingleAnswer(q.id, next);
         } else {
           const cur = new Set(Array.isArray(myVal) ? myVal : []);
@@ -1229,6 +1230,7 @@ function buildOptionsConsensus(card, q, myVal) {
       if (typeof openDebateFor === 'function') openDebateFor(q.id, o.key);
     });
 
+    appendOptionDetails(row, o.raw && typeof o.raw === 'object' ? {...o.raw, foto:''} : o.raw);
     list.appendChild(row);
   });
 
