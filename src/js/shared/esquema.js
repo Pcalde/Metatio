@@ -28,7 +28,10 @@ function normalizeOption(q, rawOp) {
     key,
     label,
     hasPipe,
-    precio: isObj && rawOp.precio ? String(rawOp.precio) : '',
+    precio: isObj && rawOp.precio != null ? String(rawOp.precio) : '',
+    unidadPrecio: isObj ? String(rawOp.unidadPrecio || '') : '',
+    descripcion: isObj ? String(rawOp.descripcion || '') : '',
+    enlaces: optionLinks(rawOp),
     url:    isObj && rawOp.url    ? String(rawOp.url)    : '',
     foto:   isObj && rawOp.foto   ? String(rawOp.foto)   : '',
     geo:    isObj && rawOp.geo    ? rawOp.geo            : null,
@@ -112,3 +115,31 @@ function extractAnswer(ansObj, q) {
   root.Esquema = { FRANJAS_HORARIAS, normalizeOption, optVal, getRadioStepperConfig,
                    getFranjas, dispToMap, normPond, extractAnswer };
 })(typeof window !== 'undefined' ? window : globalThis);
+
+// Metadatos independientes del tipo de votación.
+const OPTION_PRICE_UNITS = { total: 'total del grupo', persona: 'por persona', noche: 'por noche (grupo)', 'persona-noche': 'por persona y noche' };
+function optionLinks(op) {
+  if (!op || typeof op !== 'object') return [];
+  const list = Array.isArray(op.enlaces) ? op.enlaces.slice() : [];
+  if (op.url && !list.some(x => x && x.url === op.url)) list.unshift({ titulo: 'Más información', url: op.url });
+  return list.filter(x => x && typeof x.url === 'string').slice(0, 3);
+}
+function optionPriceLabel(op) {
+  if (!op || typeof op !== 'object' || op.precio == null || String(op.precio).trim() === '') return '';
+  const price = String(op.precio);
+  const unit = OPTION_PRICE_UNITS[op.unidadPrecio];
+  return unit ? `${price} · ${unit}` : price;
+}
+// El precio histórico de alojamiento se interpretaba como total del grupo.
+// Las unidades explícitas se convierten para cada ventana de viaje.
+function accommodationCost(op, people, nights) {
+  const p = parsePrecioNumerico(op && op.precio);
+  if (p == null || p < 0 || !(people > 0)) return null;
+  const unit = op.unidadPrecio || 'total';
+  if (unit === 'total') return { total: p, pp: p / people };
+  if (unit === 'persona') return { total: p * people, pp: p };
+  if (!(nights > 0)) return null;
+  if (unit === 'noche') return { total: p * nights, pp: p * nights / people };
+  if (unit === 'persona-noche') return { total: p * nights * people, pp: p * nights };
+  return null;
+}
