@@ -1,0 +1,42 @@
+/* Metatio: identidad y compatibilidad. Complementa styles.css y access.css. */
+#trips-screen [hidden] { display: none !important; }
+#global-profile-card { margin-bottom: 1rem; }
+#trips-screen .metatio-auth, #trips-screen .ma-legacy { min-width: 0; }
+#trips-screen .metatio-auth input:not([type=checkbox]):not([type=radio]),
+#trips-screen .metatio-auth select,
+#trips-screen .ma-legacy input:not([type=checkbox]):not([type=radio]),
+#trips-screen .ma-legacy select {
+  box-sizing: border-box; display:block; width:100%; max-width:100%; min-width:0;
+  padding:.72rem .85rem; border:1px solid var(--border, #888); border-radius:8px;
+  font:inherit; line-height:1.4; color:inherit; background:var(--bg, transparent);
+}
+#trips-screen .metatio-auth input:focus-visible, #trips-screen .metatio-auth select:focus-visible,
+#trips-screen .ma-legacy input:focus-visible, #trips-screen .ma-legacy select:focus-visible,
+#trips-screen .metatio-auth button:focus-visible, #trips-screen .metatio-auth summary:focus-visible,
+#trips-screen .ma-legacy summary:focus-visible {
+  outline:2px solid var(--accent3, currentColor); outline-offset:2px;
+}
+#trips-screen .metatio-auth .login-field, #trips-screen .ma-legacy .login-field { margin: .85rem 0; }
+#trips-screen .metatio-auth .login-field label, #trips-screen .ma-legacy .login-field label { display:block; margin-bottom:.35rem; font-weight:500; }
+#trips-screen .ma-google { display:flex; align-items:center; justify-content:center; gap:.7rem; width:100%; margin-top:1rem; }
+#trips-screen .ma-google-mark { display:inline-grid; place-items:center; width:1.65rem; height:1.65rem; border-radius:50%; background:white; color:#4285f4; font:700 1.12rem Arial,sans-serif; flex:none; }
+#trips-screen .ma-separator { display:flex; align-items:center; gap:.65rem; color:var(--muted); font-size:.8rem; margin:1rem 0; }
+#trips-screen .ma-separator::before, #trips-screen .ma-separator::after { content:''; height:1px; flex:1; background:var(--border); }
+#trips-screen .ma-tabs { display:grid; grid-template-columns:1fr 1fr; gap:4px; border:1px solid var(--border); border-radius:8px; padding:4px; background:var(--bg); }
+#trips-screen .ma-tabs .mode-tab { font:inherit; padding:.55rem .35rem; min-width:0; cursor:pointer; }
+#trips-screen .ma-link { margin-top:.65rem; }
+#trips-screen .ma-account { display:flex; align-items:center; gap:.7rem; flex-wrap:wrap; }
+#trips-screen .ma-account .trips-profile-txt { flex:1; min-width:0; overflow-wrap:anywhere; }
+#trips-screen .ma-account .trips-profile-txt > span { display:block; }
+#trips-screen .ma-actions { display:grid; gap:.65rem; margin:1rem 0; }
+#trips-screen .metatio-auth details, #trips-screen .ma-legacy { border:1px solid var(--border); border-radius:8px; padding:.8rem .9rem; }
+#trips-screen .metatio-auth summary, #trips-screen .ma-legacy summary { font-weight:500; cursor:pointer; line-height:1.4; }
+#trips-screen .metatio-auth summary i { margin:0 .35rem; }
+#trips-screen .metatio-auth details[open] > summary, #trips-screen .ma-legacy[open] > summary { margin-bottom:.8rem; }
+#trips-screen .metatio-auth .trips-note, #trips-screen .ma-legacy .trips-note { overflow-wrap:anywhere; }
+#trips-screen .ma-status:empty { display:none; }
+#trips-screen .ma-status:not(:empty) { border-top:1px solid var(--border); padding-top:.75rem; margin-top:1rem; }
+#trips-screen #global-local-list { margin-top:.65rem; display:grid; gap:.5rem; }
+#trips-screen #global-local-list button { white-space:normal; text-align:left; overflow-wrap:anywhere; }
+#trips-screen .ma-legacy > .card { margin-top:1rem; }
+@media(max-width:420px) { #trips-screen .ma-account #global-logout { flex-basis:100%; text-align:left; } }
