@@ -65,7 +65,7 @@
   root.buildModelData              = () => withCtx(() => Core.buildModelData());
   root.ejecutarMotorFactibilidad   = m => withCtx(() => Core.ejecutarMotorFactibilidad(m));
   root.computeTopologyAndSensitivity = (m, s) => Core.computeTopologyAndSensitivity(m, s);
-  root.evaluarCatalogoProbabilidad = (q, v) => withCtx(() => Core.evaluarCatalogoProbabilidad(q, v));
+  root.evaluarCatalogoProbabilidad = (q, v, incluirDeriva = false) => withCtx(() => Core.evaluarCatalogoProbabilidad(q, v, incluirDeriva));
   root.getEffectiveProb = n => Prob.efectiva(n, respondentes, ausencias);
   root.userWeight       = n => Prob.peso(n, respondentes, ausencias, weightByProb);
 })(typeof window !== 'undefined' ? window : globalThis);
