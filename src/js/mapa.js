@@ -43,8 +43,9 @@ function collectGeoDestinations() {
         pregunta: q.label,
         nombre,
         geo,
-        precio: obj.precio || '',
+        precio: optionPriceLabel(obj),
         url: safeUrl(obj.url),
+        enlaces: optionLinks(obj),
         fotos,
         km: optKmFromSchema(op),
         voters: [],
@@ -83,7 +84,7 @@ function renderMapPopup(d, enSolucion) {
   if (d.precio) meta.push(`Precio: ${esc(d.precio)}`);
   if (d.km != null) meta.push(`${fmtKm(d.km)} desde salida`);
   if (meta.length) parts.push(`<div style="font-size:0.8rem;margin-bottom:4px">${meta.join(' · ')}</div>`);
-  if (d.url) parts.push(`<div style="margin-bottom:4px"><a href="${esc(d.url)}" target="_blank" rel="noopener">Enlace externo</a></div>`);
+  for (const [i,link] of (d.enlaces || []).entries()) { const u=safeUrl(link.url); if(u) parts.push(`<div style="margin-bottom:4px"><a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(link.titulo || `Enlace ${i+1}`)}</a></div>`); }
   parts.push(`<div style="font-size:0.78rem">${d.voters.length ? 'Votado por: ' + d.voters.map(esc).join(', ') : 'Sin votos aún'}</div>`);
   if (enSolucion) {
     parts.push(`<div style="font-size:0.75rem;color:#2f855a;margin-top:4px">Incluido en una solución factible del grupo</div>`);

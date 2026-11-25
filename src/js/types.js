@@ -131,10 +131,10 @@ function renumberCasas(listEl) {
 }
 
 function appendMetaBadges(targetEl, rawOp) {
-  if (rawOp && typeof rawOp === 'object' && rawOp.precio) {
+  if (optionPriceLabel(rawOp)) {
     const precio = document.createElement('span');
     precio.className = 'casa-precio';
-    precio.textContent = rawOp.precio;
+    precio.textContent = optionPriceLabel(rawOp);
     targetEl.appendChild(precio);
   }
   const km = optKmFromSchema(rawOp);
@@ -275,12 +275,8 @@ function addGeoFieldsToDrawer(drawerOrHost, rawOp) {
 function createOptionCrudControls(item, q, rawOp) {
   const qid    = q.id;
   const norm   = normalizeOption(q, rawOp);
-  const isCasa = q.tipo === 'casas' || (q.tipo === 'probabilidad-opcion' && (norm.url || norm.foto || (q.config && q.config.modoCasas)));
-  const isRad  = q.tipo === 'radio';
+  const isRad = q.tipo === 'radio';
   const optKey = norm.key;
-
-  const hasPipe  = norm.hasPipe;
-  const radKey   = hasPipe ? norm.key : '';
   const curLabel = norm.label;
 
   const wrap  = div('opt-crud-btns');
@@ -296,82 +292,21 @@ function createOptionCrudControls(item, q, rawOp) {
   const openEditView = () => {
     drawer.style.display = 'flex';
     drawer.className = 'opt-edit-drawer mode-edit';
-    let geoCtl = null;
-    if (isCasa) {
-      drawer.innerHTML = `
-        <div class="opt-edit-grid">
-          <div class="opt-edit-field" style="flex:2;min-width:160px">
-            <label>Nombre del alojamiento / opción</label>
-            <input type="text" class="inp-eo-nombre" value="${esc(norm.label)}" placeholder="Ej. Casa Rural El Pinar">
-          </div>
-          <div class="opt-edit-field" style="flex:1;min-width:100px">
-            <label>Precio</label>
-            <input type="text" class="inp-eo-precio" value="${esc(norm.precio)}" placeholder="Ej. 450 €">
-          </div>
-          <div class="opt-edit-field" style="flex:2;min-width:180px">
-            <label>Enlace (URL)</label>
-            <input type="text" class="inp-eo-url" value="${esc(norm.url)}" placeholder="https://...">
-          </div>
-          <div class="opt-edit-field" style="flex:2;min-width:180px">
-            <label>Foto (URL de imagen)</label>
-            <input type="text" class="inp-eo-foto" value="${esc(norm.foto)}" placeholder="https://…/foto.jpg">
-          </div>
-        </div>
-        <div class="opt-edit-actions">
-          <button type="button" class="btn-pc btn-eo-cancel">Cancelar</button>
-          <button type="button" class="btn-propose btn-eo-save">Guardar cambios</button>
-        </div>
-      `;
-      geoCtl = addGeoFieldsToDrawer(drawer, rawOp);
-    } else {
-      drawer.innerHTML = `
-        <div class="opt-edit-single">
-          <input type="text" class="inp-eo-text" value="${esc(curLabel)}" placeholder="Texto de la opción…">
-          <input type="text" class="inp-eo-precio-gen" value="${esc(norm.precio)}" placeholder="Precio opcional (Ej. 450 €)" style="max-width:170px">
-          <button type="button" class="btn-pc btn-eo-cancel">Cancelar</button>
-          <button type="button" class="btn-propose btn-eo-save">Guardar</button>
-        </div>
-        <div class="opt-edit-grid opt-edit-grid-gen"></div>
-      `;
-      geoCtl = addGeoFieldsToDrawer(drawer.querySelector('.opt-edit-grid-gen'), rawOp);
-    }
-
-    const firstInp = drawer.querySelector('input');
-    if (firstInp) { firstInp.focus(); firstInp.select(); }
-
-    const closeDrawer = () => { drawer.style.display = 'none'; drawer.innerHTML = ''; };
-    drawer.querySelector('.btn-eo-cancel').addEventListener('click', closeDrawer);
-
-    const saveBtn = drawer.querySelector('.btn-eo-save');
+    drawer.replaceChildren();
+    const editor = buildOptionEditor(q, rawOp);
+    const actions = div('opt-edit-actions');
+    actions.innerHTML = '<button type="button" class="btn-pc btn-eo-cancel">Cancelar</button><button type="button" class="btn-propose btn-eo-save">Guardar cambios</button>';
+    drawer.append(editor.el, actions);
+    editor.name.focus(); editor.name.select();
+    const closeDrawer = () => { drawer.style.display = 'none'; drawer.replaceChildren(); };
+    actions.querySelector('.btn-eo-cancel').onclick = closeDrawer;
+    const saveBtn = actions.querySelector('.btn-eo-save');
     saveBtn.addEventListener('click', async () => {
       if (!user) return;
-      let nuevaOpcion, newKey;
-
-      if (isCasa) {
-        const nombre = drawer.querySelector('.inp-eo-nombre').value.trim();
-        const precio = drawer.querySelector('.inp-eo-precio').value.trim();
-        const url    = safeUrl(drawer.querySelector('.inp-eo-url').value);
-        const foto   = safeUrl(drawer.querySelector('.inp-eo-foto').value);
-        if (!nombre) { drawer.querySelector('.inp-eo-nombre').focus(); return; }
-        nuevaOpcion = { nombre, precio, url, foto };
-        const geo = geoCtl && geoCtl.getGeo();
-        if (geo) nuevaOpcion.geo = geo;
-        newKey = nombre;
-      } else {
-        const txt = drawer.querySelector('.inp-eo-text').value.trim();
-        if (!txt) { drawer.querySelector('.inp-eo-text').focus(); return; }
-        const precio = drawer.querySelector('.inp-eo-precio-gen').value.trim();
-        const geo = geoCtl && geoCtl.getGeo();
-        const fullNombre = hasPipe ? `${radKey}|${txt}` : txt;
-        newKey = hasPipe ? radKey : txt;
-
-        if (precio || geo) {
-          nuevaOpcion = { nombre: fullNombre, precio };
-          if (geo) nuevaOpcion.geo = geo;
-        } else {
-          nuevaOpcion = fullNombre;
-        }
-      }
+      let nuevaOpcion;
+      try { nuevaOpcion = editor.read(); } catch (err) { showStatus(err.message, 'err'); return; }
+      if (!nuevaOpcion) { editor.name.focus(); return; }
+      const newKey = optVal(q, nuevaOpcion);
 
       saveBtn.disabled = true;
       saveBtn.textContent = 'Guardando…';
@@ -386,37 +321,32 @@ function createOptionCrudControls(item, q, rawOp) {
           questionId: qid, oldOptKey: optKey, nuevaOpcion,
         });
 
-        const idx = (q.opciones || []).findIndex(o => optVal(q, o) === optKey);
-        if (idx >= 0) q.opciones[idx] = nuevaOpcion;
-
-        renderAllQuestions();
-        restoreDraft();
-
-        const newCard = cardFor(qid);
-        if (newCard && prevVal != null && newKey !== optKey) {
-          if (q.tipo === 'checkbox' && Array.isArray(prevVal)) {
-            TIPOS.checkbox.write(newCard, q, prevVal.map(v => v === optKey ? newKey : v));
-          } else if ((q.tipo === 'voto-ponderado' || q.tipo === 'probabilidad-opcion') && typeof prevVal === 'object') {
-            if (optKey in prevVal) { prevVal[newKey] = prevVal[optKey]; delete prevVal[optKey]; }
-            TIPOS[q.tipo].write(newCard, q, prevVal);
-          } else if (q.tipo === 'casas' && Array.isArray(prevVal)) {
-            TIPOS.casas.write(newCard, q, prevVal.map(c => (c.nombre === optKey ? { nombre: newKey, precio: nuevaOpcion.precio } : c)));
-          } else if (q.tipo === 'radio') {
-            if (typeof prevVal === 'object' && prevVal !== null) {
-              if (prevVal.estado === optKey) prevVal.estado = newKey;
-              TIPOS.radio.write(newCard, q, prevVal);
-            } else if (prevVal === optKey) {
-              TIPOS.radio.write(newCard, q, newKey);
-            }
+        const current = schema.find(x => x.id === qid) || q;
+        const idx = (current.opciones || []).findIndex(o => optVal(current, o) === optKey);
+        if (idx >= 0) current.opciones[idx] = nuevaOpcion;
+        const currentCard = cardFor(qid);
+        const newCard = buildQuestionCard(current, schema.indexOf(current));
+        if (newCard && currentCard) {
+          // No reconstruir las otras preguntas ni restaurar un borrador desactualizado.
+          newCard.style.display = currentCard.style.display;
+          currentCard.replaceWith(newCard);
+          let next = prevVal;
+          if (next != null && newKey !== optKey) {
+            if (q.tipo === 'checkbox' && Array.isArray(next)) next = next.map(v => v === optKey ? newKey : v);
+            else if (['voto-ponderado','probabilidad-opcion'].includes(q.tipo) && Object.hasOwn(next,optKey)) { next = {...next,[newKey]:next[optKey]}; delete next[optKey]; }
+            else if (q.tipo === 'casas' && Array.isArray(next)) next = next.map(c => c.nombre === optKey ? {...c,nombre:newKey,precio:nuevaOpcion.precio} : c);
+            else if (q.tipo === 'radio') next = typeof next === 'object' ? {...next,estado:next.estado === optKey ? newKey : next.estado} : next === optKey ? newKey : next;
           }
+          if (next != null) TIPOS[q.tipo].write(newCard,current,next);
+          refreshPC(qid);
           triggerSave();
         }
-
+        lastRaw = '';
         showStatus('Opción actualizada', 'ok', 2000);
         pollOnce();
       } catch (err) {
         saveBtn.disabled = false;
-        saveBtn.textContent = isCasa ? 'Guardar cambios' : 'Guardar';
+        saveBtn.textContent = 'Guardar cambios';
         showStatus('No se pudo editar la opción: ' + err.message, 'err');
       }
     });
@@ -458,9 +388,9 @@ function createOptionCrudControls(item, q, rawOp) {
           eid: user.eid, nombre: user.nombre, pinHash: user.pinHash,
           questionId: qid, optKey,
         });
-        if (Array.isArray(q.opciones)) {
-          q.opciones = q.opciones.filter(o => optVal(q, o) !== optKey);
-        }
+        const current = schema.find(x=>x.id===qid) || q;
+        if (Array.isArray(current.opciones)) current.opciones = current.opciones.filter(o => optVal(current, o) !== optKey);
+        lastRaw = '';
         const parentList = item.parentElement;
         const card = item.closest('.card');
         item.remove();
@@ -533,6 +463,8 @@ function createOptItem(q, rawOp) {
 
   const [badge, panel] = pcParts();
   item.append(row, crud.drawer, badge, panel);
+  appendOptionDetails(item, rawOp);
+  item.dataset.optionRaw = JSON.stringify(rawOp);
   return item;
 }
 
@@ -582,6 +514,8 @@ function createPondItem(q, rawOp) {
 
   const [badge, panel] = pcParts();
   item.append(row, crud.drawer, badge, panel);
+  appendOptionDetails(item, rawOp);
+  item.dataset.optionRaw = JSON.stringify(rawOp);
   return item;
 }
 
@@ -593,15 +527,7 @@ function createCasaItem(q, op, n) {
   item.dataset.val = norm.key;
 
   const row = div('casa-row');
-  const url = safeUrl(norm.url);
-  const anchor = url ? document.createElement('a') : document.createElement('span');
-  anchor.className = 'casa-num' + (url ? '' : ' no-link');
-  if (url) {
-    anchor.href = url; anchor.target = '_blank'; anchor.rel = 'noopener noreferrer';
-    anchor.title = 'Abrir enlace del alojamiento';
-    anchor.addEventListener('click', e => e.stopPropagation());
-  }
-  anchor.textContent = n;
+  const anchor = document.createElement('span'); anchor.className = 'casa-num no-link'; anchor.textContent = n;
 
   const lbl = document.createElement('label'); lbl.className = 'casa-label';
   const inp = document.createElement('input'); inp.type = 'checkbox'; inp.value = norm.key;
@@ -611,7 +537,7 @@ function createCasaItem(q, op, n) {
   inp.addEventListener('change', triggerSave);
 
   const precio = document.createElement('span');
-  precio.className = 'casa-precio'; precio.textContent = norm.precio;
+  precio.className = 'casa-precio'; precio.textContent = optionPriceLabel(op);
   const kmCasa = optKmFromSchema(op);
   if (kmCasa != null) {
     const dist = document.createElement('span');
@@ -619,20 +545,13 @@ function createCasaItem(q, op, n) {
     dist.textContent = fmtKm(kmCasa);
     row.appendChild(dist);
   }
-  const foto = safeUrl(norm.foto);
-  let thumb = null;
-  if (foto) {
-    thumb = document.createElement('img');
-    thumb.className = 'casa-foto'; thumb.src = foto; thumb.alt = norm.label;
-    thumb.loading = 'lazy'; thumb.referrerPolicy = 'no-referrer';
-    thumb.addEventListener('error', () => thumb.remove());
-    thumb.addEventListener('click', () => window.open(foto, '_blank', 'noopener'));
-  }
   const crud = createOptionCrudControls(item, qObj, op);
-  row.append(anchor, ...(thumb ? [thumb] : []), lbl, precio, crud.buttons);
+  row.append(anchor, lbl, precio, crud.buttons);
 
   const [badge, panel] = pcParts();
   item.append(row, crud.drawer, badge, panel);
+  appendOptionDetails(item, op);
+  item.dataset.optionRaw = JSON.stringify(op);
   return item;
 }
 
@@ -659,6 +578,8 @@ function createRadioItem(card, q, rawOp) {
   const crud = createOptionCrudControls(item, q, rawOp);
   row.append(lbl, crud.buttons);
   item.append(row, crud.drawer);
+  appendOptionDetails(item, rawOp);
+  item.dataset.optionRaw = JSON.stringify(rawOp);
   return item;
 }
 
@@ -729,7 +650,7 @@ function createProbItem(q, rawOp, n) {
   const qObj   = typeof q === 'object' ? q : (schema.find(x => x.id === q) || { id: q, tipo: 'probabilidad-opcion' });
   const norm   = normalizeOption(qObj, rawOp);
   const escala = getEscalaProbabilidad(qObj);
-  const isCasaLike = !!(norm.url || norm.foto || (qObj.config && qObj.config.modoCasas));
+
 
   const item = div('opt-item prob-item');
   item.dataset.qid = qObj.id;
@@ -738,29 +659,6 @@ function createProbItem(q, rawOp, n) {
   const topRow = div('prob-top-row');
   const leftWrap = div();
   leftWrap.style.cssText = 'display:flex;align-items:center;gap:8px;flex:1;flex-wrap:wrap';
-
-  if (isCasaLike) {
-    const url = safeUrl(norm.url);
-    const anchor = url ? document.createElement('a') : document.createElement('span');
-    anchor.className = 'casa-num' + (url ? '' : ' no-link');
-    if (url) {
-      anchor.href = url; anchor.target = '_blank'; anchor.rel = 'noopener noreferrer';
-      anchor.title = 'Abrir enlace del alojamiento';
-      anchor.addEventListener('click', e => e.stopPropagation());
-    }
-    anchor.textContent = n;
-    leftWrap.appendChild(anchor);
-
-    const foto = safeUrl(norm.foto);
-    if (foto) {
-      const thumb = document.createElement('img');
-      thumb.className = 'casa-foto'; thumb.src = foto; thumb.alt = norm.label;
-      thumb.loading = 'lazy'; thumb.referrerPolicy = 'no-referrer';
-      thumb.addEventListener('error', () => thumb.remove());
-      thumb.addEventListener('click', () => window.open(foto, '_blank', 'noopener'));
-      leftWrap.appendChild(thumb);
-    }
-  }
 
   const name = document.createElement('span');
   name.style.cssText = 'font-size:0.9rem;font-weight:500;flex:1';
@@ -793,6 +691,8 @@ function createProbItem(q, rawOp, n) {
 
   const [badge, panel] = pcParts();
   item.append(topRow, scaleRow, crud.drawer, badge, panel);
+  appendOptionDetails(item, rawOp);
+  item.dataset.optionRaw = JSON.stringify(rawOp);
   return item;
 }
 
@@ -1502,11 +1402,7 @@ var TIPOS = {
         list.appendChild(createProbItem(q, _rawOptPara(q, op), i + 1));
       });
 
-      const useCasaForm = (q.config && q.config.modoCasas) ||
-        (q.opciones || []).some(o => o && typeof o === 'object' && (o.url || o.foto));
-      const addForm = (useCasaForm && typeof createAddCasaForm === 'function')
-        ? createAddCasaForm(q)
-        : createAddOptForm(q);
+      const addForm = createAddOptForm(q);
 
       card.append(hint, list, addForm);
     },

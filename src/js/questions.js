@@ -73,6 +73,7 @@ function buildQuestionCard(q, idx) {
     <div style="display:flex;flex-direction:column;gap:8px;width:100%">
       <label style="font-size:0.78rem;color:var(--muted)">Título de la pregunta</label>
       <input type="text" class="inp-edit-q-label" value="${esc(q.label)}" maxlength="200">
+      ${q.tipo === 'probabilidad-opcion' ? `<label><input type="checkbox" class="inp-eq-modo-casas" ${cfg.modoCasas === true ? 'checked' : ''}> Las opciones son alojamientos</label>` : ''}
       ${q.tipo === 'slider' ? `
         <div class="slider-config" style="margin-top:4px">
           <div><label>Mínimo</label><input type="number" class="inp-eq-min" value="${cfg.min ?? 10}"></div>
@@ -157,6 +158,7 @@ function buildQuestionCard(q, idx) {
     const newLabel = editBox.querySelector('.inp-edit-q-label').value.trim();
     if (!newLabel || !user) return;
     let newCfg = Object.assign({}, q.config || {});
+    if (q.tipo === 'probabilidad-opcion') newCfg.modoCasas = editBox.querySelector('.inp-eq-modo-casas').checked;
     if (q.tipo === 'slider') {
       newCfg.min  = Number(editBox.querySelector('.inp-eq-min').value);
       newCfg.max  = Number(editBox.querySelector('.inp-eq-max').value);
@@ -435,7 +437,13 @@ function syncSchemaToDOM() {
     // Añadir opciones nuevas (op puede ser objeto enriquecido {nombre, geo…};
     // addOption lo acepta tal cual y preserva los datos extra)
     (q.opciones || []).forEach(op => {
-      if (!findItem(card, optVal(q, op))) type.addOption(card, q, op, false);
+      const existing = findItem(card, optVal(q, op));
+      if (!existing) type.addOption(card, q, op, false);
+      else if (existing.dataset.optionRaw !== JSON.stringify(op)) {
+        const prev = type.read(card, q);
+        const fresh = type.addOption(card, q, op, false);
+        if (fresh) { existing.replaceWith(fresh); type.write(card, q, prev); renumberCasas(fresh.parentElement); }
+      }
     });
   });
 

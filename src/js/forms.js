@@ -1,107 +1,88 @@
 // ── FORMULARIOS DE PROPUESTA ────────────────────────────────────────────────
-var aqGetFranjas = null;
+const OPTION_TYPES = ['checkbox','radio','voto-ponderado','casas','probabilidad-opcion'];
+const questionEditors = {};
 function createAddOptForm(q) {
-  const wrap    = div('add-opt-form');
+  const wrap = div('add-opt-form'), fields = div('add-opt-fields');
   const trigger = document.createElement('button'); trigger.type = 'button'; trigger.className = 'add-opt-trigger'; trigger.textContent = '+ Proponer opción';
-  const fields  = div('add-opt-fields');
-  trigger.addEventListener('click', () => fields.classList.toggle('open'));
-
-  const row = div('add-opt-row');
-  const inp = document.createElement('input'); inp.type = 'text'; inp.placeholder = 'Nueva opción…';
+  const editor = buildOptionEditor(q, '', {compact:true});
   const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'btn-propose'; btn.textContent = 'Proponer →';
-  btn.addEventListener('click', () => submitNewOpcion(q, inp.value.trim(), inp));
-  inp.addEventListener('keydown', e => { if (e.key === 'Enter') btn.click(); });
-  row.append(inp, btn);
-  fields.appendChild(row);
-  wrap.append(trigger, fields);
-  return wrap;
+  trigger.onclick = () => fields.classList.toggle('open');
+  btn.onclick = async () => {
+    let op; try { op = editor.read(); } catch(e) { showStatus(e.message,'err'); return; }
+    if (!op) { editor.name.focus(); return; }
+    btn.disabled = true;
+    try {
+      if (await submitNewOpcion(q, op)) { const fresh = createAddOptForm(q); wrap.replaceWith(fresh); }
+    } finally { btn.disabled = false; }
+  };
+  fields.append(editor.el, btn); wrap.append(trigger,fields); return wrap;
 }
-
-function createAddCasaForm(q) {
-  const wrap    = div('add-opt-form');
-  const trigger = document.createElement('button'); trigger.type = 'button'; trigger.className = 'add-opt-trigger'; trigger.textContent = '+ Proponer casa';
-  const fields  = div('add-opt-fields');
-  const mk = ph => { const i = document.createElement('input'); i.type = 'text'; i.placeholder = ph; return i; };
-  const inFoto   = mk('URL de foto (opcional, enlace directo a la imagen)');
-  trigger.addEventListener('click', () => fields.classList.toggle('open'));
-
-  const inNombre = mk('Nombre o descripción *');
-  const inPrecio = mk('Precio (p.ej. 280€)');
-  const inUrl    = mk('URL (opcional)');
-  const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'btn-propose'; btn.textContent = 'Proponer →';
-  btn.addEventListener('click', () => {
-    const nombre = inNombre.value.trim();
-    if (!nombre) { inNombre.focus(); return; }
-    const rawUrl = inUrl.value.trim(), url = safeUrl(rawUrl);
-    if (rawUrl && !url) { showStatus('La URL debe ser http(s) válida', 'err'); inUrl.focus(); return; }
-    const rawFoto = inFoto.value.trim(), foto = safeUrl(rawFoto);
-    if (rawFoto && !foto) { showStatus('La URL de la foto debe ser http(s) válida', 'err'); inFoto.focus(); return; }
-    submitNewCasa(q, { nombre, precio: inPrecio.value.trim(), url, foto });
-    inNombre.value = inPrecio.value = inUrl.value = inFoto.value = '';
-    fields.classList.remove('open');
-  });
-  fields.append(inNombre, inPrecio, inUrl, inFoto, btn);
-  wrap.append(trigger, fields);
-  return wrap;
-}
-
-// Selecciona (marca) una opción ya existente en vez de duplicarla
-function selectExisting(item) {
-  const inp = item && item.querySelector('input');
-  if (inp) { inp.checked = true; triggerSave(); }
-}
-
-async function submitNewOpcion(q, valor, inp) {
-  if (!valor || !user) { if (inp) inp.focus(); return; }
-  if (q.tipo === 'radio') valor = valor.replace(/\|/g, '/'); // '|' separa valor y etiqueta
-  const card = cardFor(q.id);
-  const type = TIPOS[q.tipo];
-  if (!card || !type || !type.addOption) return;
-
-  if (inp) { inp.value = ''; const f = inp.closest('.add-opt-fields'); if (f) f.classList.remove('open'); }
-
-  const existente = findItem(card, valor);
-  if (existente) { selectExisting(existente); return; }
-
-  q.opciones = q.opciones || [];
-  const item = type.addOption(card, q, valor, true);
-  q.opciones.push(valor);
-  refreshPC(q.id);
-  triggerSave();
-
+function createAddCasaForm(q) { return createAddOptForm(q); }
+async function submitNewOpcion(q, valor) {
+  if (!valor || !user) return false;
+  const card = cardFor(q.id), type = TIPOS[q.tipo];
+  if (!card || !type || !type.addOption) return false;
+  const key = optVal(q, valor);
+  if (((schema.find(x=>x.id===q.id)||q).opciones || []).some(o => optVal(q,o) === key)) { showStatus('Ya existe una opción con ese nombre','err'); return false; }
   try {
-    await apiPost({ action: 'add_opcion', eid: user.eid, nombre: user.nombre, pinHash: user.pinHash, questionId: q.id, opcion: valor });
-  } catch (e) {
-    if (item) item.remove();
-    const i = q.opciones.indexOf(valor);
-    if (i >= 0) q.opciones.splice(i, 1);
-    showStatus('No se pudo añadir la opción: ' + e.message, 'err');
-  }
+    const result = await apiPost({action:'add_opcion',eid:user.eid,nombre:user.nombre,pinHash:user.pinHash,questionId:q.id,opcion:valor});
+    if (result && result.duplicada) { showStatus('Ya existe esa opción','err'); return false; }
+    const current = schema.find(x => x.id === q.id) || q;
+    current.opciones = current.opciones || [];
+    if (!current.opciones.some(o => optVal(current,o) === key)) current.opciones.push(valor);
+    const currentCard = cardFor(q.id);
+    if (currentCard && !findItem(currentCard,key)) type.addOption(currentCard,current,valor,true);
+    refreshPC(q.id); triggerSave(); lastRaw = ''; await pollOnce(); return true;
+  } catch(e) { showStatus('No se pudo añadir la opción: '+e.message,'err'); return false; }
 }
+function submitNewCasa(q, casa) { return submitNewOpcion(q,casa); }
 
-async function submitNewCasa(q, casa) {
-  if (!user) return;
-  const card = cardFor(q.id);
-  const type = TIPOS[q.tipo];
-  if (!card || !type) return;
-
-  const existente = findItem(card, casa.nombre);
-  if (existente) { selectExisting(existente); return; }
-
-  q.opciones = q.opciones || [];
-  const item = type.addOption(card, q, casa, true);
-  q.opciones.push(casa);
-  refreshPC(q.id);
-  triggerSave();
-
-  try {
-    await apiPost({ action: 'add_opcion', eid: user.eid, nombre: user.nombre, pinHash: user.pinHash, questionId: q.id, opcion: casa });
-  } catch (e) {
-    if (item) item.remove();
-    const i = q.opciones.indexOf(casa);
-    if (i >= 0) q.opciones.splice(i, 1);
-    showStatus('No se pudo añadir la casa: ' + e.message, 'err');
+// El mismo catálogo y los mismos campos para ambos formularios.
+function bindQuestionFields(prefix) {
+  const get = suffix => $(prefix + suffix);
+  const select = get('-tipo'), container = get('-opts-container');
+  const rows = [];
+  const addRow = () => {
+    const row = div('mt-initial-option');
+    const editor = buildOptionEditor({tipo:select.value}, '', {compact:true});
+    const remove = document.createElement('button'); remove.type='button'; remove.className='btn-pc'; remove.textContent='Quitar opción';
+    const entry = {row, editor};
+    remove.onclick = () => { row.remove(); rows.splice(rows.indexOf(entry),1); };
+    row.append(editor.el,remove); container.append(row); rows.push(entry);
+  };
+  const sync = () => {
+    const t=select.value;
+    get('-opciones-wrap').style.display = OPTION_TYPES.includes(t) ? 'block':'none';
+    get('-slider-wrap').style.display = t==='slider'?'block':'none';
+    get('-horarios-wrap').style.display = t==='horarios'?'block':'none';
+    get('-casas-mode').style.display = t==='probabilidad-opcion'?'block':'none';
+  };
+  let getFranjas;
+  function reset() {
+    rows.length=0; container.replaceChildren(); addRow();
+    get('-min').value=0; get('-max').value=100; get('-step').value=10; get('-dur').value=3;
+    get('-modo-casas').checked=false; get('-desc').value='';
+    get('-franjas-host').replaceChildren(); getFranjas=buildFranjasEditor(get('-franjas-host'), FRANJAS_HORARIAS); sync();
   }
+  function read() {
+    const tipo=select.value; let opciones=[], config={};
+    if (OPTION_TYPES.includes(tipo)) {
+      opciones=rows.map(x=>x.editor.read(tipo)).filter(Boolean);
+      if (new Set(opciones.map(o=>optVal({tipo},o))).size !== opciones.length) throw Error('Hay opciones con nombres duplicados.');
+    }
+    if (tipo==='slider') {
+      config={min:Number(get('-min').value),max:Number(get('-max').value),step:Number(get('-step').value)};
+      if (!Number.isFinite(config.min)||!Number.isFinite(config.max)||!(config.max>config.min)||!(config.step>0)) throw Error('Rango inválido: comprueba mínimo, máximo y paso.');
+      config.default=(config.min+config.max)/2;
+    } else if (tipo==='horarios') {
+      const franjas=getFranjas(); if (!franjas.length) throw Error('Define al menos una franja válida.');
+      config={duracionIdeal:Math.max(1,Math.min(12,+get('-dur').value||3)),franjas};
+    } else if (tipo==='probabilidad-opcion') config.modoCasas=get('-modo-casas').checked;
+    const desc=get('-desc').value.trim(); if(desc) config.descripcion=desc;
+    return {tipo,opciones,config};
+  }
+  select.addEventListener('change',sync); get('-add-opt').onclick=addRow;
+  reset(); return {read,reset};
 }
 
 // ── NUEVA PREGUNTA ──────────────────────────────────────────────────────────
@@ -162,12 +143,7 @@ function rebindAddSecPosition() {
 
 function resetAddQuestionForm() {
   $('add-q-label').value = '';
-  const cont = $('add-q-opts-container');
-  cont.innerHTML = '<div class="add-q-opt-row"><input type="text" placeholder="Opción 1"><button class="btn-remove" type="button">✕</button></div>';
-  $('add-q-tipo').dispatchEvent(new Event('change')); // reajusta placeholder
-  aqGetFranjas = buildFranjasEditor($('aq-franjas-host'), FRANJAS_HORARIAS);
-  $('aq-dur').value = 3;
-  $('add-q-desc').value = '';
+  questionEditors['add-q'].reset();
   rebindAddQSeccion(); // desplegable de secciones al día
   rebindAddQPosition(); // desplegable de posición al día
   rebindAddQCond(); // editor de condición limpio (sobre el esquema actual)
@@ -231,38 +207,12 @@ function rebindAddQCond() {
 
 async function submitNewQuestion() {
   if (!user) return;
-  const tipo  = $('add-q-tipo').value;
   const label = $('add-q-label').value.trim();
   if (!label) { $('add-q-label').focus(); return; }
-
-  const slug = label.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 30);
-  const id = slug + '_' + Date.now().toString(36);
-
-  let opciones = [], config = {};
-  const textos = [...$('add-q-opts-container').querySelectorAll('input[type=text]')].map(i => i.value.trim()).filter(Boolean);
-
-  if (tipo === 'slider') {
-    config = {
-      min:  +($('aq-min').value  || 0),
-      max:  +($('aq-max').value  || 100),
-      step: +($('aq-step').value || 10),
-    };
-    if (config.max <= config.min) { showStatus('El máximo debe ser mayor que el mínimo', 'err'); return; }
-    config.default = Math.round((config.min + config.max) / 2);
-    } else if (tipo === 'horarios') {
-    const franjas = aqGetFranjas();
-    if (!franjas.length) { showStatus('Define al menos una franja válida', 'err'); return; }
-    config = { duracionIdeal: Math.max(1, Math.min(12, +$('aq-dur').value || 3)), franjas };
-  } else if (tipo === 'casas') {
-    opciones = textos.map(nombre => ({ nombre, precio: '', url: '', foto: '' }));
-  } else if (tipo === 'radio') {
-    opciones = textos.map(t => t.replace(/\|/g, '/'));
-  } else if (tipo !== 'textarea' && tipo !== 'disponibilidad' && tipo !== 'horarios') {
-    opciones = textos;
-  }
-  const desc = $('add-q-desc').value.trim();
-  if (desc) config.descripcion = desc;
+  const slug = label.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'').slice(0,30);
+  const id = slug+'_'+Date.now().toString(36);
+  let fields; try { fields=questionEditors['add-q'].read(); } catch(e) {showStatus(e.message,'err');return;}
+  const {tipo,opciones,config}=fields;
 
   // ── Posición elegida: '' = al final (comportamiento histórico); si no,
   // la pregunta se inserta ANTES de esa pregunta del esquema. ──────────────
@@ -377,21 +327,10 @@ async function submitNewSection() {
   let primera = null;
   const qLabel = ($('add-sec-q-label').value || '').trim();
   if (qLabel) {
-    const tipo = $('add-sec-q-tipo').value;
-    const slug = qLabel.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-      .replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 30);
-    const opcionesTextos = [...$('add-sec-q-opts-container').querySelectorAll('input[type=text]')]
-      .map(i => i.value.trim()).filter(Boolean);
-    let opciones = [], config = {};
-    if (tipo === 'slider') {
-      config = { min: 0, max: 100, step: 10, default: 50 };
-    } else if (tipo === 'radio') {
-      opciones = opcionesTextos.map(t => t.replace(/\|/g, '/'));
-    } else if (tipo !== 'textarea') {
-      opciones = opcionesTextos;
-    }
-    config.seccion = nombre;
-    primera = { id: slug + '_' + Date.now().toString(36), tipo, label: qLabel, opciones, config };
+    const slug = qLabel.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'').slice(0,30);
+    let fields; try { fields=questionEditors['add-sec-q'].read(); } catch(e) { showStatus(e.message,'err'); btn.disabled=false; btn.textContent='Crear sección →'; return; }
+    fields.config.seccion=nombre;
+    primera={id:slug+'_'+Date.now().toString(36),label:qLabel,...fields};
   }
 
   // Posición elegida: mover la marca (y su primera pregunta) delante de la
@@ -465,8 +404,7 @@ async function submitNewSection() {
     // Limpiar el formulario y cerrar la tarjeta de creación.
     $('add-sec-nombre').value = '';
     $('add-sec-q-label').value = '';
-    $('add-sec-q-opts-container').innerHTML =
-      '<div class="add-q-opt-row"><input type="text" placeholder="Opción 1"><button class="btn-remove" type="button">✕</button></div>';
+    questionEditors['add-sec-q'].reset();
     $('add-sec-form').classList.remove('open');
     goToSectionDeNombre(nombre);
     await pollOnce();
@@ -505,22 +443,6 @@ function bindForms() {
   if (inpSecNom) inpSecNom.addEventListener('keydown', e => {
     if (e.key === 'Enter') { e.preventDefault(); submitNewSection(); }
   });
-  const selSecQTipo = $('add-sec-q-tipo');
-  if (selSecQTipo) selSecQTipo.addEventListener('change', function () {
-    $('add-sec-q-opts-wrap').style.display =
-      ['checkbox', 'radio', 'voto-ponderado'].includes(this.value) ? 'block' : 'none';
-  });
-  const btnSecOpt = $('btn-add-sec-q-opt');
-  if (btnSecOpt) btnSecOpt.addEventListener('click', () => {
-    const cont = $('add-sec-q-opts-container');
-    const row  = div('add-q-opt-row');
-    row.innerHTML = `<input type="text" placeholder="Opción ${cont.children.length + 1}"><button class="btn-remove" type="button">✕</button>`;
-    cont.appendChild(row);
-  });
-  const contSecOpts = $('add-sec-q-opts-container');
-  if (contSecOpts) contSecOpts.addEventListener('click', e => {
-    if (e.target.classList.contains('btn-remove')) e.target.closest('.add-q-opt-row').remove();
-  });
   // Lista de gestión de secciones (render definido en secciones.js; el primer
   // pintado tras cargar el esquema — refreshSecciones la repinta después).
   if (typeof renderSecManageList === 'function') renderSecManageList();
@@ -528,25 +450,7 @@ function bindForms() {
   const aqSecSel = $('add-q-seccion');
   if (aqSecSel) aqSecSel.addEventListener('change', syncAddQSeccionField);
 
-  $('add-q-tipo').addEventListener('change', function () {
-    const v = this.value;
-    $('add-q-opciones-wrap').style.display = ['checkbox', 'radio', 'voto-ponderado', 'casas'].includes(v) ? 'block' : 'none';
-    $('add-q-slider-wrap').style.display   = v === 'slider' ? 'block' : 'none';
-    $('add-q-horarios-wrap').style.display = v === 'horarios' ? 'block' : 'none';
-    const first = document.querySelector('#add-q-opts-container input');
-    if (first) first.placeholder = v === 'casas' ? 'Nombre de la casa (el precio se añade luego)' : 'Opción 1';
-  });
-  aqGetFranjas = buildFranjasEditor($('aq-franjas-host'), FRANJAS_HORARIAS);
-
-  $('btn-add-q-opt').addEventListener('click', () => {
-    const cont = $('add-q-opts-container');
-    const row  = div('add-q-opt-row');
-    row.innerHTML = `<input type="text" placeholder="Opción ${cont.children.length + 1}"><button class="btn-remove" type="button">✕</button>`;
-    cont.appendChild(row);
-  });
-
-  // Delegado: sirve para las filas iniciales y las añadidas
-  $('add-q-opts-container').addEventListener('click', e => {
-    if (e.target.classList.contains('btn-remove')) e.target.closest('.add-q-opt-row').remove();
-  });
+  $('add-sec-q-tipo').replaceChildren(...[...$('add-q-tipo').options].map(o=>o.cloneNode(true)));
+  questionEditors['add-q']=bindQuestionFields('add-q');
+  questionEditors['add-sec-q']=bindQuestionFields('add-sec-q');
 }
