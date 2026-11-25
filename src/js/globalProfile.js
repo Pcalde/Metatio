@@ -76,7 +76,13 @@ function globalStatus(message) { const el=$('global-status'); if(el) el.textCont
 function globalVal(id) { return $(id).value.trim(); }
 async function globalRpc(name, args={}) {
   const { data, error } = await globalClient().rpc(name,args);
-  if (error) throw new Error(error.message);
+  if (error) {
+    // No imprimir argumentos RPC: pueden contener credenciales o invitaciones.
+    const code = error.code || 'RPC';
+    const message = error.message || 'Error del servidor';
+    console.error('[Metatio] ' + name + ' [' + code + ']: ' + message);
+    throw new Error(name + ' [' + code + ']: ' + message);
+  }
   return unwrap(data);
 }
 // Solo para recuperar credenciales del parche determinista anterior. Nunca se usa en altas nuevas.

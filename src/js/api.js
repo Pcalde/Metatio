@@ -3,6 +3,15 @@
 const ident = b => ({ p_eid: b.eid, p_nombre: b.nombre, p_pin: b.pinHash });
 
 const RPC = {
+  open_session: { fn: 'open_session', args: b => ident(b) },
+  revoke_session: { fn: 'revoke_session', args: b => ({ p_token: b.token }) },
+  revoke_all_sessions: { fn: 'revoke_all_sessions', args: b => ident(b) },
+  join_invited: { fn: 'join_invited', args: b => ({ ...ident(b), p_invite: b.invite }) },
+  manage_invites: { fn: 'manage_invites', args: b => ({ ...ident(b), p_revoke: !!b.revoke }) },
+  set_recovery: { fn: 'set_recovery', args: b => ({ ...ident(b), p_code: b.code }) },
+  recover_access: { fn: 'recover_access', args: b => ({ p_eid: b.eid, p_nombre: b.nombre, p_code: b.code, p_new_pin: b.newPin }) },
+  restore_question: { fn: 'restore_question', args: b => ({ ...ident(b), p_qid: b.qid || null }) },
+  transfer_organizer: { fn: 'transfer_organizer', args: b => ({ ...ident(b), p_target: b.target }) },
   crear_encuesta:  { fn: 'crear_encuesta_publica', args: b => ({ ...ident(b), p_plantilla: b.plantilla || 'vacia', p_titulo: b.titulo || 'Cuestionario de viaje' }) },
   entrar:          { fn: 'entrar',          args: b => ident(b) },
   all:             { fn: 'get_all',         args: b => ident(b) },
@@ -27,7 +36,9 @@ const RPC = {
 };
 
 function unwrap(data) {
-  if (data && data.error) throw new Error(data.error);
+  if (data && data.error) {
+    const error = new Error(data.error); error.definitive = true; throw error;
+  }
   return data;
 }
 
@@ -59,8 +70,11 @@ async function api(body) {
 // Envoltura de todas las llamadas autenticadas: reintenta una vez con la
 // credencial de sesión si el servidor rechaza el pinHash en memoria.
 async function apiAuth(body) {
+  if (!user || body.eid !== user.eid || body.nombre.toLowerCase() !== user.nombre.toLowerCase()) {
+    return api(body);
+  }
   return apiAuthenticated(pin => {
-    const b = { ...body, pinHash: body.pinHash || pin };
+    const b = { ...body, pinHash: pin || body.pinHash };
     return api(b);
   });
 }
