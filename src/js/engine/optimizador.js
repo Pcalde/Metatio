@@ -74,8 +74,7 @@ function calcP25Motor(sortedProbs) {
 // Determina si una pregunta `probabilidad-opcion` representa un catálogo de alojamientos
 function esCatalogoCasasProb(q) {
   if (!q || q.tipo !== 'probabilidad-opcion') return false;
-  if (q.config && q.config.modoCasas) return true;
-  return (q.opciones || []).some(o => o && typeof o === 'object' && (o.precio || o.url || o.foto));
+  return q.config?.modoCasas === true;
 }
 
 // ── 2b. CRUCE DE HORARIOS (capa B del modelo de dos capas) ──────────────────
@@ -283,7 +282,7 @@ function evaluarCatalogoProbabilidad(q, viajerosSubgrupo = null, incluirDeriva =
     return {
       key,
       label,
-      precio: precioStr,
+      precio: optionPriceLabel(rawOp),
       precio_num: precioNum,
       nOpt,
       E,
@@ -1323,8 +1322,8 @@ function ejecutarMotorFactibilidad(model) {
         (qCasas.opciones || []).forEach(rawOp => {
           const key   = typeof optVal === 'function' ? optVal(qCasas, rawOp) : (rawOp && rawOp.nombre ? rawOp.nombre : String(rawOp));
           const label = (rawOp && typeof rawOp === 'object' && rawOp.nombre) ? rawOp.nombre : key;
-          const pNum  = parsePrecioNumerico(rawOp && typeof rawOp === 'object' ? rawOp.precio : null);
-          if (!key || pNum == null || pNum <= 0) return;
+          const cost = accommodationCost(rawOp, Math.max(1,nTotal), diffDaysISO(fIni,fFin));
+          if (!key || !cost) return;
 
           const detallesVotantes = [];
           let apoyosNucleo = 0, apoyosSat = 0, vetosNucleo = 0;
@@ -1344,9 +1343,9 @@ function ejecutarMotorFactibilidad(model) {
           const pItem       = paretoCasas ? paretoCasas.opciones.find(o => o.key === key) : null;
           if (apoyosTotal === 0 && (!pItem || pItem.nOpt === 0)) return;
 
-          const pCoop      = pNum / Math.max(1, nTotal);
+          const pCoop      = cost.pp;
           const divisorCoal = pItem ? Math.max(1, pItem.E) : Math.max(1, apoyosTotal);
-          const pCoal      = pNum / divisorCoal;
+          const pCoal      = accommodationCost(rawOp, divisorCoal, diffDaysISO(fIni,fFin)).pp;
           const barras     = evaluarBarrasPresupuesto(pCoop);
 
           const viableGrupo  = pMaxGrupo == null ? true : (pCoop <= pMaxGrupo);
@@ -1356,7 +1355,7 @@ function ejecutarMotorFactibilidad(model) {
           casasEvaluadas.push({
             nombre: label,
             key,
-            precio_total: pNum,
+            precio_total: cost.total,
             votos: apoyosTotal,
             apoyosNucleo,
             apoyosSat,
