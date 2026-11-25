@@ -26,10 +26,10 @@ function _renderConsensusGate(container) {
     const warn = div('card');
     warn.style.borderColor = 'var(--accent)';
     warn.innerHTML = `
-      <div class="card-title"><span class="num" style="background:var(--accent)">!</span> Falta actualizar <code>schema.sql</code> en Supabase</div>
+      <div class="card-title"><span class="num" style="background:var(--accent)">!</span> El servidor no ha devuelto las respuestas</div>
       <p style="color:var(--ink);font-size:0.9rem;line-height:1.5">
         Hay <b>${respondentes.length}</b> participante(s) en la encuesta, pero el servidor de Supabase sigue ejecutando la función <code>_snapshot</code> antigua (que no enviaba el campo <code>respuestas</code> ni tenía la tabla <code>debate</code>).<br><br>
-        👉 Abre <b>Supabase → SQL Editor</b>, pega el nuevo <code>schema.sql</code> completo y pulsa <b>Run</b>. Al recargar la página verás inmediatamente las respuestas y funcionará el debate.
+        Comprueba las migraciones instaladas y la respuesta de la RPC de consulta. No reinstales <code>schema.sql</code> en una base con el sistema de acceso actual.
       </p>`;
     container.appendChild(warn);
     return true;
@@ -901,8 +901,7 @@ function buildProbabilidadOpcionConsensus(card, q, myVal) {
   const myDict = typeof normProbOpcion === 'function' ? normProbOpcion(myVal) : (myVal || {});
 
   // Evaluar métricas E[X], P25[X], frontera de Pareto, cuadrantes y alertas desde el motor único
-  const evalFn = (window.EngineCore && window.EngineCore.evaluarCatalogoProbabilidad)
-    || (typeof evaluarCatalogoProbabilidad === 'function' ? evaluarCatalogoProbabilidad : null);
+  const evalFn = typeof evaluarCatalogoProbabilidad === 'function' ? evaluarCatalogoProbabilidad : null;
   const evalRes = evalFn ? evalFn(q, null, true) : null;
 
   if (!evalRes || (!evalRes.frontera.length && !evalRes.descartadas.length && !(q.opciones || []).length)) {
