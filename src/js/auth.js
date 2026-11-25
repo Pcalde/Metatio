@@ -116,6 +116,8 @@ function enterSurvey() {
   }
   $('login-screen').style.display  = 'none';
   $('survey-screen').style.display = 'block';
+  if ($('btn-back-trips')) $('btn-back-trips').style.display = '';
+  if (typeof renderAccessControls === 'function') renderAccessControls();
   $('utag-nombre').textContent = user.nombre;
   $('utag-eid').textContent    = '#' + user.eid;
   resetAusencias();
