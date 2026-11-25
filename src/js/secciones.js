@@ -550,7 +550,13 @@ function _applyMetaCardVisibility(cur, secs, answers) {
   const isFirstSec = !hasNav || cur === firstNav;
   const isLastSec  = !hasNav || cur === lastNav;
   const propia = $('asistencia-propia-card');
-  if (propia) propia.style.display = isFirstSec ? '' : 'none';
+  if (propia) {
+    // No desmontar el slider: su valor se lee al enviar desde cualquier página.
+    // hidden + display evitan que otra regla de presentación revele la tarjeta.
+    propia.hidden = !isFirstSec;
+    if (isFirstSec) propia.style.removeProperty('display');
+    else propia.style.setProperty('display', 'none', 'important');
+  }
   const participCard = $('participants-card');
   if (participCard) participCard.style.display = isFirstSec ? '' : 'none';
   const ausCard = $('ausencias-card');
@@ -568,13 +574,13 @@ function _applyMetaCardVisibility(cur, secs, answers) {
 function applySectionPaging() {
   const container = $('questions-container');
   if (!container) return;
-  syncQuestionCardOrder();
-  if (!schema.length) { _applyMetaCardVisibility(null, []); renderRail(); renderBottomBar(); return; }
+  if (!schema.length) { _applyMetaCardVisibility(null, []); syncQuestionCardOrder(); renderRail(); renderBottomBar(); return; }
   secClampIndex();
   const st = readState().answers;
   const secs = seccionesDelEsquema();
   const cur = _secDeIdx(SEC_ESTADO.idx, secs) || secs[0];
   _applyMetaCardVisibility(cur, secs, st);
+  syncQuestionCardOrder();
   let activeIds = null;
   if (cur) {
     // Preguntas visibles de la sección + su tarjeta «marca» SIEMPRE que el
