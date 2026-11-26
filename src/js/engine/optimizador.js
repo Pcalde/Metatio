@@ -4,15 +4,17 @@
 // abajo, sin tocar) ya no ve state.js/types.js. Las rellena configure(ctx),
 // llamado por engine/index.js antes de cada ejecución.
 let schema = [], respuestas = [], respondentes = [], ausencias = [];
+let attendanceEnabled = true;
 let lastHorariosRange = null, mcUseEmpiricalProb = true, UMBRAL_HORA_SOLAPE = 1.5;
 const { extractAnswer, getRadioStepperConfig, getFranjas, dispToMap, optVal } = root.Esquema;
 let P = {};
 const par = (k, d) => (P[k] != null ? P[k] : d);
-function getEffectiveProb(nombre) { return root.EngineProb.efectiva(nombre, respondentes, ausencias); }
+function getEffectiveProb(nombre) { return attendanceEnabled ? root.EngineProb.efectiva(nombre, respondentes, ausencias) : 1; }
 function configure(ctx) {
   schema = ctx.schema || []; respuestas = ctx.respuestas || [];
   respondentes = ctx.respondentes || []; ausencias = ctx.ausencias || [];
   lastHorariosRange = ctx.lastHorariosRange || null;
+  attendanceEnabled = ctx.attendanceEnabled !== false;
   mcUseEmpiricalProb = ctx.mcEmpirico !== false;
   UMBRAL_HORA_SOLAPE = (ctx.params && ctx.params.UMBRAL_HORA_SOLAPE != null) ? ctx.params.UMBRAL_HORA_SOLAPE : 1.5;
   P = ctx.params || {};
@@ -196,11 +198,12 @@ function evaluarCatalogoProbabilidad(q, viajerosSubgrupo = null, incluirDeriva =
       .map(v => ({
         nombre: v.nombre,
         dict: v.probRespuestas[qid],
-        probEfectiva: clipProbMotor(v.probEfectiva ?? 0.80),
+        probEfectiva: attendanceEnabled ? clipProbMotor(v.probEfectiva ?? 0.80) : 1,
       }));
   } else {
     const fuenteResp = (Array.isArray(respuestas) && respuestas.length) ? respuestas : (root.respuestas || []);
     fuenteResp.forEach(r => {
+      if(root.DecisionModel.applicability(q,r.answers||{},schema)!==1)return;
       const rawP = extractAnswer(r.answers || {}, q);
       if (rawP && typeof rawP === 'object' && !Array.isArray(rawP)) {
         const clean = {};
@@ -211,7 +214,7 @@ function evaluarCatalogoProbabilidad(q, viajerosSubgrupo = null, incluirDeriva =
           votantesActivos.push({
             nombre: r.nombre,
             dict: clean,
-            probEfectiva: clipProbMotor(getEffectiveProb(r.nombre)),
+            probEfectiva: attendanceEnabled ? clipProbMotor(getEffectiveProb(r.nombre)) : 1,
           });
         }
       }
@@ -523,7 +526,7 @@ function resolverVentana(viajerosCandidatos, matriz, indiceFechas, nombresNucleo
 // ── 6. SIMULACIÓN MONTE CARLO DE RESILIENCIA (Con soporte condicional p_{i,X}) ──
 function simularFragilidad(dictAsignacion, viajerosAsignados, nSim = 250, pGlobal = 0.12, nCadena = 100, seed = 23, probCondicionalMap = null) {
   const personas = Object.keys(dictAsignacion);
-  if (!personas.length) return null;
+  if (!attendanceEnabled || !personas.length) return null;
 
   const rng = createSeededRNG(seed);
   const probFalta = {};
@@ -677,12 +680,12 @@ function detalleVotoViajeroEnPregunta(v, q, optKey) {
 
 // ── 2. NORMALIZACIÓN Y MATRIZ DE DISPONIBILIDAD ─────────────────────────────
 function buildModelData() {
-  const qDisp  = schema.find(q => q.tipo === 'disponibilidad');
-  const qTrans = schema.find(q => getRadioStepperConfig(q));
-  const qPrec  = schema.find(q => q.tipo === 'slider' && q.id !== 'prob_asistencia_propia') || schema.find(q => q.tipo === 'slider');
-  const qCasas = schema.find(q => q.tipo === 'casas') || schema.find(esCatalogoCasasProb);
-  const qOpts  = schema.find(q => q.tipo === 'checkbox' || q.tipo === 'voto-ponderado' || (q.tipo === 'probabilidad-opcion' && q !== qCasas));
-  const qHor   = schema.find(q => q.tipo === 'horarios');
+  const qDisp  = schema.find(q => root.DecisionModel.role(q) === 'fechas');
+  const qTrans = schema.find(q => root.DecisionModel.role(q) === 'transporte');
+  const qPrec  = schema.find(q => root.DecisionModel.role(q) === 'presupuesto');
+  const qCasas = schema.find(q => root.DecisionModel.role(q) === 'alojamiento');
+  const qOpts  = schema.find(q => root.DecisionModel.role(q)==='preferencia' && ['checkbox','voto-ponderado','probabilidad-opcion'].includes(q.tipo));
+  const qHor   = schema.find(q => root.DecisionModel.role(q) === 'horarios');
   const qProbs = schema.filter(q => q.tipo === 'probabilidad-opcion');
 
   const viajeros = [];
@@ -719,7 +722,7 @@ function buildModelData() {
     const irYVenir  = !!(disp && disp.irYVenir);
     const meDaIgual = !!(disp && disp.meDaIgual);
     const prefPuente = !!(disp && disp.preferirPuente);
-    const rangos = (disp && Array.isArray(disp.rangos)) ? disp.rangos : (ans.rangosFechas || []);
+    const rangos = qDisp ? ((disp && Array.isArray(disp.rangos)) ? disp.rangos : []) : [];
 
     let forzarFechas = null;
     if (disp && disp.noSe) {
@@ -727,8 +730,8 @@ function buildModelData() {
       const pVal = (pAns && typeof pAns === 'object') ? (pAns.ideal ?? pAns.value) : pAns;
       const pResp = (respondentes.find(x => x.nombre.toLowerCase() === r.nombre.toLowerCase()) || {}).prob_asistencia;
       const p = (pVal != null ? pVal : (pResp != null ? pResp : 80)) / 100;
-      if (p <= 0.5 || !fechasGlobal.size) return;
-      forzarFechas = new Set(fechasGlobal);
+      if (attendanceEnabled && p > 0.5 && fechasGlobal.size) forzarFechas = new Set(fechasGlobal);
+      else forzarFechas = new Set();
     }
 
     const rangoSet = new Set();
@@ -758,11 +761,7 @@ function buildModelData() {
     if (soloFinde && conjuntoFechas.size) {
       conjuntoFechas = new Set([...conjuntoFechas].filter(isWeekendISO));
     }
-    if (conjuntoFechas.size === 0) {
-      const fb = lastHorariosRange && (lastHorariosRange.desde || lastHorariosRange.fecha);
-      if (fb) { conjuntoFechas.add(fb); allDatesSet.add(fb); }
-      else return;
-    }
+    // Ausencia de fechas no excluye al participante ni inventa disponibilidad.
 
     const horFranjasPorDia = hor && Array.isArray(hor.disponibilidades) ? {} : null;
     if (horFranjasPorDia) {
@@ -806,6 +805,7 @@ function buildModelData() {
 
     const probRespuestas = {};
     qProbs.forEach(qp => {
+      if(root.DecisionModel.applicability(qp,ans,schema)!==1) return;
       const rawP = extractAnswer(ans, qp);
       if (rawP && typeof rawP === 'object' && !Array.isArray(rawP)) {
         const clean = {};
@@ -885,7 +885,9 @@ function buildModelData() {
   });
 
   if (!viajeros.length || !allDatesSet.size) {
-    return { viajeros: [], indiceFechas: [], matriz: {}, lMaxEval: 0, logistica: false, nLog: 0, probGlobal: {} };
+    const probGlobal = {}; qProbs.forEach(qp=>{probGlobal[qp.id]=evaluarCatalogoProbabilidad(qp,viajeros);});
+    const nLog=viajeros.filter(v=>v.tieneLogistica).length;
+    return { viajeros, indiceFechas: [], matriz: {}, lMinEval: 1, lMaxEval: 0, logistica:nLog>0,nLog,probGlobal };
   }
 
   const sortedBounds = [...allDatesSet].sort();
@@ -1094,11 +1096,12 @@ function construirFlujoTransporte(viajerosGrupo, dictAsignacion) {
 // ── 7. BÚSQUEDA GLOBAL DE SOLUCIONES FACTIBLES (Con Presupuesto Núcleo, Coherencia y Desglose) ──
 function ejecutarMotorFactibilidad(model) {
   const { viajeros, indiceFechas, matriz, lMaxEval } = model;
-  if (!viajeros.length || indiceFechas.length < 2) return { soluciones: [], diagnosticos: [] };
+  const mode=root.DecisionModel.integratedMode(schema);
+  if (!mode.enabled || !viajeros.length || !indiceFechas.length) return { soluciones: [], diagnosticos: [], estado: !mode.enabled ? 'no_aplicable' : 'indeterminado', motivo: mode.reason };
 
-  const qHor   = schema.find(q => q.tipo === 'horarios');
-  const qCasas = schema.find(q => q.tipo === 'casas') || schema.find(esCatalogoCasasProb);
-  const qOpts  = schema.find(q => q.tipo === 'checkbox' || q.tipo === 'voto-ponderado' || (q.tipo === 'probabilidad-opcion' && q !== qCasas));
+  const qHor   = schema.find(q => root.DecisionModel.role(q) === 'horarios');
+  const qCasas = schema.find(q => root.DecisionModel.role(q) === 'alojamiento');
+  const qOpts  = schema.find(q => root.DecisionModel.role(q)==='preferencia' && ['checkbox','voto-ponderado','probabilidad-opcion'].includes(q.tipo));
   const qProbs = schema.filter(q => q.tipo === 'probabilidad-opcion');
   const durH   = qHor ? duracionPlanHoras(qHor) : null;
   const franjas = qHor ? getFranjas(qHor) : null;

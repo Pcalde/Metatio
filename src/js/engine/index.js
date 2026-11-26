@@ -17,6 +17,7 @@
   function snapshot() {
     return {
       schema, respuestas, respondentes, ausencias,
+      attendanceEnabled: typeof asistenciaActiva==='undefined' || asistenciaActiva,
       lastHorariosRange: (typeof lastHorariosRange !== 'undefined') ? lastHorariosRange : null,
       weightByProb: overrides.weightByProb ?? weightByProb,
       mcEmpirico:   overrides.mcEmpirico   ?? mcUseEmpiricalProb,
@@ -32,9 +33,9 @@
     run() {
       return withCtx(() => {
         const model = Core.buildModelData();
-        const { soluciones, diagnosticos } = Core.ejecutarMotorFactibilidad(model);
+        const { soluciones, diagnosticos, estado, motivo } = Core.ejecutarMotorFactibilidad(model);
         const topo = Core.computeTopologyAndSensitivity(model, soluciones);
-        return { model, soluciones, diagnosticos, topo, probabilidades: model.probGlobal || {} };
+        return { model, soluciones, diagnosticos, topo, estado, motivo, estudios: root.DecisionModel.studies(schema,respuestas,respondentes), probabilidades: model.probGlobal || {} };
       });
     },
 
@@ -66,6 +67,6 @@
   root.ejecutarMotorFactibilidad   = m => withCtx(() => Core.ejecutarMotorFactibilidad(m));
   root.computeTopologyAndSensitivity = (m, s) => Core.computeTopologyAndSensitivity(m, s);
   root.evaluarCatalogoProbabilidad = (q, v, incluirDeriva = false) => withCtx(() => Core.evaluarCatalogoProbabilidad(q, v, incluirDeriva));
-  root.getEffectiveProb = n => Prob.efectiva(n, respondentes, ausencias);
-  root.userWeight       = n => Prob.peso(n, respondentes, ausencias, weightByProb);
+  root.getEffectiveProb = n => typeof asistenciaActiva!=='undefined'&&!asistenciaActiva ? 1 : Prob.efectiva(n, respondentes, ausencias);
+  root.userWeight       = n => typeof asistenciaActiva!=='undefined'&&!asistenciaActiva ? 1 : Prob.peso(n, respondentes, ausencias, weightByProb);
 })(typeof window !== 'undefined' ? window : globalThis);
