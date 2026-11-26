@@ -88,6 +88,9 @@ function applyData(data) {
 
   const h1Title = $('survey-main-title');
   if (h1Title) h1Title.textContent = encuestaTitulo;
+  const titleInput = $('access-trip-title');
+  if (titleInput && (titleInput.dataset.eid !== user?.eid || titleInput.value === titleInput.dataset.saved || !titleInput.dataset.saved)) titleInput.value = encuestaTitulo;
+  if (titleInput) { titleInput.dataset.eid = user?.eid || ''; titleInput.dataset.saved = encuestaTitulo; }
 
   const cResp = $('count-resp');
   if (cResp) cResp.textContent = respuestas.length || respondentes.filter(r => r.ha_respondido !== false).length;
