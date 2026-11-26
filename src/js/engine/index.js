@@ -39,6 +39,20 @@
       });
     },
 
+    // Explicit, isolated projection. Never changes the live questionnaire.
+    runScoped(questions, rows, registered = respondentes, options = {}) {
+      const original = snapshot();
+      const qs = questions.map(q => { const config={...q.config}; delete config.mostrarSi; delete config.seccion; return {...q,config}; });
+      const ctx = {...original, schema:qs, respuestas:rows, respondentes:registered,
+        mcEmpirico: options.mcEmpirico ?? original.mcEmpirico};
+      Core.configure(ctx);
+      try {
+        const model=Core.buildModelData();
+        const {soluciones,diagnosticos,estado,motivo}=Core.ejecutarMotorFactibilidad(model);
+        return {model,soluciones,diagnosticos,estado,motivo,topo:Core.computeTopologyAndSensitivity(model,soluciones)};
+      } finally { Core.configure(original); }
+    },
+
     evaluarProbabilidad(qOrId, filtroNombres = null) {
       return withCtx(() => {
         const q = typeof qOrId === 'object' ? qOrId : (schema || []).find(x => x.id === qOrId);
