@@ -15,6 +15,7 @@
   <link rel="stylesheet" href="src/css/identity.css?v=7">
 <link rel="stylesheet" href="src/css/options.css?v=8">
 <link rel="stylesheet" href="src/css/question-order.css?v=12">
+<link rel="stylesheet" href="src/css/results-v13.css?v=13">
 </head>
 <body>
 
@@ -338,7 +339,7 @@
           <label for="access-invite-url">Enlace de invitación</label><input id="access-invite-url" readonly placeholder="Aún no has generado un enlace">
           <button type="button" class="btn-link-like" id="access-copy-invite">Copiar enlace</button><button type="button" class="btn-link-like" id="access-revoke-invites">Revocar invitaciones</button>
         </section>
-        <section class="mt-access-section"><h3>Administración</h3><label><input type="checkbox" id="access-attendance-enabled" checked disabled> Estimar probabilidad de asistencia y ausencias</label><p class="trips-note">Puedes desactivarlo y volver a activarlo sin borrar las estimaciones anteriores.</p><button type="button" class="btn-propose" id="access-archived">Ver preguntas archivadas</button><div id="access-archived-list"></div>
+        <section class="mt-access-section"><h3>Administración</h3><label for="access-trip-title">Título de la encuesta</label><input id="access-trip-title" maxlength="80" placeholder="Nombre del viaje"><button type="button" class="btn-propose" id="access-save-title">Guardar título</button><label><input type="checkbox" id="access-attendance-enabled" checked disabled> Estimar probabilidad de asistencia y ausencias</label><p class="trips-note">Puedes desactivarlo y volver a activarlo sin borrar las estimaciones anteriores.</p><button type="button" class="btn-propose" id="access-archived">Ver preguntas archivadas</button><div id="access-archived-list"></div>
           <label for="access-next-organizer">Nuevo organizador</label><select id="access-next-organizer"><option value="">Selecciona un participante</option></select>
           <button type="button" class="btn-propose" id="access-transfer">Transferir organización…</button>
         </section>
@@ -346,10 +347,10 @@
     </div>
   </details>
   <header>
-    <h1>Cuestionario de <span class="eid" id="utag-eid"></span></h1>
+    <h1 id="survey-main-title">Cuestionario de viaje</h1>
     <div class="user-tag" id="user-tag">
       <span id="utag-nombre">-</span>
-      <span class="eid" aria-hidden="true"></span>
+      <span class="eid" id="utag-eid" title="Código de acceso"></span>
       <span class="poll-dot" id="poll-dot" title="Sincronización activa"></span>
       <button class="btn-logout" id="btn-back-trips" title="Volver a Mis viajes"><i class="fa-solid fa-house" aria-hidden="true"></i></button>
       <button class="btn-logout" id="btn-logout" title="Cerrar sesión"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
@@ -649,13 +650,13 @@
 <script src="src/js/engine/routeStudy.js?v=12"></script>
 <script src="src/js/engine/decisionModel.js?v=12"></script>
 <script src="src/js/crypto.js"></script>
-<script src="src/js/api.js?v=11"></script>
-<script src="src/js/state.js?v=11"></script>
+<script src="src/js/api.js?v=13"></script>
+<script src="src/js/state.js?v=13"></script>
 <script src="src/js/participants.js"></script>
 <script src="src/js/sesion.js?v=5"></script>
 <script src="src/js/perfil.js?v=6"></script>
 <script src="src/js/profileBackup.js?v=7"></script>
-<script src="src/js/access.js?v=11"></script>
+<script src="src/js/access.js?v=13"></script>
 <script src="src/js/globalProfile.js?v=7"></script>
 <script src="src/js/dashboard.js?v=7"></script>
 <script src="src/js/routeFields.js?v=12"></script>
@@ -668,10 +669,10 @@
 <script src="src/js/forms.js?v=12"></script>
 <script src="src/js/answers.js?v=11"></script>
 <script src="src/js/engine/probabilidades.js"></script>
-<script src="src/js/engine/optimizador.js?v=11"></script>
+<script src="src/js/engine/optimizador.js?v=13"></script>
 <script src="src/js/engine/index.js?v=11"></script>
-<script src="src/js/ui/consensusView.js?v=12"></script>
-<script src="src/js/ui/reportajePDF.js?v=11"></script>
+<script src="src/js/ui/consensusView.js?v=13"></script>
+<script src="src/js/ui/reportajePDF.js?v=13"></script>
 <script src="src/js/secciones.js?v=12"></script>
 <script src="src/js/arbol.js?v=12"></script>
 <script src="src/js/mapa.js?v=8"></script>
