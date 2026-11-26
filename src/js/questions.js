@@ -75,6 +75,7 @@ function buildQuestionCard(q, idx) {
       <input type="text" class="inp-edit-q-label" value="${esc(q.label)}" maxlength="200">
       ${q.tipo === 'probabilidad-opcion' ? `<label><input type="checkbox" class="inp-eq-modo-casas" ${cfg.modoCasas === true ? 'checked' : ''}> Las opciones son alojamientos</label>` : ''}
       ${q.tipo === 'slider' ? `
+        <label>Función matemática <select class="inp-eq-role"><option value="preferencia" ${DecisionModel.role(q)!=='presupuesto'?'selected':''}>Magnitud genérica</option><option value="presupuesto" ${DecisionModel.role(q)==='presupuesto'?'selected':''}>Presupuesto por persona</option></select></label>
         <div class="slider-config" style="margin-top:4px">
           <div><label>Mínimo</label><input type="number" class="inp-eq-min" value="${cfg.min ?? 10}"></div>
           <div><label>Máximo</label><input type="number" class="inp-eq-max" value="${cfg.max ?? 500}"></div>
@@ -130,7 +131,7 @@ function buildQuestionCard(q, idx) {
   }
   let getFr = null;
   if (q.tipo === 'horarios') getFr = buildFranjasEditor(editBox.querySelector('.eq-franjas-host'), getFranjas(q));
-  // Editor de la condición «mostrar solo si…» (secciones.js): pregunta previa
+  // Editor de la condición «mostrar solo si…» (secciones.js): pregunta de origen
   // + operador + valor. Se pinta cuando el panel se abre, con el estado actual.
   let getCond = null;
   const condHost = editBox.querySelector('.q-cond-host');
@@ -156,6 +157,10 @@ function buildQuestionCard(q, idx) {
       newCfg.min  = Number(editBox.querySelector('.inp-eq-min').value);
       newCfg.max  = Number(editBox.querySelector('.inp-eq-max').value);
       newCfg.step = Number(editBox.querySelector('.inp-eq-step').value) || 1;
+      newCfg.modelRole=editBox.querySelector('.inp-eq-role').value;
+      if(newCfg.modelRole==='presupuesto'){newCfg.unit=' €';newCfg.dual=true;}
+      else if(DecisionModel.role(q)==='presupuesto'){delete newCfg.unit;newCfg.dual=false;}
+      if(!Number.isFinite(newCfg.min)||!Number.isFinite(newCfg.max)||!(newCfg.max>newCfg.min)||!(newCfg.step>0)||(newCfg.modelRole==='presupuesto'&&newCfg.min<0)){showStatus('Rango inválido','err');return;}
     }
     if (q.tipo === 'horarios') {
       newCfg.franjas = getFr();
@@ -177,19 +182,20 @@ function buildQuestionCard(q, idx) {
         }
       }
     }
-    // Condición de visibilidad: solo sobre preguntas ANTERIORES en el orden
-    // (regla anti-ciclos, validada también aquí y al reordenar).
+    // Condición de visibilidad: cualquier origen sin ciclos.
     if (getCond) {
       const cond = getCond.read();
       if (cond) {
         const errCond = typeof validarMostrarSi === 'function'
-          ? validarMostrarSi(cond, schema, q.id) : null;
+          ? validarMostrarSi(cond, schema.map(x=>x.id===q.id?{...x,config:newCfg}:x), q.id) : null;
         if (errCond) { showStatus(errCond, 'err', 6000); return; }
         newCfg.mostrarSi = cond;
       } else {
         delete newCfg.mostrarSi;
       }
     }
+    const proposedSchema=schema.map(x=>x.id===q.id?{...x,config:newCfg}:x);
+    if (cicloCondicion(proposedSchema,q.id)) { showStatus('La sección o condición elegida genera una dependencia circular.','err',6000); return; }
     try {
       await apiAuth({
         action: 'edit_pregunta',
@@ -476,24 +482,7 @@ async function moverPregunta(qid, dir) {
   const i = schema.findIndex(x => x.id === qid), j = i + dir;
   if (!user || i < 0 || j < 0 || j >= schema.length) return;
 
-  // Regla anti-ciclos: ninguna pregunta condicionada puede quedar POR
-  // DELANTE de la fuente de su condición. Al mover una sola posición, basta
-  // comprobar si `moved` salta por encima del origen directo de alguna
-  // dependencia (p.ej. mover «¿Cuánto?» delante de «¿Tienes coche?» cuando
-  // los gastos dependen del coche).
-  const moved = schema[i];
-  for (const q of schema) {
-    if (q.id === moved.id) continue;
-    const cond = q.config && q.config.mostrarSi;
-    if (!cond || !cond.qid || cond.qid !== moved.id) continue;
-    const qi = schema.findIndex(x => x.id === q.id);
-    const cruzaria = dir > 0 ? (qi <= j && qi > i) : (qi >= j && qi < i);
-    if (cruzaria) {
-      showStatus(`No puedes mover «${moved.label}» por delante de «${q.label}»: esta se muestra solo según aquella.`, 'err', 7000);
-      return;
-    }
-  }
-
+  // Reordenar no modifica las aristas del grafo de dependencias.
   [schema[i], schema[j]] = [schema[j], schema[i]];
   moveCardDom(qid, dir);
   try {

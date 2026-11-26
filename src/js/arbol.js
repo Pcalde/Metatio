@@ -115,11 +115,15 @@
 
     // Propagación de alcance (quién llega a cada pregunta)
     const alcance = new Map();
+    const enCalculo = new Set();
     function calcAlcance(q) {
       if (alcance.has(q.id)) return alcance.get(q.id);
+      if (enCalculo.has(q.id)) return [];
+      enCalculo.add(q.id);
       const padres = parentsMap.get(q.id) || [];
       if (!padres.length) {
         alcance.set(q.id, gente);
+        enCalculo.delete(q.id);
         return gente;
       }
       const { logic } = reglasEfectivas(q);
@@ -133,6 +137,7 @@
         return logic === 'AND' ? evals.every(Boolean) : evals.some(Boolean);
       });
       alcance.set(q.id, filtrados);
+      enCalculo.delete(q.id);
       return filtrados;
     }
     preguntas.forEach(calcAlcance);
@@ -643,23 +648,8 @@
   }
 
   function creariaCiclo(sourceId, targetId, preguntas) {
-    if (sourceId === targetId) return true;
-    const visitados = new Set([targetId]);
-    const cola = [targetId];
-    while (cola.length) {
-      const curr = cola.shift();
-      for (const q of preguntas) {
-        const { rules } = reglasEfectivas(q);
-        if (rules.some(r => r.qid === curr)) {
-          if (q.id === sourceId) return true;
-          if (!visitados.has(q.id)) {
-            visitados.add(q.id);
-            cola.push(q.id);
-          }
-        }
-      }
-    }
-    return false;
+    // Incluye dependencias heredadas de la sección, no solo aristas dibujadas.
+    return condicionDependeDe(schema, sourceId, targetId);
   }
 
   async function actualizarCondicionPregunta(q, nuevoMostrarSi) {

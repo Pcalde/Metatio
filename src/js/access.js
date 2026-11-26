@@ -121,6 +121,12 @@ async function accessUi(action) {
   try { await action(); } catch (e) { showStatus(e.message, 'err', 10000); }
 }
 function bindAccessControls() {
+  $('access-attendance-enabled')?.addEventListener('change',async e=>{
+    const el=e.currentTarget; const desired=el.checked; el.disabled=true;
+    try{await apiPost({action:'set_attendance',...user,enabled:desired});asistenciaActiva=desired;lastRaw='';invalidateReadStateCache();if(typeof renderAusencias==='function')renderAusencias();if(activeMode==='consensus')renderResultados();if(activeMode==='reformulario')renderReformularioInteractivo();await pollOnce();showStatus('Configuración de asistencia actualizada','ok');}
+    catch(err){el.checked=asistenciaActiva;showStatus(err.message,'err');}
+    finally{el.disabled=!ajustesModeloDisponibles;}
+  });
   $('btn-change-profile-password')?.addEventListener('click', e => _busy(e.currentTarget,'Cambiando…','',async () => {
     const old = $('profile-old-password'), next = $('profile-new-password');
     try { await changeProfilePassword(old.value,next.value); tripsErr('Contraseña cambiada. Descarga una copia nueva de tus accesos.'); }

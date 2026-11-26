@@ -3,6 +3,7 @@
 const ident = b => ({ p_eid: b.eid, p_nombre: b.nombre, p_pin: b.pinHash });
 
 const RPC = {
+  set_attendance: { fn: 'set_attendance', args: b => ({ ...ident(b), p_enabled: b.enabled }) },
   open_session: { fn: 'open_session', args: b => ident(b) },
   revoke_session: { fn: 'revoke_session', args: b => ({ p_token: b.token }) },
   revoke_all_sessions: { fn: 'revoke_all_sessions', args: b => ident(b) },

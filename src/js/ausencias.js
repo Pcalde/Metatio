@@ -102,7 +102,7 @@ function renderAusencias() {
 function renderVotosPublicos() {
   const container = $('aus-votos-publicos');
   const lista     = $('aus-votos-candidatos');
-  if (!ausencias || ausencias.length === 0) { container.style.display = 'none'; return; }
+  if (!asistenciaActiva || !ausencias || ausencias.length === 0) { container.style.display = 'none'; return; }
 
   container.style.display = 'block';
   lista.innerHTML = '';

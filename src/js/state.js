@@ -14,6 +14,8 @@ var respondentes    = [];
 var respuestas      = [];
 var ausencias       = [];
 var debate          = [];
+var asistenciaActiva = true;
+var ajustesModeloDisponibles = false;
 var serverHasV2     = true;  // Detecta si _snapshot devuelve el campo `respuestas`
 var activeMode      = 'survey';
 var draftDirty      = false;
@@ -64,6 +66,10 @@ function showStatus(msg, kind = 'info', ms = 5000) {
 function applyData(data) {
   if (!data) return;
   serverHasV2    = ('respuestas' in data);
+  ajustesModeloDisponibles=typeof data.asistencia_activa==='boolean';
+  asistenciaActiva=data.asistencia_activa!==false;
+  const mtToggle=$('access-attendance-enabled');
+  if(mtToggle){mtToggle.checked=asistenciaActiva;mtToggle.disabled=!ajustesModeloDisponibles;}
   encuestaTitulo = data.titulo       || 'Cuestionario de viaje';
   schema         = data.schema       || [];
   proscontras    = data.proscontras  || [];

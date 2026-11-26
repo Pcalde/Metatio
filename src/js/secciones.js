@@ -9,8 +9,8 @@
 //   · Barra inferior fija: ← Anterior · «n de N» · Siguiente → · Enviar.
 //   · Condiciones de visibilidad por pregunta: q.config.mostrarSi =
 //     {qid, op: 'incluye'|'igual'|'alguno', valor, no?}. Se evalúan sobre el
-//     BORRADOR (readState()), solo sobre preguntas anteriores en el orden
-//     (así no hay ciclos). Las ocultas se conservan en el borrador pero se
+//     BORRADOR (readState()), sobre cualquier pregunta compatible
+//     siempre que no se introduzcan ciclos en las dependencias. Las ocultas se conservan en el borrador pero se
 //     excluyen del envío (collectAnswers).
 //   · Panel «Ver qué responde el grupo» bajo cada sección, plegado según el
 //     ajuste global persistido en localStorage (visible | plegado | esperar).
@@ -116,22 +116,48 @@ function syncSubmitBar() {
 }
 
 // ── Editor de condiciones («mostrar si…») ───────────────────────────────────
-// Construye un mini-formulario reutilizable: pregunta previa + operador +
-// valor (poblado con las opciones de aquella). `onlyBefore` limita la lista de
-// preguntas a las que van antes de `qid` en el orden (regla anti-ciclos).
+// El orden visual no determina las dependencias. El grafo incluye tanto las
+// reglas propias como la dependencia de cada pregunta respecto de su sección.
 function operadoresCondicion(q) {
   if (!q || q.config?.esEncabezado) return [];
   if (q.tipo === 'radio') return ['igual'];
-  if (q.tipo === 'voto-ponderado') return ['incluye', 'alguno'];
-  if (['checkbox', 'casas', 'probabilidad-opcion'].includes(q.tipo)) return ['incluye', 'alguno'];
+  if (['voto-ponderado','checkbox','casas','probabilidad-opcion'].includes(q.tipo)) return ['incluye','alguno'];
   return [];
 }
-function fuentesCondicion(schemaArr, currentQid, beforeIdx) {
-  const ci = beforeIdx ?? (currentQid ? schemaArr.findIndex(q => q.id === currentQid) : -1);
-  const target = schemaArr.find(q => q.id === currentQid);
-  return schemaArr.filter((q,i) => q.id !== currentQid && (ci < 0 || i < ci) &&
-    operadoresCondicion(q).length && (q.opciones || []).some(o => optVal(q,o)) &&
-    !(target?.config?.esEncabezado && _secNormNombre(target.config.seccion) === _secNormNombre(q.config?.seccion)));
+function reglasCondicion(raw) {
+  if (Array.isArray(raw)) return raw.filter(r=>r?.qid);
+  if (Array.isArray(raw?.rules)) return raw.rules.filter(r=>r?.qid);
+  return raw?.qid ? [raw] : [];
+}
+function dependenciasCondicion(q, arr) {
+  const cfg=q?.config||{};
+  const deps=reglasCondicion(cfg.mostrarSi).map(r=>r.qid);
+  if (!cfg.esEncabezado && cfg.seccion) {
+    const h=arr.find(x=>x.config?.esEncabezado && _secNormNombre(x.config.seccion||x.label)===_secNormNombre(cfg.seccion));
+    if(h) deps.push(h.id);
+  }
+  return deps;
+}
+function condicionDependeDe(arr, qid, depOn) {
+  const stack=[qid], seen=new Set();
+  while(stack.length){
+    const id=stack.pop();
+    if(id===depOn)return true;
+    if(seen.has(id))continue;
+    seen.add(id);
+    const q=arr.find(x=>x.id===id);
+    if(q)stack.push(...dependenciasCondicion(q,arr));
+  }
+  return false;
+}
+function cicloCondicion(arr, qid) {
+  const q=arr.find(x=>x.id===qid);
+  return !!q && dependenciasCondicion(q,arr).some(id=>condicionDependeDe(arr,id,qid));
+}
+function fuentesCondicion(arr, currentQid, beforeIdx) {
+  return arr.filter(q=>q.id!==currentQid && operadoresCondicion(q).length &&
+    (q.opciones||[]).some(o=>optVal(q,o)) &&
+    (!currentQid || !condicionDependeDe(arr,q.id,currentQid)));
 }
 function buildCondEditor(host, schemaArr, currentQid, initial, beforeIdx) {
   host.innerHTML = '';
@@ -148,20 +174,22 @@ function buildCondEditor(host, schemaArr, currentQid, initial, beforeIdx) {
   const selNeg = document.createElement('select'); selNeg.className = 'cond-neg';
   selNeg.innerHTML = '<option value="">si</option><option value="1">no</option>';
 
-  // Candidatas: preguntas ANTERIORES a `currentQid` en el orden (regla
-  // anti-ciclos). Con `currentQid` vacío (pregunta nueva → se añade al final)
-  // cualquier pregunta con opciones sirve. textarea/disponibilidad/horarios
-  // no tienen opciones, así que quedan fuera automáticamente.
   const candidates = fuentesCondicion(schemaArr, currentQid, beforeIdx);
   const note = document.createElement('small');
   note.className = 'cond-hint';
-  if (!candidates.length) note.textContent = 'No hay preguntas anteriores con opciones compatibles. Cambia la posición o añade primero una pregunta con opciones.';
-  else if (cur?.qid && !candidates.some(q => q.id === cur.qid)) note.textContent = 'La condición anterior ya no está disponible en esta posición. Elige otra o deja Sin condición.';
+  const targetIdx=beforeIdx ?? schemaArr.findIndex(q=>q.id===currentQid);
+  const refreshNote=()=>{
+    const src=schemaArr.find(q=>q.id===selQ.value);
+    if(!candidates.length) note.textContent='No hay preguntas con opciones compatibles que no generen una dependencia circular.';
+    else if(src && targetIdx>=0 && schemaArr.indexOf(src)>=targetIdx) note.textContent='La pregunta de origen está después. Al responderla, puede ser necesario volver a esta sección.';
+    else if(cur?.qid && !candidates.some(q=>q.id===cur.qid)) note.textContent='La condición anterior no está disponible: comprueba si genera un ciclo o si se eliminó su origen.';
+    else note.textContent='Puedes usar preguntas de cualquier sección, siempre que no formen un ciclo.';
+  };
   if (cur?.no) selNeg.value = '1';
 
   const fillQ = () => {
     selQ.innerHTML = '<option value="">Sin condición</option>' +
-      candidates.map(q => `<option value="${esc(q.id)}">${esc(q.label)}</option>`).join('');
+      candidates.map(q => `<option value="${esc(q.id)}">${esc(q.config?.seccion ? q.config.seccion + " · " + q.label : q.label)}</option>`).join('');
     if (cur && cur.qid && candidates.some(q => q.id === cur.qid)) selQ.value = cur.qid;
   };
   // 'alguno' admite una lista de valores; aquí se representa como «incluye
@@ -193,7 +221,7 @@ function buildCondEditor(host, schemaArr, currentQid, initial, beforeIdx) {
     const q = candidates.find(x => x.id === selQ.value) || null;
     const on = !!q;
     selOp.disabled = selVal.disabled = selNeg.disabled = !on;
-    fillOps(q); fillVals(q);
+    fillOps(q); fillVals(q); refreshNote();
   };
   selQ.addEventListener('change', sync);
   selOp.addEventListener('change', () => {
@@ -221,44 +249,19 @@ function buildCondEditor(host, schemaArr, currentQid, initial, beforeIdx) {
   };
 }
 
-// Valida una condición contra el esquema: la pregunta referida debe existir,
-// ir ANTES de la propia en el orden y tener opciones compatibles.
-// Devuelve null si es válida, o un mensaje de error legible.
+// Valida una condición contra el grafo real, no contra la posición visual.
 function validarMostrarSi(cond, schemaArr, selfId, beforeIdx) {
-  if (!cond || !cond.qid) return null; // sin condición = válido
-  const bi = beforeIdx == null
-    ? schemaArr.findIndex(q => q.id === selfId)
-    : beforeIdx;
+  if (!cond || !cond.qid) return null;
   const src = schemaArr.find(q => q.id === cond.qid);
   if (!src) return 'La pregunta de la condición ya no existe.';
-  const si = schemaArr.findIndex(q => q.id === src.id);
-  if (bi >= 0 && si >= bi) return `«${src.label}» debe ir antes de «${(schemaArr[bi] || {}).label || selfId}» en el orden.`;
+  if (condicionDependeDe(schemaArr,src.id,selfId)) return `«${src.label}» generaría una dependencia circular.`;
   if (!operadoresCondicion(src).length) return 'La pregunta de origen debe admitir opciones de selección, puntos, probabilidades o alojamientos.';
   if (!operadoresCondicion(src).includes(cond.op) && !(src.tipo === 'voto-ponderado' && cond.op === 'igual')) return 'Operador incompatible con la pregunta de origen.';
   const vals = (src.opciones || []).map(op => optVal(src, op));
   const list = Array.isArray(cond.valor) ? cond.valor : [cond.valor];
   if (!list.length) return 'Elige al menos un valor para la condición.';
-  for (const v of list) {
-    if (!vals.includes(String(v)))
-      return `El valor «${v}» no es una opción válida de «${src.label}».`;
-  }
+  for (const v of list) if (!vals.includes(String(v))) return `El valor «${v}» no es una opción válida de «${src.label}».`;
   return null;
-}
-
-// ¿La pregunta `qid` depende (directa o transitivamente) de `depOn`? Se usa
-// al reordenar: mover una pregunta por encima de su fuente rompería la regla
-// anti-ciclos («solo condiciones sobre preguntas anteriores»).
-function condicionDependeDe(schemaArr, qid, depOn) {
-  let cur = schemaArr.find(q => q.id === qid);
-  const seen = new Set();
-  while (cur && cur.config && cur.config.mostrarSi && cur.config.mostrarSi.qid) {
-    const next = cur.config.mostrarSi.qid;
-    if (next === depOn) return true;
-    if (seen.has(next)) return false; // cadena corrupta con ciclo: no decidir
-    seen.add(next);
-    cur = schemaArr.find(q => q.id === next);
-  }
-  return false;
 }
 
 // ── Visibilidad condicional ─────────────────────────────────────────────────
@@ -314,27 +317,23 @@ function _condDeSeccion(q) {
 // ¿Visible según su condición y el borrador de respuestas actual?
 // Las cadenas circulares o condiciones rotas se tratan como "visible"
 // (fallback seguro: no ocultar contenido por un error de datos).
-function esVisible(q, answers) {
-  const st0 = answers || readState().answers;
+function esVisible(q, answers, trail = new Set()) {
+  const st = answers || readState().answers;
+  if (!q) return true;
+  // Proteger también la dependencia heredada de sección antes de recursar.
+  if (trail.has(q.id)) return true;
+  const seen = new Set(trail); seen.add(q.id);
   const hSec = _condDeSeccion(q);
-  if (hSec && !esVisible(hSec, st0)) return false;     // toda la sección oculta
-  const cond = q && q.config && q.config.mostrarSi;
+  if (hSec && !esVisible(hSec, st, seen)) return false;
+  const cond = q.config?.mostrarSi;
   if (!cond || !cond.qid) return true;
-  const st = st0;                                      
-  const guard = st.__guard || (st.__guard = new Set());
-  if (guard.has(q.id)) return true;
-  guard.add(q.id);
-  try {
-    // La fuente puede estar condicionada a su vez: se evalúa en cascada.
-    const srcQ = schema.find(x => x.id === cond.qid);
-    if (srcQ && !esVisible(srcQ, st)) return false;
-    const ok = _condMatch(st[cond.qid], cond.op || 'incluye', cond.valor, srcQ && srcQ.tipo);
-    return cond.no ? !ok : ok;
-  } catch (e) {
-    return true;
-  } finally {
-    guard.delete(q.id);
-  }
+  const srcQ = schema.find(x => x.id === cond.qid);
+  if (srcQ && !esVisible(srcQ, st, seen)) return false;
+  const raw=st[cond.qid];
+  // Una respuesta de selección única todavía vacía no activa una rama negada.
+  if (raw == null || (srcQ?.tipo==='radio' && !(typeof raw==='object'?raw.estado:raw))) return false;
+  const ok = _condMatch(raw, cond.op || 'incluye', cond.valor, srcQ?.tipo);
+  return cond.no ? !ok : ok;
 }
 
 // Motivo legible por el que una pregunta está oculta (o '' si es visible).
@@ -553,8 +552,9 @@ function _applyMetaCardVisibility(cur, secs, answers) {
   if (propia) {
     // No desmontar el slider: su valor se lee al enviar desde cualquier página.
     // hidden + display evitan que otra regla de presentación revele la tarjeta.
-    propia.hidden = !isFirstSec;
-    if (isFirstSec) propia.style.removeProperty('display');
+    const show = isFirstSec && asistenciaActiva;
+    propia.hidden = !show;
+    if (show) propia.style.removeProperty('display');
     else propia.style.setProperty('display', 'none', 'important');
   }
   const participCard = $('participants-card');
@@ -563,7 +563,7 @@ function _applyMetaCardVisibility(cur, secs, answers) {
   if (ausCard) {
     // Sin respondentes la tarjeta nunca debe verse (dataset disponible lo fija
     // renderAusencias); con datos, solo aparece al final del cuestionario.
-    if (ausCard.dataset.available === '0') ausCard.style.display = 'none';
+    if (!asistenciaActiva || ausCard.dataset.available === '0') ausCard.style.display = 'none';
     else ausCard.style.display = isLastSec ? 'block' : 'none';
   }
 }

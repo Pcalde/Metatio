@@ -158,7 +158,7 @@ function collectAnswers() {
     result.values[q.id] = v;
   });
 
-  if (st.ausencias_predichas) {
+  if (asistenciaActiva && st.ausencias_predichas) {
     result.ausencias_predichas    = st.ausencias_predichas;
     result.prob_asistencia_propia = st.prob_asistencia_propia;
   }

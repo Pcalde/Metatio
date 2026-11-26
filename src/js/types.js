@@ -771,8 +771,8 @@ function getGroupTransportSnapshot(q, card) {
     }
     const estado = (typeof uAns === 'object') ? uAns.estado : String(uAns);
     const isDriver = estado === driverVal;
-    const isPassenger = !!estado && estado !== driverVal;
-    const plazas = isDriver ? (Number(uAns && uAns[capKey]) || (cs && cs.default) || 3) : 0;
+    const isPassenger = estado === 'necesito';
+    const plazas = isDriver ? Math.max(0,Number((uAns && uAns[capKey]) ?? 0)||0) : 0;
     const notaRuta = (uAns && typeof uAns === 'object' && uAns.notaRuta) ? String(uAns.notaRuta) : '';
     byUser.set(nombre, { nombre, isDriver, isPassenger, plazas, notaRuta, raw: uAns });
   };
@@ -792,7 +792,7 @@ function getGroupTransportSnapshot(q, card) {
         if (!entry || typeof entry !== 'object') return;
         const name = entry.nombre || entry.user || entry.usuario || entry.name;
         const ansObj = entry.respuestas || entry.datos || entry.answers || entry;
-        if (name) registerUserAnswer(name, ansObj);
+        if (name && DecisionModel.applicability(q,ansObj,schema)===1) registerUserAnswer(name,extractAnswer(ansObj,q));
       });
     } else if (typeof src === 'object') {
       Object.entries(src).forEach(([k, val]) => {
@@ -828,7 +828,7 @@ function getGroupTransportSnapshot(q, card) {
     byUser.set(myName, {
       nombre: myName,
       isDriver: curVal === driverVal,
-      isPassenger: !!curVal && curVal !== driverVal,
+      isPassenger: curVal === 'necesito',
       plazas: curPlazas,
       notaRuta: curNota,
     });
@@ -890,7 +890,7 @@ function renderTransportDynamicPanel(card, q) {
   const notaRow   = wrap.querySelector('.trans-nota-row');
   if (!matchHost) return;
 
-  if (!curVal) {
+  if (!curVal || curVal==='propio') {
     matchHost.innerHTML = '';
     if (notaRow) notaRow.style.display = 'none';
     return;
@@ -1581,8 +1581,8 @@ var TIPOS = {
       const cfg  = q.config || {};
       const min  = cfg.min ?? 10, max = cfg.max ?? 500, step = cfg.step ?? 10;
       const def  = cfg.default ?? Math.round((min + max) / 2);
-      const unit = cfg.unit ?? (q.id === 'precio' ? ' €' : '');
-      const supportsDual = cfg.dual !== false && (cfg.dual === true || q.id === 'precio' || String(unit).includes('€'));
+      const unit = cfg.unit ?? (DecisionModel.role(q)==='presupuesto' ? ' €' : '');
+      const supportsDual = cfg.dual !== false && DecisionModel.role(q)==='presupuesto';
 
       const display = div('price-display');
       const slider  = document.createElement('input');

@@ -53,7 +53,7 @@ function bindQuestionFields(prefix) {
   const sync = () => {
     const t=select.value;
     get('-opciones-wrap').style.display = OPTION_TYPES.includes(t) ? 'block':'none';
-    get('-slider-wrap').style.display = t==='slider'?'block':'none';
+    get('-slider-wrap').style.display = ['slider','presupuesto'].includes(t)?'block':'none';
     get('-horarios-wrap').style.display = t==='horarios'?'block':'none';
     get('-casas-mode').style.display = t==='probabilidad-opcion'?'block':'none';
   };
@@ -65,8 +65,11 @@ function bindQuestionFields(prefix) {
     get('-franjas-host').replaceChildren(); getFranjas=buildFranjasEditor(get('-franjas-host'), FRANJAS_HORARIAS); sync();
   }
   function read() {
-    const tipo=select.value; let opciones=[], config={};
-    if (OPTION_TYPES.includes(tipo)) {
+    const preset=select.value; const tipo=preset==='presupuesto'?'slider':preset==='transporte'?'radio':preset; let opciones=[], config={};
+    if (preset==='transporte') {
+      opciones=['llevo-coche|Llevo coche','necesito|Necesito que me lleven','propio|Me desplazo por mi cuenta'];
+      config={modelRole:'transporte',conditionalStepper:{when:'llevo-coche',key:'plazasLibres',label:'Plazas libres (sin contar al conductor):',min:0,max:8,default:3}};
+    } else if (OPTION_TYPES.includes(tipo)) {
       opciones=rows.map(x=>x.editor.read(tipo)).filter(Boolean);
       if (new Set(opciones.map(o=>optVal({tipo},o))).size !== opciones.length) throw Error('Hay opciones con nombres duplicados.');
     }
@@ -74,6 +77,8 @@ function bindQuestionFields(prefix) {
       config={min:Number(get('-min').value),max:Number(get('-max').value),step:Number(get('-step').value)};
       if (!Number.isFinite(config.min)||!Number.isFinite(config.max)||!(config.max>config.min)||!(config.step>0)) throw Error('Rango inválido: comprueba mínimo, máximo y paso.');
       config.default=(config.min+config.max)/2;
+      config.modelRole=preset==='presupuesto'?'presupuesto':'preferencia';
+      if(preset==='presupuesto'){if(config.min<0)throw Error('El presupuesto no puede ser negativo.');config.unit=' €';config.dual=true;}
     } else if (tipo==='horarios') {
       const franjas=getFranjas(); if (!franjas.length) throw Error('Define al menos una franja válida.');
       config={duracionIdeal:Math.max(1,Math.min(12,+get('-dur').value||3)),franjas};
@@ -188,8 +193,8 @@ function abrirAddPreguntaCondicionado(parentQ) {
 window.abrirAddPreguntaCondicionado = abrirAddPreguntaCondicionado;
 
 // Reconstruye el editor «mostrar solo si…» del formulario de pregunta nueva.
-// Sin `currentQid`: la pregunta se añadirá al final, así que puede depender
-// de cualquier pregunta existente con opciones. Se expone en host._getCond().
+// Se utiliza el esquema completo; la posición solo sirve para avisar de
+// dependencias hacia preguntas posteriores. Se expone en host._getCond().
 function addQInsertAt(arr, beforeQid, secElegida) {
   if (beforeQid) { const i = arr.findIndex(q => q.id === beforeQid); if (i >= 0) return i; }
   if (secElegida) {
@@ -250,9 +255,8 @@ async function submitNewQuestion() {
   const pregunta = { id, tipo, label, opciones, config };
 
   // Condición «mostrar solo si…» del editor de #add-q-cond-host. Se valida
-  // sobre el esquema «virtual» con la pregunta ya colocada en su posición:
-  // así la regla anti-ciclos («la fuente debe ir antes») se respeta también
-  // cuando la pregunta nueva se inserta en medio del cuestionario.
+  // sobre el esquema «virtual» con la pregunta ya colocada en su posición.
+  // La validación comprueba dependencias, independientemente del orden.
   const condHost = $('add-q-cond-host');
   if (condHost && typeof condHost._getCond === 'function') {
     const cond = condHost._getCond();
