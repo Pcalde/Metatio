@@ -337,7 +337,7 @@
           <label for="access-invite-url">Enlace de invitación</label><input id="access-invite-url" readonly placeholder="Aún no has generado un enlace">
           <button type="button" class="btn-link-like" id="access-copy-invite">Copiar enlace</button><button type="button" class="btn-link-like" id="access-revoke-invites">Revocar invitaciones</button>
         </section>
-        <section class="mt-access-section"><h3>Administración</h3><button type="button" class="btn-propose" id="access-archived">Ver preguntas archivadas</button><div id="access-archived-list"></div>
+        <section class="mt-access-section"><h3>Administración</h3><label><input type="checkbox" id="access-attendance-enabled" checked disabled> Estimar probabilidad de asistencia y ausencias</label><p class="trips-note">Puedes desactivarlo y volver a activarlo sin borrar las estimaciones anteriores.</p><button type="button" class="btn-propose" id="access-archived">Ver preguntas archivadas</button><div id="access-archived-list"></div>
           <label for="access-next-organizer">Nuevo organizador</label><select id="access-next-organizer"><option value="">Selecciona un participante</option></select>
           <button type="button" class="btn-propose" id="access-transfer">Transferir organización…</button>
         </section>
@@ -484,6 +484,8 @@
               <option value="radio">Selección única (Radio)</option>
               <option value="casas">Alojamientos (selección múltiple)</option>
               <option value="slider">Rango numérico (Slider)</option>
+              <option value="presupuesto">Presupuesto por persona (€)</option>
+              <option value="transporte">Transporte y plazas de coche</option>
               <option value="horarios">Horarios por franjas (quedadas)</option>
               <option value="disponibilidad">Calendario y fechas (Disponibilidad)</option>
               <option value="textarea">Texto libre</option>
@@ -640,31 +642,32 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="src/js/config.js"></script>
 <script src="src/js/shared/format.js"></script>
-<script src="src/js/shared/esquema.js?v=8"></script>
+<script src="src/js/shared/esquema.js?v=11"></script>
+<script src="src/js/engine/decisionModel.js?v=11"></script>
 <script src="src/js/crypto.js"></script>
-<script src="src/js/api.js?v=7"></script>
-<script src="src/js/state.js?v=3"></script>
+<script src="src/js/api.js?v=11"></script>
+<script src="src/js/state.js?v=11"></script>
 <script src="src/js/participants.js"></script>
 <script src="src/js/sesion.js?v=5"></script>
 <script src="src/js/perfil.js?v=6"></script>
 <script src="src/js/profileBackup.js?v=7"></script>
-<script src="src/js/access.js?v=7"></script>
+<script src="src/js/access.js?v=11"></script>
 <script src="src/js/globalProfile.js?v=7"></script>
 <script src="src/js/dashboard.js?v=7"></script>
-<script src="src/js/types.js?v=8"></script>
+<script src="src/js/types.js?v=11"></script>
 <script src="src/js/optionEditor.js?v=8"></script>
-<script src="src/js/questions.js?v=10.2"></script>
+<script src="src/js/questions.js?v=11.1"></script>
 <script src="src/js/proscontras.js"></script>
-<script src="src/js/ausencias.js?v=10.2"></script>
-<script src="src/js/forms.js?v=10.2"></script>
-<script src="src/js/answers.js?v=10.2"></script>
+<script src="src/js/ausencias.js?v=11"></script>
+<script src="src/js/forms.js?v=11.1"></script>
+<script src="src/js/answers.js?v=11"></script>
 <script src="src/js/engine/probabilidades.js"></script>
-<script src="src/js/engine/optimizador.js?v=8"></script>
-<script src="src/js/engine/index.js?v=10.3"></script>
-<script src="src/js/ui/consensusView.js?v=10.3"></script>
-<script src="src/js/ui/reportajePDF.js"></script>
-<script src="src/js/secciones.js?v=10.2"></script>
-<script src="src/js/arbol.js?v=10.2"></script>
+<script src="src/js/engine/optimizador.js?v=11"></script>
+<script src="src/js/engine/index.js?v=11"></script>
+<script src="src/js/ui/consensusView.js?v=11"></script>
+<script src="src/js/ui/reportajePDF.js?v=11"></script>
+<script src="src/js/secciones.js?v=11.1"></script>
+<script src="src/js/arbol.js?v=11.1"></script>
 <script src="src/js/mapa.js?v=8"></script>
 <script src="src/js/cuenta.js?v=5"></script>
 <script src="src/js/debate.js"></script>
