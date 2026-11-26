@@ -55,7 +55,7 @@ function div(cls, txt) {
     .trans-chip:hover { border-color:var(--muted); }
     .trans-chip small { font-size:0.7rem; opacity:0.75; }
     .trans-chip[data-pref="1"] { background:rgba(16,185,129,0.15); border-color:#10b981; color:#10b981; font-weight:600; }
-    .trans-chip[data-pref="-1"] { background:rgba(239,68,68,0.14); border-color:#ef4444; color:#ef4444; text-decoration:line-through; }
+    .trans-chip[data-pref="-1"] { background:rgba(239,68,68,0.14); border-color:#ef4444; color:#ef4444;  }
     .trans-nota-row { display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-top:2px; }
     .trans-nota-inp { flex:1; min-width:180px; font-size:0.82rem; padding:5px 8px; border-radius:6px; border:1px solid var(--border); background:transparent; color:inherit; }
     .trans-add-person { display:inline-flex; gap:4px; align-items:center; }
@@ -151,125 +151,15 @@ function appendMetaBadges(targetEl, rawOp) {
 var lastHorariosRange = null;
 
 function addGeoFieldsToDrawer(drawerOrHost, rawOp) {
-  const g = rawOp && typeof rawOp === 'object' ? rawOp.geo : null;
-  let geoTxt = '';
-  let initialCoords = null;
-
-  if (typeof g === 'string') {
-    geoTxt = g;
-    initialCoords = parseCoordStr(g);
-  } else if (g && typeof g === 'object') {
-    geoTxt = String(g.texto || '');
-    const lat = Number(g.lat), lng = Number(g.lng);
-    if (isFinite(lat) && isFinite(lng) && (lat !== 0 || lng !== 0)) {
-      initialCoords = { lat, lng };
-      if (!geoTxt) geoTxt = `${lat},${lng}`;
-    }
-  }
-
-  const geoHost = div('opt-edit-field');
-  geoHost.style.cssText = 'flex:2;min-width:200px';
-  geoHost.innerHTML = `
-    <label>📍 Destino para el mapa</label>
-    <input type="text" class="inp-eo-geo" value="${esc(geoTxt)}" placeholder="Calle, ciudad o coordenadas «40.4168,-3.7038»">
-    <div class="geo-preview" style="display:none"></div>
-    <div style="display:flex;gap:6px;margin-top:6px">
-      <button type="button" class="btn-pc btn-geo-search">🔎 Buscar en el mapa</button>
-      <span class="geo-status" style="font-size:0.75rem;color:var(--muted);align-self:center"></span>
-    </div>
-  `;
-
-  const gridTarget = (drawerOrHost && typeof drawerOrHost.querySelector === 'function' && drawerOrHost.querySelector('.opt-edit-grid'))
-    || drawerOrHost;
-  if (gridTarget && typeof gridTarget.appendChild === 'function') {
-    gridTarget.appendChild(geoHost);
-  }
-
-  const inpGeo    = geoHost.querySelector('.inp-eo-geo');
-  const prev      = geoHost.querySelector('.geo-preview');
-  const status    = geoHost.querySelector('.geo-status');
-  const btnSearch = geoHost.querySelector('.btn-geo-search');
-  let lastCoords  = initialCoords;
-  let searchAbort = null;
-  let lastSearchTs = 0;
-
-  const showPrev = c => {
-    lastCoords = c;
-    prev.style.display = 'block';
-    const orig = puntoPartida();
-    const distTxt = orig ? `<b>${fmtKm(haversineKm(orig, c))}</b> desde el punto de partida · ` : '';
-    prev.innerHTML = distTxt +
-      `<a href="https://www.openstreetmap.org/?mlat=${c.lat}&mlon=${c.lng}#map=15/${c.lat}/${c.lng}" target="_blank" rel="noopener">${c.lat.toFixed(4)}, ${c.lng.toFixed(4)} ↗</a>`;
-  };
-  const hidePrev = () => { lastCoords = null; prev.style.display = 'none'; };
-
-  if (initialCoords) showPrev(initialCoords);
-
-  inpGeo.addEventListener('input', () => {
-    const c = parseCoordStr(inpGeo.value);
-    if (c) showPrev(c); else hidePrev();
-  });
-
-  const doSearch = async () => {
-    const q = inpGeo.value.trim();
-    if (!q) { status.textContent = 'Escribe algo que buscar'; return; }
-
-    const direct = parseCoordStr(q);
-    if (direct) {
-      showPrev(direct);
-      status.innerHTML = '<i class="fa-solid fa-check"></i> Coordenadas válidas';
-      return;
-    }
-
-    const now = Date.now();
-    if (now - lastSearchTs < 1000) {
-      status.textContent = 'Espera un segundo…';
-      return;
-    }
-    lastSearchTs = now;
-
-    if (searchAbort) searchAbort.abort();
-    searchAbort = new AbortController();
-
-    btnSearch.disabled = true;
-    status.textContent = 'Buscando…';
-    try {
-      const res = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(q), {
-        headers: { 'Accept-Language': 'es' },
-        signal: searchAbort.signal,
-      });
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      const arr = await res.json();
-      if (arr && arr.length) {
-        const c = { lat: parseFloat(arr[0].lat), lng: parseFloat(arr[0].lon) };
-        inpGeo.value = arr[0].display_name;
-        showPrev(c);
-        status.innerHTML = '<i class="fa-solid fa-check"></i> Encontrado';
-      } else {
-        hidePrev();
-        status.textContent = '✗ Sin resultados';
-      }
-    } catch (e) {
-      if (e && e.name === 'AbortError') return;
-      status.textContent = '✗ Error de red';
-    } finally {
-      btnSearch.disabled = false;
-    }
-  };
-
-  btnSearch.addEventListener('click', e => {
-    e.preventDefault(); e.stopPropagation();
-    doSearch();
-  });
-
-  const getGeo = () => {
-    if (lastCoords) return Object.assign({ texto: inpGeo.value.trim() }, lastCoords);
-    const c = parseCoordStr(inpGeo.value);
-    if (c) return Object.assign({ texto: inpGeo.value.trim() }, c);
-    const t = inpGeo.value.trim();
-    return t ? { texto: t } : null;
-  };
-  return { getGeo, hidePrev };
+  const raw=rawOp&&typeof rawOp==='object'?rawOp.geo:null;
+  const host=div('opt-edit-field mt-option-geo');host.style.cssText='flex:2;min-width:0';
+  const title=document.createElement('label');title.textContent='Destino para el mapa (opcional)';host.append(title);
+  const body=div();host.append(body);
+  const picker=locationPicker(body);const coords=geoDeOp(rawOp);
+  if(coords)picker.write({...coords,texto:typeof raw==='string'?raw:raw?.texto||''});
+  else if(raw)picker.writeText(typeof raw==='string'?raw:raw.texto||'');
+  const target=drawerOrHost.querySelector?.('.opt-edit-grid')||drawerOrHost;target.append(host);
+  return {getGeo(){const p=picker.read();if(p)return p;const t=picker.text();return t?{texto:t}:null;},hidePrev(){picker.reset();}};
 }
 
 function createOptionCrudControls(item, q, rawOp) {
@@ -764,7 +654,7 @@ function getGroupTransportSnapshot(q, card) {
   const registerUserAnswer = (nombreRaw, ans) => {
     const nombre = String(nombreRaw || '').trim();
     if (!nombre) return;
-    const uAns = (ans && typeof ans === 'object' && qid in ans) ? ans[qid] : ans;
+    const uAns = (ans && typeof ans === 'object' && !('estado' in ans) && qid in ans) ? ans[qid] : ans;
     if (uAns == null) {
       if (!byUser.has(nombre)) byUser.set(nombre, { nombre, isDriver: false, isPassenger: false, plazas: 0, notaRuta: '' });
       return;
@@ -848,7 +738,6 @@ function renderTransportDynamicPanel(card, q) {
   const cs = card.state.stepperCfg;
   const wrap = card.querySelector('.trans-dynamic-wrap');
   if (!wrap) return;
-  if(q.config?.routeStudy){wrap.hidden=true;wrap.style.display='none';card.state.routeFields?.refresh();return;}
 
   const checked = card.querySelector('input[type=radio]:checked');
   const curVal  = checked ? checked.value : null;
@@ -857,7 +746,7 @@ function renderTransportDynamicPanel(card, q) {
   const balBar = wrap.querySelector('.trans-balance-bar');
   if (balBar) {
     const net = snap.totalSeats - snap.passengers.length;
-    let badgeCls = 'ok', badgeTxt = `<i class="fa-solid fa-check"></i> Cubierto (${net >= 0 ? '+' + net : net} plazas)`;
+    let badgeCls = 'ok', badgeTxt = `<i class="fa-solid fa-check"></i> Plazas suficientes (${net >= 0 ? '+' + net : net} plazas)`;
     if (snap.drivers.length === 0 && snap.passengers.length > 0) {
       badgeCls = 'err'; badgeTxt = `⚠️ Faltan ${snap.passengers.length} plazas (0 coches)`;
     } else if (net < 0) {
@@ -871,7 +760,7 @@ function renderTransportDynamicPanel(card, q) {
     const colorErr    = css.getPropertyValue('--err').trim();
     const colorStar   = css.getPropertyValue('--star').trim();
     const driversColor    = snap.drivers.length > 0                  ? colorOK : colorWarn;
-    const seatsColor      = snap.totalSeats > snap.passengers.length ? colorOK : colorErr;
+    const seatsColor      = snap.totalSeats >= snap.passengers.length ? colorOK : colorErr;
     const passengersColor = snap.passengers.length > snap.totalSeats ? colorWarn : colorStar;
 
     balBar.innerHTML = `
@@ -887,6 +776,12 @@ function renderTransportDynamicPanel(card, q) {
     `;
   }
 
+  if(q.config?.routeStudy){
+    wrap.hidden=false;wrap.style.display='flex';
+    wrap.querySelector('.trans-match-host').hidden=true;
+    wrap.querySelector('.trans-nota-row').style.display='none';
+    card.state.routeFields?.refresh(snap);return;
+  }
   const matchHost = wrap.querySelector('.trans-match-host');
   const notaRow   = wrap.querySelector('.trans-nota-row');
   if (!matchHost) return;
@@ -930,8 +825,8 @@ function renderTransportDynamicPanel(card, q) {
     ? '<i class="fa-solid fa-taxi" style="color: rgb(252, 255, 47); margin-right:6px;"></i> ¿A quién llevas en tu coche?'
     : '<i class="fa-solid fa-car" style="color: rgb(252, 255, 47); margin-right:6px;"></i> ¿En qué coche prefieres ir?';
   const subTxt = isDriver
-    ? 'Pulsa para marcar a quién te viene de paso llevar (<i class="fa-solid fa-star"></i> Preferido) o evitar (<i class="fa-solid fa-xmark"></i>).'
-    : 'Pulsa sobre un conductor para pedir ir en su coche (<i class="fa-solid fa-star"></i> Preferido) o evitar (<i class="fa-solid fa-xmark"></i>).';
+    ? 'Pulsa para marcar a quién te viene de paso llevar (<i class="fa-solid fa-star"></i> Preferido) o prefiero no viajar juntos (<i class="fa-solid fa-minus"></i>).'
+    : 'Pulsa sobre un conductor para pedir ir en su coche (<i class="fa-solid fa-star"></i> Preferido) o prefiero no viajar juntos (<i class="fa-solid fa-minus"></i>).';
 
   matchHost.innerHTML = `
     <div class="trans-pref-box">
@@ -967,7 +862,7 @@ function renderTransportDynamicPanel(card, q) {
         const prefix = s === 1
           ? '<i class="fa-solid fa-star chip-star"></i> '
           : s === -1
-            ? '<i class="fa-solid fa-xmark chip-x"></i> '
+            ? '<i class="fa-solid fa-minus chip-x"></i> '
             : '';
 
         let meta = '';
@@ -1273,13 +1168,9 @@ function parseCoordStr(s) {
 
 function geoDeOp(op) {
   if (!op || typeof op !== 'object' || !op.geo) return null;
-  const g = op.geo;
-  if (typeof g === 'string') return parseCoordStr(g);
-  const lat = Number(g.lat), lng = Number(g.lng);
-  if (isFinite(lat) && isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180 && (lat !== 0 || lng !== 0)) {
-    return { lat, lng };
-  }
-  return null;
+  const g=op.geo;
+  if(typeof g==='string')return parseCoordStr(g);
+  return RouteStudy.point({lat:g.lat,lng:g.lng??g.lon})||parseCoordStr(g.texto||'');
 }
 
 function haversineKm(a, b) {
@@ -1747,7 +1638,7 @@ var TIPOS = {
         });
         card.state.notaRutaInp = notaInp;
         card.appendChild(dynWrap);
-        if(q.config?.routeStudy){dynWrap.hidden=true;card.state.routeFields=buildRouteAnswerFields(card,q);}
+        if(q.config?.routeStudy){card.state.routeFields=buildRouteAnswerFields(card,q);}
         renderTransportDynamicPanel(card, q);
       }
       card.appendChild(createAddOptForm(q));
@@ -1780,7 +1671,7 @@ var TIPOS = {
       const estado = typeof v === 'object' ? v.estado : v;
 
       if (cs && typeof v === 'object') {
-        card.state.routeFields?.write(v.ruta ? {...v.ruta,afinidades:{...(v.prefPasajeros||{}),...(v.prefCoches||{}),...(v.ruta.afinidades||{})}} : null);
+        card.state.routeFields?.write({...v.ruta,afinidades:v.ruta?.afinidades??{...(v.prefPasajeros||{}),...(v.prefCoches||{})}});
         card.state.prefPasajeros = (v.prefPasajeros && typeof v.prefPasajeros === 'object')
           ? Object.assign({}, v.prefPasajeros) : {};
         card.state.prefCoches = (v.prefCoches && typeof v.prefCoches === 'object')

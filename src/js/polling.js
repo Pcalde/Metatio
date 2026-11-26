@@ -88,7 +88,9 @@ function applyPollUpdate(data) {
     syncSchemaToDOM();
     if (typeof refreshNewQuestionConditions === 'function') refreshNewQuestionConditions();
   }
+  if((schemaChanged||respChanged)&&typeof refreshMapMarkers==='function'&&_mapaInstance&&!$('map-modal-backdrop')?.hidden&&!document.querySelector('.mt-map-fix'))refreshMapMarkers();
   if (schemaChanged || pcChanged) refreshAllPC();
+  if((schemaChanged||respChanged)&&typeof refreshTransportCards==='function')refreshTransportCards();
   if (typeof renderAusencias === 'function') renderAusencias();
   if (schemaChanged || respChanged || pcChanged) {
     if (activeMode === 'consensus'    && typeof renderResultados === 'function')             renderResultados();

@@ -166,10 +166,13 @@ function collectAnswers() {
 }
 
 function validarRespuestas() {
+  const draft=readState().answers;
   for (const q of schema) {
+    if(typeof esVisible==='function'&&!esVisible(q,draft))continue;
     const card = cardFor(q.id);
     if (!card) continue;
 
+    if(q.config?.routeStudy){const v=draft[q.id];if(v&&(v.estado==='necesito'||v.estado===getRadioStepperConfig(q)?.when)){const a=v.ruta||{},ws=[a,...(a.franjas||[])];if(ws.every(w=>w.desde&&w.hasta)&&!RouteStudy.availability(a))return `${q.label}: revisa las franjas; la hora ideal debe pertenecer a alguna de ellas.`;}}
     if (q.tipo === 'disponibilidad') {
       const malo = TIPOS.disponibilidad.read(card, q).rangos.find(r => r.desde && r.hasta && r.hasta < r.desde);
       if (malo) return `Rango de fechas inválido (${malo.desde} → ${malo.hasta}): el fin no puede ser anterior al inicio.`;
