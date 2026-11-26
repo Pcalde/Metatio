@@ -118,14 +118,7 @@ function buildDecisionStudyCard(s){
   const add=t=>{const p=document.createElement('p');p.textContent=t;p.style.marginTop='8px';card.appendChild(p);};
   if(s.status==='no_aplicable'){add('No aplicable: ningún participante pertenece a esta rama.');return card;}
   if(s.transport){const t=s.transport;add(`${s.status==='factible'?'Capacidad factible':s.status==='infactible'?'Capacidad insuficiente':'Capacidad global indeterminada'} · ${t.drivers.length} coches · ${t.seats} plazas libres · ${t.passengers.length} necesitan plaza · ${t.independent.length} por su cuenta.`);add(`Balance declarado: ${t.balance>=0?'+':''}${t.balance} plazas. No comprueba trayectos, horarios ni afinidades.`);if(t.unknown.length)add('Datos de transporte incompletos: '+t.unknown.join(', '));
-    if(s.route){const r=s.route;add('Estudio de recogidas · estimación en línea recta, no distancias por carretera.');
-      if(r.reason)add(r.reason+(r.missing?.length?' '+r.missing.join(', '):''));
-      else {add(`Desvío por coche: como máximo ${n(r.maxKm)} km y ${n(r.maxPct)} % del trayecto directo. Velocidad estimada: ${n(r.speed)} km/h.`);
-        if(r.truncated)add('Búsqueda limitada: mejor propuesta encontrada, sin garantía de óptimo.');
-        if(s.missing||s.pending||s.unknown)add('Propuesta parcial: faltan respuestas o determinar ramas.');
-        for(const car of r.routes){add(`${car.conductor}: ${car.salida} → ${car.llegada} · ${n(car.km)} km estimados (+${n(car.extra)} km) · ${car.pickups.length?car.pickups.map(p=>p.nombre+' '+p.hora).join(' → '):'sin recogidas'}`);}
-        add(r.unassigned.length?'Sin plaza compatible en el modelo: '+r.unassigned.join(', '):'Todos los pasajeros con datos evaluados tienen una recogida estimada.');}
-    }}
+    if(s.route){card.appendChild(buildRouteStudyVisual(s));}}
   else if(s.budget){add(`Mediana declarada: ${n(s.budget.median)}${s.kind==='presupuesto'?' €':''}.`);if(s.kind==='presupuesto')add(`Tope común de quienes han respondido: ${n(s.budget.commonCap)} € por persona. No equivale al coste del plan.`);}
   else if(s.dates){add(`${s.dates.known} participantes con días concretos. ${s.kind==='horarios'?'Coincidencia de días, no necesariamente de franjas.':'Disponibilidad por día, no ventanas completas.'}`);for(const d of s.dates.days.slice(0,10))add(`${fmtShortDate(d.date)} · ${d.count} disponibles`);}
   else if(s.options){for(const o of s.options)add(`${o.label}: ${o.mean==null?'sin valoraciones':s.prob?n(100*o.mean)+'% de media · '+n(o.sum)+' suma de probabilidades':s.points?n(o.sum)+' puntos':n(o.sum)+' selecciones'} (${o.count} respuestas evaluadas)`);}
@@ -951,6 +944,7 @@ function buildAnalyticalCard(q, idx, myAns, options={}) {
     if(study?.transport)card.appendChild(buildTransportVisual(study));
     return card;
   }
+  if(q.config?.routeStudy){const actual=DecisionModel.studies(schema,respuestas,respondentes).find(x=>x.qid===q.id);if(actual?.transport)card.appendChild(buildTransportVisual(actual));}
   if(!applicable){const note=div();note.textContent="No aplica o falta responder a la condición de origen. Los resultados son del grupo al que sí aplica.";card.appendChild(note);card.querySelectorAll("button,input,select,textarea").forEach(el=>el.disabled=true);}
   return card;
 }
@@ -1479,7 +1473,7 @@ function buildRadioConsensus(card, q, myVal) {
     const entry = counts.get(est);
     if (entry) {
       const extra = (cs && typeof v === 'object' && v[cs.key || 'plazasLibres']) ? Number(v[cs.key || 'plazasLibres']) : 0;
-      const prefsObj = (typeof v === 'object') ? (v.prefPasajeros || v.prefCoches || null) : null;
+      const prefsObj = (!q.config?.routeStudy && typeof v === 'object') ? (v.prefPasajeros || v.prefCoches || null) : null;
       const favs = prefsObj ? Object.entries(prefsObj).filter(([, s]) => Number(s) > 0).map(([k]) => k) : [];
       entry.users.push({ nombre: r.nombre, extra, favs });
       entry.extraSum += extra;
