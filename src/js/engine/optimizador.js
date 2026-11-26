@@ -150,7 +150,6 @@ function cruzarHorariosPareja(vA, vB, diasRango, durH, franjas) {
 
 // ── 2c. EVALUADOR UNIFICADO PARETO DE PROBABILIDAD POR OPCIÓN (§4, §5, §6 y §7) ──
 function checkTemporalDriftMotor(qid, currentEMap) {
-  if (typeof localStorage === 'undefined') return {};
   const eid = (typeof root.user !== 'undefined' && root.user && root.user.eid) ? root.user.eid : 'default';
   const key = `viajes:prob_snap:${eid}:${qid}`;
   const now = Date.now();
@@ -158,6 +157,7 @@ function checkTemporalDriftMotor(qid, currentEMap) {
   const drifts = {};
 
   try {
+    if (typeof localStorage === 'undefined') return {};
     const raw = localStorage.getItem(key);
     if (!raw) {
       localStorage.setItem(key, JSON.stringify({ ts: now, eMap: currentEMap }));
