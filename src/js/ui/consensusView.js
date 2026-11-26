@@ -86,8 +86,7 @@ function buildDecisionStudyCard(s){
   card.innerHTML=`<div class="card-title">${esc(s.label)}</div><p style="color:var(--muted);font-size:.8rem">${esc(s.section?s.section+' · ':'')}${label}${s.conditional?' · Condicional':''} · ${s.answered}/${s.applicable} aplicables con respuesta · ${s.excluded} no aplican · ${s.unknown} rama desconocida · ${s.pending} sin envío</p>`;
   const add=t=>{const p=document.createElement('p');p.textContent=t;p.style.marginTop='8px';card.appendChild(p);};
   if(s.status==='no_aplicable'){add('No aplicable: ningún participante pertenece a esta rama.');return card;}
-  if(s.transport){const t=s.transport;add(`${s.status==='factible'?'Capacidad factible':s.status==='infactible'?'Capacidad insuficiente':'Capacidad global indeterminada'} · ${t.drivers.length} coches · ${t.seats} plazas libres · ${t.passengers.length} necesitan plaza · ${t.independent.length} por su cuenta.`);add(`Balance declarado: ${t.balance>=0?'+':''}${t.balance} plazas. No comprueba trayectos, horarios ni afinidades.`);if(t.unknown.length)add('Datos de transporte incompletos: '+t.unknown.join(', '));
-    if(s.route){card.appendChild(buildRouteStudyVisual(s));}}
+  if(s.transport){card.appendChild(buildTransportVisual(s));}
   else if(s.budget){add(`Mediana declarada: ${n(s.budget.median)}${s.kind==='presupuesto'?' €':''}.`);if(s.kind==='presupuesto')add(`Tope común de quienes han respondido: ${n(s.budget.commonCap)} € por persona. No equivale al coste del plan.`);}
   else if(s.dates){add(`${s.dates.known} participantes con días concretos. ${s.kind==='horarios'?'Coincidencia de días, no necesariamente de franjas.':'Disponibilidad por día, no ventanas completas.'}`);for(const d of s.dates.days.slice(0,10))add(`${fmtShortDate(d.date)} · ${d.count} disponibles`);}
   else if(s.options){for(const o of s.options)add(`${o.label}: ${o.mean==null?'sin valoraciones':s.prob?n(100*o.mean)+'% de media · '+n(o.sum)+' suma de probabilidades':s.points?n(o.sum)+' puntos':n(o.sum)+' selecciones'} (${o.count} respuestas evaluadas)`);}
@@ -492,13 +491,13 @@ function buildFeasibleSolutionsSection(soluciones, diagnosticos, topo, scopeLabe
 
       let prefBadge = '';
       if (prefCond > 0 && prefPax > 0) { // lo he anonimizado por inseguridad: no sé si la gente querrá saber o que sepan
-        prefBadge = ` <span class="sol-badge ok" style="font-size:0.68rem;padding:1px 6px" title="Conductor y pasajero se eligieron mutuamente"><i class="fa-solid fa-people-pulling"></i> Asignado</span>`;
+        prefBadge = ` <span class="sol-badge ok" style="font-size:0.68rem;padding:1px 6px" title="Asignación propuesta"><i class="fa-solid fa-people-pulling"></i> Asignado</span>`;
       } else if (prefPax > 0) {
-        prefBadge = ` <span class="sol-badge ok" style="font-size:0.68rem;padding:1px 6px" title="${esc(paxName)} pidió ir en el coche de ${esc(conductorName)}"><i class="fa-solid fa-people-pulling"></i> Asignado</span>`;
+        prefBadge = ` <span class="sol-badge ok" style="font-size:0.68rem;padding:1px 6px" title="Asignación propuesta"><i class="fa-solid fa-people-pulling"></i> Asignado</span>`;
       } else if (prefCond > 0) {
-        prefBadge = ` <span class="sol-badge ok" style="font-size:0.68rem;padding:1px 6px" title="${esc(conductorName)} pidió llevar a ${esc(paxName)}"><i class="fa-solid fa-people-pulling"></i> Asignado</span>`;
+        prefBadge = ` <span class="sol-badge ok" style="font-size:0.68rem;padding:1px 6px" title="Asignación propuesta"><i class="fa-solid fa-people-pulling"></i> Asignado</span>`;
       } else if (prefCond < 0 || prefPax < 0) {
-        prefBadge = ` <span class="sol-badge err" style="font-size:0.68rem;padding:1px 6px" title="Asignado por falta de plazas alternativas pese a preferencia negativa"><i class="fa-solid fa-link"></i> Forzado por plazas</span>`;
+        prefBadge = ` <span class="sol-badge" style="font-size:0.68rem;padding:1px 6px"><i class="fa-solid fa-link"></i> Asignado</span>`;
       }
 
       const notaHtml = notaPax ? ` <small style="color:var(--muted)">(${esc(notaPax)})</small>` : '';
@@ -507,16 +506,18 @@ function buildFeasibleSolutionsSection(soluciones, diagnosticos, topo, scopeLabe
 
     const renderTablaViajes = (viajes, titulo, badgeCls) => {
       if (!viajes || !viajes.length) return `<div class="muted-note">Sin desplazamientos en coche requeridos.</div>`;
+      const groups=new Map();viajes.forEach(v=>{if(!groups.has(v.fecha))groups.set(v.fecha,[]);groups.get(v.fecha).push(v);});
+      const visuals=[...groups].map(([date,cars])=>`<div class="mt-classic-day"><b><i class="fa-solid fa-calendar-day"></i> ${fmtShortDate(date)}</b>${cars.map(v=>{const used=(v.pasajeros||[]).length,cap=Math.max(used,v.plazasTotales??mapViajeros.get(v.conductor)?.plazasLibres??used);return `<div class="mt-classic-car"><span><i class="fa-solid fa-car-side"></i> <b>${esc(v.conductor)}</b></span><div class="mt-seats">${Array.from({length:Math.min(40,cap)},(_,i)=>`<i class="fa-solid fa-person ${i<used?'used':''}" title="${i<used?'Ocupada':'Libre'}"></i>`).join('')} <small>${used}/${cap}</small></div><div class="mt-classic-pax">${(v.pasajeros||[]).map(n=>`<span><i class="fa-solid fa-person"></i> ${esc(n)}</span>`).join('')||'<small>Sin pasajeros</small>'}</div></div>`;}).join('')}</div>`).join('');
       return `
         <div class="sol-log-box">
-          <div class="sol-log-title ${badgeCls}">${titulo}</div>
+          <div class="sol-log-title ${badgeCls}">${titulo}</div>${visuals}<details class="mt-work-details"><summary>Tabla de asignaciones y notas</summary><div class="mt-work-chart">
           <table class="sol-log-table">
             <thead><tr><th>Fecha</th><th>Conductor (Plazas)</th><th>Pasajeros asignados y afinidad</th></tr></thead>
             <tbody>
               ${viajes.map(v => {
                 const dObj  = mapViajeros.get(v.conductor);
                 const notaD = (v.notaConductor || (dObj && dObj.notaRuta))
-                  ? ` <div style="font-size:0.72rem;color:var(--muted)"><i class="fa-solid fa-map-pin"style="color:var(--accent-600, #491209); font-size:0.85em; margin-right:0.35em; vertical-align:-0.05em;"></i> ${esc(v.notaConductor || dObj.notaRuta)}</div>`
+                  ? ` <div style="font-size:0.72rem;color:var(--muted)"><i class="fa-solid fa-map-pin" style="color:var(--accent-600, #491209); font-size:0.85em; margin-right:0.35em; vertical-align:-0.05em;"></i> ${esc(v.notaConductor || dObj.notaRuta)}</div>`
                   : '';
                 const ocupadas = v.pasajeros ? v.pasajeros.length : 0;
                 const totales  = v.plazasTotales ?? (dObj ? dObj.plazasLibres : ocupadas);
@@ -530,7 +531,7 @@ function buildFeasibleSolutionsSection(soluciones, diagnosticos, topo, scopeLabe
                   <tr>
                     <td class="mono-cell">${fmtShortDate(v.fecha)}</td>
                     <td>
-                      <b><i class="fa-solid fa-car-side"style="color:var(--accent2-600, #f59e0b); font-size:0.85em; margin-right:0.35em; vertical-align:-0.05em;"></i>
+                      <b><i class="fa-solid fa-car-side" style="color:var(--accent2-600, #f59e0b); font-size:0.85em; margin-right:0.35em; vertical-align:-0.05em;"></i>
                          ${esc(v.conductor)}</b> <small style="color:var(--muted)">(${ocupadas}/${totales})</small>
                       ${notaD}
                     </td>
@@ -539,7 +540,7 @@ function buildFeasibleSolutionsSection(soluciones, diagnosticos, topo, scopeLabe
                 `;
               }).join('')}
             </tbody>
-          </table>
+          </table></div></details>
         </div>
       `;
     };
@@ -623,7 +624,7 @@ function buildFeasibleSolutionsSection(soluciones, diagnosticos, topo, scopeLabe
                 </div>
               ` : ''}
 
-              ${fuerzanNombres ? `<div style="font-size:0.72rem;color:#f59e0b"><i class="fa-solid fa-face-meh" style="color:var(--accent2, #f59e0b); font-size:0.85em; margin-right:0.35em; vertical-align:-0.05em></i> Por encima del ideal: <b>${esc(fuerzanNombres)}</b></div>` : ''}
+              ${fuerzanNombres ? `<div style="font-size:0.72rem;color:#f59e0b"><i class="fa-solid fa-face-meh" style="color:var(--accent2, #f59e0b); font-size:0.85em; margin-right:0.35em; vertical-align:-0.05em;"></i> Por encima del ideal: <b>${esc(fuerzanNombres)}</b></div>` : ''}
               ${excluidosNombres ? `<div style="font-size:0.72rem;color:var(--accent)"><i class="fa-solid fa-skull-crossbones"></i> No se lo pueden permitir: <b>${esc(excluidosNombres)}</b></div>` : ''}
             </div>
           `;
@@ -667,10 +668,7 @@ function buildFeasibleSolutionsSection(soluciones, diagnosticos, topo, scopeLabe
             ${barrasPresuHtml}
 
             ${isProbModel ? `
-              <div style="font-size:0.77rem;color:var(--muted);margin-top:6px;line-height:1.35">
-                <div>• ${esc(c.msgE)}</div>
-                <div>• ${esc(c.msgP25)}</div>
-              </div>
+              <div class="mt-casa-prob"><span><i class="fa-solid fa-users"></i> <b>${c.E.toFixed(1)}</b> esperados</span><span><i class="fa-solid fa-chart-simple"></i> <b>${Math.round(c.P25*100)}%</b> P25</span></div><details class="mt-work-details"><summary>Interpretación probabilística</summary><div class="mt-work-note">${esc(c.msgE)}<br>${esc(c.msgP25)}</div></details>
               ${buildAlertBlockHtml(c.alertas)}
             ` : ''}
           </div>
@@ -1015,11 +1013,7 @@ function buildProbabilidadOpcionConsensus(card, q, myVal) {
       </div>
 
       ${it.nOpt > 0 ? `
-        <div class="prob-cand-msgs" style="margin-bottom:4px">
-          <div>• ${esc(it.msgE)}</div>
-          <div>• ${esc(it.msgP25)}</div>
-        </div>
-        <div class="prob-cand-tradeoff" style="margin-bottom:6px">${esc(it.cuadrante.tradeoff)}</div>
+        <details class="mt-work-details"><summary><i class="fa-solid fa-circle-info"></i> Interpretación y compromiso</summary><div class="prob-cand-msgs"><div>${esc(it.msgE)}</div><div>${esc(it.msgP25)}</div></div><div class="prob-cand-tradeoff">${esc(it.cuadrante.tradeoff)}</div></details>
         ${buildAlertBlockHtml(it.alertas)}
       ` : ''}
 
@@ -1121,11 +1115,13 @@ function buildParetoPlot(result){
   if(!items.length)return wrap;
   const W=560,H=260,L=48,R=20,T=20,B=47, xmax=Math.max(1,result.nVotantes,...items.map(o=>o.E));
   const x=v=>L+(W-L-R)*v/xmax,y=v=>H-B-(H-B-T)*v;
+  const es=items.map(o=>o.E).sort((a,b)=>a-b),mid=(es[Math.floor((es.length-1)/2)]+es[Math.floor(es.length/2)])/2;
   const front=new Set(result.frontera.map(o=>o.key));
   const frontier=items.filter(o=>front.has(o.key)).sort((a,b)=>a.E-b.E);
   const groups=new Map();items.forEach((o,i)=>{const key=`${o.E.toFixed(8)}:${o.P25.toFixed(8)}`;if(!groups.has(key))groups.set(key,[]);groups.get(key).push({o,i});});
-  const points=[...groups.values()].map(group=>{const o=group[0].o,cls=group.some(v=>front.has(v.o.key))?'front':group.every(v=>v.o.inviableGrupoPequeno)?'veto':'dominated';const info=group.map(({o})=>`${o.label}: E=${o.E.toFixed(2)}, P25=${o.P25.toFixed(2)}, n=${o.nOpt}`).join(' | ');return `<g class="mt-pareto-point ${cls}" tabindex="0" role="img" aria-label="${esc(info)}"><title>${esc(info)}</title><circle cx="${x(o.E)}" cy="${y(o.P25)}" r="${Math.min(11,5+Math.sqrt(o.nOpt))}"/><text x="${x(o.E)}" y="${y(o.P25)-15}" text-anchor="middle">${group.map(v=>v.i+1).join(', ')}</text></g>`;}).join('');
-  wrap.innerHTML=`<div class="mt-plot-title">Asistencia esperada frente a compromiso del grupo</div><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Diagrama de Pareto de asistencia esperada y percentil 25"><rect x="${L}" y="${T}" width="${W-L-R}" height="${y(.5)-T}" fill="var(--ok)" opacity=".07"/><rect x="${L}" y="${y(.5)}" width="${W-L-R}" height="${H-B-y(.5)}" fill="var(--accent)" opacity=".07"/><line x1="${L}" x2="${W-R}" y1="${y(.5)}" y2="${y(.5)}" stroke="var(--accent)" stroke-dasharray="5 4"/>${[0,.25,.5,.75,1].map(v=>`<line class="mt-plot-grid" x1="${L}" x2="${W-R}" y1="${y(v)}" y2="${y(v)}"/><text x="${L-8}" y="${y(v)+4}" text-anchor="end">${Math.round(v*100)}%</text>`).join('')}${[0,.25,.5,.75,1].map(v=>`<text x="${x(v*xmax)}" y="${H-B+17}" text-anchor="middle">${Number((v*xmax).toFixed(1))}</text>`).join('')}<path class="mt-plot-axis" d="M${L} ${T} V${H-B} H${W-R}"/>${frontier.length>1?`<polyline class="mt-pareto-line" points="${frontier.map(o=>`${x(o.E)},${y(o.P25)}`).join(' ')}"/>`:''}${points}<text x="${(L+W-R)/2}" y="${H-7}" text-anchor="middle">E[X] · personas esperadas</text><text x="12" y="${(T+H-B)/2}" text-anchor="middle" transform="rotate(-90 12 ${(T+H-B)/2})">P25</text></svg><div class="mt-plot-legend"><span class="mt-front">● No dominada</span><span class="mt-dominated">● Dominada</span><span class="mt-veto">● Veto en grupo pequeño</span></div><div class="mt-plot-labels">${items.map((o,i)=>`<span><b>${i+1}.</b> ${esc(o.label)} <small>(n=${o.nOpt})</small></span>`).join('')}</div><p class="mt-results-note">Cada punto utiliza las valoraciones disponibles de esa opción; si el número de votantes difiere, compara también n. La línea une las opciones no dominadas, no representa opciones intermedias factibles.</p>`;
+  const points=[...groups.values()].map(group=>{const o=group[0].o,cls=group.some(v=>front.has(v.o.key))?'front':group.every(v=>v.o.inviableGrupoPequeno)?'veto':'dominated';const info=group.map(({o})=>`${o.label}: E=${o.E.toFixed(2)}, P25=${o.P25.toFixed(2)}, n=${o.nOpt}`).join(' | ');return `<g class="mt-pareto-point ${cls}" tabindex="0" role="img" aria-label="${esc(info)}"><title>${esc(info)}</title>${cls==='front'?`<circle class="mt-pareto-ring" cx="${x(o.E)}" cy="${y(o.P25)}" r="${Math.min(11,5+Math.sqrt(o.nOpt))+4}"/>`:``}<circle cx="${x(o.E)}" cy="${y(o.P25)}" r="${Math.min(11,5+Math.sqrt(o.nOpt))}"/><text x="${x(o.E)}" y="${y(o.P25)-15}" text-anchor="middle">${group.map(v=>v.i+1).join(', ')}</text></g>`;}).join('');
+  wrap.innerHTML=`<div class="mt-plot-title">Asistencia esperada frente a compromiso del grupo</div><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Diagrama de Pareto de asistencia esperada y percentil 25"><rect class="mt-pareto-upper" x="${L}" y="${T}" width="${x(mid)-L}" height="${y(.5)-T}" fill="var(--accent3)" opacity=".09"/><rect class="mt-pareto-upper" x="${x(mid)}" y="${T}" width="${W-R-x(mid)}" height="${y(.5)-T}" fill="var(--ok)" opacity=".10"/><rect class="mt-pareto-lower" x="${L}" y="${y(.5)}" width="${x(mid)-L}" height="${H-B-y(.5)}" fill="var(--err)" opacity=".08"/><rect class="mt-pareto-lower" x="${x(mid)}" y="${y(.5)}" width="${W-R-x(mid)}" height="${H-B-y(.5)}" fill="var(--accent)" opacity=".09"/><line x1="${x(mid)}" x2="${x(mid)}" y1="${T}" y2="${H-B}" stroke="var(--muted)" stroke-dasharray="3 4"/><line class="mt-pareto-threshold" x1="${L}" x2="${W-R}" y1="${y(.5)}" y2="${y(.5)}" stroke="var(--accent)" stroke-dasharray="5 4"/>${[0,.25,.5,.75,1].map(v=>`<line class="mt-plot-grid" x1="${L}" x2="${W-R}" y1="${y(v)}" y2="${y(v)}"/><text x="${L-8}" y="${y(v)+4}" text-anchor="end">${Math.round(v*100)}%</text>`).join('')}${[0,.25,.5,.75,1].map(v=>`<text x="${x(v*xmax)}" y="${H-B+17}" text-anchor="middle">${Number((v*xmax).toFixed(1))}</text>`).join('')}<path class="mt-plot-axis" d="M${L} ${T} V${H-B} H${W-R}"/>${frontier.length>1?`<polyline class="mt-pareto-line" points="${frontier.map(o=>`${x(o.E)},${y(o.P25)}`).join(' ')}"/>`:''}${points}<text x="${(L+W-R)/2}" y="${H-7}" text-anchor="middle">E[X] · personas esperadas</text><text x="12" y="${(T+H-B)/2}" text-anchor="middle" transform="rotate(-90 12 ${(T+H-B)/2})">P25</text></svg><div class="mt-plot-legend"><span class="mt-front">● No dominada</span><span class="mt-dominated">● Dominada</span><span class="mt-veto">● Veto en grupo pequeño</span></div><div class="mt-plot-labels">${items.map((o,i)=>`<span><b>${i+1}.</b> ${esc(o.label)} <small>(n=${o.nOpt})</small></span>`).join('')}</div><p class="mt-results-note">Cada punto utiliza las valoraciones disponibles de esa opción; si el número de votantes difiere, compara también n. Guías visuales: mediana de E y umbral P25 exploratorio; no cambian la clasificación del motor. La línea no representa opciones intermedias factibles.</p>`;
+  const controls=div('mt-pareto-controls');controls.innerHTML='<label><i class="fa-solid fa-sliders"></i> Umbral visual de P25 <strong>50%</strong><input type="range" min="0" max="100" step="5" value="50" aria-label="Umbral visual de P25"></label>';wrap.insertBefore(controls,wrap.querySelector('svg'));const input=controls.querySelector('input');input.addEventListener('input',()=>{const v=Number(input.value)/100,yy=y(v);controls.querySelector('strong').textContent=input.value+'%';wrap.querySelectorAll('.mt-pareto-upper').forEach(el=>el.setAttribute('height',yy-T));wrap.querySelectorAll('.mt-pareto-lower').forEach(el=>{el.setAttribute('y',yy);el.setAttribute('height',H-B-yy);});const line=wrap.querySelector('.mt-pareto-threshold');line.setAttribute('y1',yy);line.setAttribute('y2',yy);});
   return wrap;
 }
 
@@ -1410,15 +1406,17 @@ function buildDisponibilidadConsensus(card,q) {
   const dates=all.slice(0,45),known=entries.filter(r=>!r.unknown);
   const counts=all.map(f=>({f,n:known.filter(r=>r.dates.has(f)).length})).sort((a,b)=>b.n-a.n||a.f.localeCompare(b.f));
   const wrap=div('mt-date-analysis');
-  wrap.innerHTML=`<div class="kpi-grid"><div class="kpi-box"><span class="kpi-label">Días con disponibilidad</span><span class="kpi-val">${all.length}</span></div><div class="kpi-box"><span class="kpi-label">Mayor coincidencia diaria</span><span class="kpi-val">${counts[0].n}/${known.length}</span><small>${fmtShortDate(counts[0].f)}</small></div></div><p class="mt-results-note">Mapa de calor por participante (${dates.length}/${all.length} días). «?» indica falta de fechas concretas, no indisponibilidad.</p><div style="overflow-x:auto"><table class="compat-matrix-table"><thead><tr><th>Participante</th><th>Días máx.</th>${dates.map(f=>`<th>${fmtShortDate(f)}</th>`).join('')}</tr></thead><tbody>${entries.map(r=>`<tr><th>${esc(r.nombre)}</th><td>${esc(r.days??'—')}</td>${dates.map(f=>`<td class="${r.dates.has(f)?'mt-date-yes':r.unknown?'mt-date-unknown':''}">${r.dates.has(f)?'✓':r.unknown?'?':'·'}</td>`).join('')}</tr>`).join('')}</tbody></table></div><p class="mt-results-note">Mejores días por número de disponibles (no equivale a una ventana conjunta factible).</p>${counts.slice(0,10).map(x=>`<div class="ref-dist-row"><span class="ref-dist-name">${fmtShortDate(x.f)}</span><div class="ref-bar-track" style="flex:1"><div class="ref-bar-fill" style="width:${100*x.n/Math.max(1,known.length)}%"></div></div><strong>${x.n}/${known.length}</strong></div>`).join('')}`;
+  wrap.innerHTML=`<div class="kpi-grid"><div class="kpi-box"><span class="kpi-label">Días con disponibilidad</span><span class="kpi-val">${all.length}</span></div><div class="kpi-box"><span class="kpi-label">Mayor coincidencia diaria</span><span class="kpi-val">${counts[0].n}/${known.length}</span><small>${fmtShortDate(counts[0].f)}</small></div></div><p class="mt-results-note">Mapa de calor por participante (${dates.length}/${all.length} días). «?» indica falta de fechas concretas, no indisponibilidad.</p><div style="overflow-x:auto"><table class="compat-matrix-table"><thead><tr><th>Participante</th><th>Días máx.</th>${dates.map(f=>`<th class="mt-heat-col ${isWeekendISO(f)?'weekend':''}">${fmtShortDate(f)}</th>`).join('')}<th>Días disponibles</th></tr><tr class="mt-heat-marginal"><th colspan="2">Disponibles</th>${dates.map(f=>{const n=known.filter(r=>r.dates.has(f)).length;return `<th><div class="mt-heat-top" title="${n} disponibles"><b style="height:${100*n/Math.max(1,known.length)}%"></b></div>${n}</th>`;}).join('')}<th></th></tr></thead><tbody>${entries.map(r=>`<tr><th>${esc(r.nombre)}</th><td>${esc(r.days??'—')}</td>${dates.map(f=>`<td class="${r.dates.has(f)?'mt-date-yes':r.unknown?'mt-date-unknown':''}" title="${esc(r.nombre)} · ${esc(f)}">${r.dates.has(f)?'✓':r.unknown?'?':'·'}</td>`).join('')}<td><div class="mt-heat-right"><b style="width:${100*r.dates.size/Math.max(1,all.length)}%"></b><span>${r.unknown?'?':r.dates.size}</span></div></td></tr>`).join('')}</tbody></table></div><p class="mt-results-note">Mejores días por número de disponibles (no equivale a una ventana conjunta factible).</p>${counts.slice(0,10).map(x=>`<div class="ref-dist-row"><span class="ref-dist-name">${fmtShortDate(x.f)}</span><div class="ref-bar-track" style="flex:1"><div class="ref-bar-fill" style="width:${100*x.n/Math.max(1,known.length)}%"></div></div><strong>${x.n}/${known.length}</strong></div>`).join('')}`;
   card.appendChild(wrap);
 }
 
 function buildTransportVisual(s){
-  const t=s.transport,wrap=div('mt-transport-analysis');const scale=Math.max(1,t.seats,t.passengers.length);
-  const status={factible:'Capacidad suficiente',infactible:'Capacidad insuficiente',indeterminado:'Capacidad indeterminada',no_aplicable:'No aplicable'}[s.status]||s.status;
-  wrap.innerHTML=`<div class="kpi-grid"><div class="kpi-box"><span class="kpi-label">Coches</span><span class="kpi-val">${t.drivers.length}</span></div><div class="kpi-box"><span class="kpi-label">Plazas libres</span><span class="kpi-val">${t.seats}</span></div><div class="kpi-box"><span class="kpi-label">Necesitan transporte</span><span class="kpi-val">${t.passengers.length}</span></div><div class="kpi-box"><span class="kpi-label">Balance de plazas</span><span class="kpi-val" style="color:var(--${t.balance>=0?'ok':'err'})">${t.balance>=0?'+':''}${t.balance}</span></div></div><p class="mt-results-note">${esc(status)} · capacidad declarada, no garantiza compatibilidad de recorridos.</p>${[['Oferta',t.seats],['Demanda',t.passengers.length]].map(([label,n],i)=>`<div class="ref-dist-row"><span class="ref-dist-name">${label}</span><div class="ref-bar-track" style="flex:1"><div class="ref-bar-fill ${i?'negative':''}" style="width:${100*n/scale}%"></div></div><strong>${n}</strong></div>`).join('')}`;
-  if(s.route){const details=buildDecisionStudyCard(s);details.querySelector('.card-title')?.remove();details.className='mt-route-detail';wrap.appendChild(details);}
+  const t=s.transport,wrap=div('mt-transport-analysis'),scale=Math.max(1,t.seats,t.passengers.length);
+  const complete=s.status==='factible'||s.status==='infactible';const status=!complete?'Datos incompletos':t.balance<0?`Faltan ${-t.balance} plazas`:t.balance===0?'Sin plazas de margen':`+${t.balance} plazas de margen`;
+  const metrics=[['fa-car-side',t.drivers.length,'Coches'],['fa-chair',t.seats,'Plazas libres'],['fa-person',t.passengers.length,'Pasajeros'],['fa-person-walking',t.independent.length,'Por su cuenta']];
+  wrap.innerHTML=`<div class="mt-mini-metrics mt-transport-metrics">${metrics.map(([i,v,l])=>`<div class="mt-mini-metric"><i class="fa-solid ${i}"></i><strong>${v}</strong><small>${l}</small></div>`).join('')}</div><div class="mt-transport-capacity ${!complete?'warn':t.balance<0?'err':'ok'}"><i class="fa-solid ${!complete?'fa-circle-question':t.balance<0?'fa-circle-exclamation':'fa-circle-check'}"></i> ${esc(status)} <small> · solo capacidad</small></div><div class="mt-mini-bars">${[['Plazas disponibles',t.seats],['Personas sin coche',t.passengers.length]].map(([label,n],i)=>`<div class="mt-mini-row"><div><span>${label}</span><strong>${n}</strong></div><div class="mt-mini-track"><b class="${i?'demand':''}" style="width:${100*n/scale}%"></b></div></div>`).join('')}</div>`;
+  if(t.unknown.length)wrap.append(div('mt-work-note','Datos incompletos: '+t.unknown.join(', ')));
+  if(s.route)wrap.appendChild(buildRouteStudyVisual(s));
   return wrap;
 }
 
