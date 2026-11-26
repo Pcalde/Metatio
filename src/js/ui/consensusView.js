@@ -52,40 +52,9 @@ function renderResultados() {
   const container = $('consensus-container');
   if (!container) return;
   if (container.querySelector('input[type=range]:active')) return;
-  container.innerHTML = '';
-
+  container.replaceChildren();
   if (_renderConsensusGate(container)) return;
-
-  const mode=DecisionModel.integratedMode(schema);
-  const studies=DecisionModel.studies(schema,respuestas,respondentes);
-  const model=mode.enabled ? buildModelData() : null;
-  const integrated=!!model?.indiceFechas.length;
-  let joint=null;
-  if(integrated){
-    const {soluciones,diagnosticos}=ejecutarMotorFactibilidad(model);
-    joint={soluciones,diagnosticos,topo:computeTopologyAndSensitivity(model,soluciones)};
-  }
-  container.appendChild(buildResultsOverview(studies,mode,integrated));
-  if(joint){
-    container.appendChild(buildExecutiveSummaryCard(model,joint.soluciones,joint.topo));
-    container.appendChild(buildPreferenciasBooleanasCard(model));
-    container.appendChild(buildDiasMaxStatsCard(model));
-    const incomplete=studies.some(x=>['fechas','horarios','transporte','presupuesto','alojamiento'].includes(x.kind)&&(x.missing||x.pending||x.unknown||x.dates&&x.dates.known<x.answered||x.transport&&x.transport.unknown.length));
-    if(!joint.soluciones.length&&incomplete){const notice=div('card');notice.textContent='Factibilidad conjunta indeterminada: hay datos de decisiones pendientes.';container.appendChild(notice);}
-    else container.appendChild(buildFeasibleSolutionsSection(joint.soluciones,joint.diagnosticos,joint.topo));
-    if(model.viajeros.length>=2)container.appendChild(buildTopologyAndSensitivityCard(model,joint.topo));
-  }
-  const header=div('ref-section-divider');header.textContent='Análisis matemático por pregunta';container.appendChild(header);
-  const byId=new Map(studies.map(s=>[s.qid,s]));let previous=null;
-  schema.forEach((q,idx)=>{
-    const study=byId.get(q.id);if(!study)return;
-    if(study.section!==previous){const title=div('ref-section-divider');title.textContent=study.section||'General';container.appendChild(title);previous=study.section;}
-    try {
-      const card=buildAnalyticalCard(q,idx,null,{readOnly:true,study});
-      if(card)container.appendChild(card);
-    } catch(err){console.error('Error en análisis de '+q.id,err);container.appendChild(buildDecisionStudyCard(study));const warning=div('card');warning.textContent='No se ha podido mostrar el gráfico de esta pregunta. Se mantiene el resumen disponible.';container.appendChild(warning);}
-  });
-  appendDecisionReportButton(container);
+  ResultsWorkspace.render(container);
 }
 
 function buildResultsOverview(studies,mode,integrated){
@@ -127,8 +96,8 @@ function buildDecisionStudyCard(s){
 }
 
 // ── VISTA REFORMULARIO (tarjetas interactivas por pregunta) ───────────────
-function renderReformularioInteractivo() {
-  const container = $('reformulario-container');
+function renderReformularioInteractivo(target = null, section = null, predicate = null) {
+  const container = target || $('reformulario-container');
   if (!container) return;
   if (container.querySelector('input[type=range]:active')) return;
   container.innerHTML = '';
@@ -141,6 +110,8 @@ function renderReformularioInteractivo() {
   container.appendChild(secHeader);
 
   schema.forEach((q, idx) => {
+    if(predicate&&!predicate(q))return;
+    if(section && (section==='__general__'?!!q.config?.seccion:q.config?.seccion!==section))return;
     if (typeof _refQidOverride !== 'undefined' && _refQidOverride && q.id !== _refQidOverride) return;
     const card = buildAnalyticalCard(q, idx, myAns);
     if (card) container.appendChild(card);
@@ -458,20 +429,20 @@ const renderVoterValuationChip = (det) => {
 };
 
 // ── RENDER DE SOLUCIONES ÓPTIMAS (Con Presupuesto Núcleo, Doble Barra, Coherencia Plan->Casa y Matching Coches) ──
-function buildFeasibleSolutionsSection(soluciones, diagnosticos, topo) {
+function buildFeasibleSolutionsSection(soluciones, diagnosticos, topo, scopeLabel = null) {
   const wrap = div('ref-solutions-wrap');
 
   if (!soluciones.length) {
     const diagHtml = diagnosticos.slice(0, 6).map(d => `<li>${esc(d)}</li>`).join('');
     wrap.innerHTML = `
       <div class="card" style="border-color:var(--accent)">
-        <div class="card-title"><span class="num" style="background:var(--accent)">!</span> Sin soluciones simultáneamente factibles en fechas y transporte</div>
+        <div class="card-title"><span class="num" style="background:var(--accent)">!</span> ${scopeLabel ? "Sin ventanas factibles en este estudio parcial" : "Sin soluciones simultáneamente factibles en fechas y transporte"}</div>
         <p style="font-size:0.86rem;color:var(--muted);margin-bottom:10px">
-          El optimizador evaluó todas las ventanas con al menos 2 miembros de núcleo, pero ninguna superó las restricciones de capacidad de vehículos, solapamiento de fechas o cruce de horarios:
+          El optimizador evaluó las ventanas con al menos 2 miembros de núcleo, pero ninguna superó las restricciones ${scopeLabel ? "temporales de este estudio" : "de capacidad de vehículos, solapamiento de fechas o cruce de horarios"}:
         </p>
         ${diagHtml ? `<ul style="font-size:0.8rem;color:var(--muted);padding-left:18px;margin-bottom:10px">${diagHtml}</ul>` : ''}
         <p style="font-size:0.84rem;color:var(--ink)">
-          <b>Usa el Reformulario más abajo</b> para ampliar tus fechas, indicar franjas horarias compatibles o cambiar tu opción de transporte a <em>"Llevo coche"</em> y desbloquear soluciones.
+          <b>Usa el Reformulario</b> para revisar las restricciones aplicables a este estudio.
         </p>
       </div>
     `;
@@ -753,7 +724,7 @@ function buildFeasibleSolutionsSection(soluciones, diagnosticos, topo) {
     card.innerHTML = `
       <div class="sol-card-head">
         <div>
-          <span class="sol-tag">Solución Óptima #${idx + 1} · ${tagFinde}${esc(tagExcursion)}</span>
+          <span class="sol-tag">${scopeLabel ? "Ventana parcial" : "Solución propuesta"} #${idx + 1} · ${tagFinde}${esc(tagExcursion)}</span>
           <h3 class="sol-interval">${fmtShortDate(sol.fIni)} → ${fmtShortDate(sol.fFin)} (${sol.L} día${sol.L === 1 ? '' : 's'})${esc(cruceStr)}</h3>
         </div>
         <div class="sol-pills">
@@ -807,7 +778,7 @@ function buildFeasibleSolutionsSection(soluciones, diagnosticos, topo) {
     bindAlertExpandButtons(card);
 
     card.querySelector('.btn-propose-sol').addEventListener('click', () => {
-      const textoPropuesta = `Propongo cerrar la Solución #${idx + 1}: del ${fmtShortDate(sol.fIni)} al ${fmtShortDate(sol.fFin)} (${sol.L} día${sol.L === 1 ? '' : 's'}, ${sol.N} asistentes: ${[...sol.asistentesNucleo, ...sol.satelitesAsignados].join(', ')}). Plan: ${sol.opcionVotada}.`;
+      const textoPropuesta = `${scopeLabel ? "Propongo estudiar la ventana parcial ("+scopeLabel+", no es una solución global)" : "Propongo cerrar la Solución"} #${idx + 1}: del ${fmtShortDate(sol.fIni)} al ${fmtShortDate(sol.fFin)} (${sol.L} día${sol.L === 1 ? '' : 's'}, ${sol.N} asistentes: ${[...sol.asistentesNucleo, ...sol.satelitesAsignados].join(', ')}). Plan: ${sol.opcionVotada}.`;
       if (typeof createProposalFromConsensus === 'function') {
         createProposalFromConsensus(textoPropuesta);
       }
@@ -846,7 +817,7 @@ function buildTopologyAndSensitivityCard(model, topo) {
       <div class="kpi-box">
         <span class="kpi-label">Restricción Económica</span>
         <span class="kpi-val" style="color:var(--accent)">${esc(s.nomEco)}</span>
-        <small>Fija el techo coop. en ${s.valEco} €/pers</small>
+        <small>${s.nomEco==='Ninguno'?'Sin presupuesto evaluado':`Fija el techo coop. en ${s.valEco} €/pers`}</small>
       </div>
       <div class="kpi-box">
         <span class="kpi-label">Menor Disponibilidad</span>
@@ -1153,8 +1124,8 @@ function buildParetoPlot(result){
   const front=new Set(result.frontera.map(o=>o.key));
   const frontier=items.filter(o=>front.has(o.key)).sort((a,b)=>a.E-b.E);
   const groups=new Map();items.forEach((o,i)=>{const key=`${o.E.toFixed(8)}:${o.P25.toFixed(8)}`;if(!groups.has(key))groups.set(key,[]);groups.get(key).push({o,i});});
-  const points=[...groups.values()].map(group=>{const o=group[0].o,cls=group.some(v=>front.has(v.o.key))?'front':group.every(v=>v.o.inviableGrupoPequeno)?'veto':'dominated';const info=group.map(({o})=>`${o.label}: E=${o.E.toFixed(2)}, P25=${o.P25.toFixed(2)}, n=${o.nOpt}`).join(' | ');return `<g class="mt-pareto-point ${cls}" tabindex="0" role="img" aria-label="${esc(info)}"><title>${esc(info)}</title><circle cx="${x(o.E)}" cy="${y(o.P25)}" r="7"/><text x="${x(o.E)}" y="${y(o.P25)-11}" text-anchor="middle">${group.map(v=>v.i+1).join(', ')}</text></g>`;}).join('');
-  wrap.innerHTML=`<div class="mt-plot-title">Asistencia esperada frente a compromiso del grupo</div><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Diagrama de Pareto de asistencia esperada y percentil 25">${[0,.25,.5,.75,1].map(v=>`<line class="mt-plot-grid" x1="${L}" x2="${W-R}" y1="${y(v)}" y2="${y(v)}"/><text x="${L-8}" y="${y(v)+4}" text-anchor="end">${Math.round(v*100)}%</text>`).join('')}${[0,.25,.5,.75,1].map(v=>`<text x="${x(v*xmax)}" y="${H-B+17}" text-anchor="middle">${Number((v*xmax).toFixed(1))}</text>`).join('')}<path class="mt-plot-axis" d="M${L} ${T} V${H-B} H${W-R}"/>${frontier.length>1?`<polyline class="mt-pareto-line" points="${frontier.map(o=>`${x(o.E)},${y(o.P25)}`).join(' ')}"/>`:''}${points}<text x="${(L+W-R)/2}" y="${H-7}" text-anchor="middle">E[X] · personas esperadas</text><text x="12" y="${(T+H-B)/2}" text-anchor="middle" transform="rotate(-90 12 ${(T+H-B)/2})">P25</text></svg><div class="mt-plot-legend"><span class="mt-front">● No dominada</span><span class="mt-dominated">● Dominada</span><span class="mt-veto">● Veto en grupo pequeño</span></div><div class="mt-plot-labels">${items.map((o,i)=>`<span><b>${i+1}.</b> ${esc(o.label)} <small>(n=${o.nOpt})</small></span>`).join('')}</div><p class="mt-results-note">Cada punto utiliza las valoraciones disponibles de esa opción; si el número de votantes difiere, compara también n. La línea une las opciones no dominadas, no representa opciones intermedias factibles.</p>`;
+  const points=[...groups.values()].map(group=>{const o=group[0].o,cls=group.some(v=>front.has(v.o.key))?'front':group.every(v=>v.o.inviableGrupoPequeno)?'veto':'dominated';const info=group.map(({o})=>`${o.label}: E=${o.E.toFixed(2)}, P25=${o.P25.toFixed(2)}, n=${o.nOpt}`).join(' | ');return `<g class="mt-pareto-point ${cls}" tabindex="0" role="img" aria-label="${esc(info)}"><title>${esc(info)}</title><circle cx="${x(o.E)}" cy="${y(o.P25)}" r="${Math.min(11,5+Math.sqrt(o.nOpt))}"/><text x="${x(o.E)}" y="${y(o.P25)-15}" text-anchor="middle">${group.map(v=>v.i+1).join(', ')}</text></g>`;}).join('');
+  wrap.innerHTML=`<div class="mt-plot-title">Asistencia esperada frente a compromiso del grupo</div><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Diagrama de Pareto de asistencia esperada y percentil 25"><rect x="${L}" y="${T}" width="${W-L-R}" height="${y(.5)-T}" fill="var(--ok)" opacity=".07"/><rect x="${L}" y="${y(.5)}" width="${W-L-R}" height="${H-B-y(.5)}" fill="var(--accent)" opacity=".07"/><line x1="${L}" x2="${W-R}" y1="${y(.5)}" y2="${y(.5)}" stroke="var(--accent)" stroke-dasharray="5 4"/>${[0,.25,.5,.75,1].map(v=>`<line class="mt-plot-grid" x1="${L}" x2="${W-R}" y1="${y(v)}" y2="${y(v)}"/><text x="${L-8}" y="${y(v)+4}" text-anchor="end">${Math.round(v*100)}%</text>`).join('')}${[0,.25,.5,.75,1].map(v=>`<text x="${x(v*xmax)}" y="${H-B+17}" text-anchor="middle">${Number((v*xmax).toFixed(1))}</text>`).join('')}<path class="mt-plot-axis" d="M${L} ${T} V${H-B} H${W-R}"/>${frontier.length>1?`<polyline class="mt-pareto-line" points="${frontier.map(o=>`${x(o.E)},${y(o.P25)}`).join(' ')}"/>`:''}${points}<text x="${(L+W-R)/2}" y="${H-7}" text-anchor="middle">E[X] · personas esperadas</text><text x="12" y="${(T+H-B)/2}" text-anchor="middle" transform="rotate(-90 12 ${(T+H-B)/2})">P25</text></svg><div class="mt-plot-legend"><span class="mt-front">● No dominada</span><span class="mt-dominated">● Dominada</span><span class="mt-veto">● Veto en grupo pequeño</span></div><div class="mt-plot-labels">${items.map((o,i)=>`<span><b>${i+1}.</b> ${esc(o.label)} <small>(n=${o.nOpt})</small></span>`).join('')}</div><p class="mt-results-note">Cada punto utiliza las valoraciones disponibles de esa opción; si el número de votantes difiere, compara también n. La línea une las opciones no dominadas, no representa opciones intermedias factibles.</p>`;
   return wrap;
 }
 
@@ -1165,7 +1136,7 @@ function buildOptionsConsensus(card, q, myVal) {
     const precio = optionPriceLabel(op);
     const url    = (op && typeof op === 'object' && op.url) ? safeUrl(op.url) : '';
     const foto   = (op && typeof op === 'object' && op.foto) ? safeUrl(op.foto) : '';
-    return { key, precio, raw: op, url, foto, score: 0, rawScore: 0, voters: [], vetoes: [] };
+    return { key, precio, raw: op, url, foto, score: 0, rawScore: 0, voters: [], vetoes: [], positive:0, negative:0 };
   });
 
   const map = new Map(opts.map(o => [o.key, o]));
@@ -1193,8 +1164,8 @@ function buildOptionsConsensus(card, q, myVal) {
         if (!item || !pNum) return;
         item.score += pNum * w;
         item.rawScore += pNum;
-        if (pNum < 0) item.vetoes.push(r.nombre);
-        else item.voters.push({ nombre: r.nombre, pts: pNum });
+        if (pNum < 0) { item.vetoes.push(r.nombre); item.negative += -pNum*w; }
+        else { item.voters.push({ nombre: r.nombre, pts: pNum }); item.positive += pNum*w; }
       });
     }
   });
@@ -1204,6 +1175,7 @@ function buildOptionsConsensus(card, q, myVal) {
   });
   opts.sort((a, b) => b.score - a.score || b.voters.length - a.voters.length);
   const maxScore = Math.max(1, ...opts.map(o => Math.abs(o.score)));
+  const maxDivergent = Math.max(1,...opts.flatMap(o=>[o.positive,o.negative]));
 
   const list = div('ref-opt-list');
 
@@ -1250,9 +1222,7 @@ function buildOptionsConsensus(card, q, myVal) {
           ${controlsHtml}
         </div>
       </div>
-      <div class="ref-bar-track">
-        <div class="ref-bar-fill ${o.score < 0 ? 'negative' : ''}" style="width:${pct}%"></div>
-      </div>
+      ${q.tipo==='voto-ponderado'?`<div class="mt-divergent" title="Oposición y apoyo en la misma escala, sin ajuste del debate"><span><b style="width:${100*o.negative/maxDivergent}%"></b></span><span><b style="width:${100*o.positive/maxDivergent}%"></b></span></div><div class="mt-div-label"><span>−${o.negative.toFixed(1)} oposición</span><span>+${o.positive.toFixed(1)} apoyo</span></div>`:`<div class="ref-bar-track"><div class="ref-bar-fill ${o.score < 0 ? 'negative' : ''}" style="width:${pct}%"></div></div>`}
       <div class="ref-opt-meta">
         <div class="ref-voters">
           ${o.voters.map(v => {
