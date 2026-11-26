@@ -13,43 +13,32 @@
     if(q.tipo==='casas'||(q.tipo==='probabilidad-opcion'&&c.modoCasas===true)) return 'alojamiento';
     return 'preferencia';
   }
-  function conditions(q, schema) {
-    const out=[]; const c=q.config||{};
-    if(!c.esEncabezado && c.seccion) {
-      const norm=x=>String(x||'').trim().toLowerCase();
-      const h=schema.find(x=>x.config?.esEncabezado&&norm(x.config.seccion||x.label)===norm(c.seccion));
-      if(h?.config?.mostrarSi?.qid) out.push(h.config.mostrarSi);
-    }
-    if(c.mostrarSi?.qid) out.push(c.mostrarSi);
-    return out;
+  const rules=raw=>Array.isArray(raw)?raw.filter(r=>r?.qid):Array.isArray(raw?.rules)?raw.rules.filter(r=>r?.qid):raw?.qid?[raw]:[];
+  function conditionGroups(q,schema){
+    const out=[],c=q.config||{}, norm=x=>String(x||'').trim().toLowerCase();
+    const add=(raw,owner)=>{const rs=rules(raw);if(rs.length)out.push({owner,logic:raw?.logic==='AND'?'AND':'OR',rules:rs});};
+    if(!c.esEncabezado&&c.seccion){const h=schema.find(x=>x.config?.esEncabezado&&norm(x.config.seccion||x.label)===norm(c.seccion));if(h)add(h.config?.mostrarSi,h.id);}
+    add(c.mostrarSi,q.id);return out;
   }
-  // 1 = aplica, 0 = no aplica, null = falta información sobre la rama.
-  function applicability(q, ans, schema, trail=new Set()) {
-    if(trail.has(q.id)) return null;
-    const seen=new Set(trail); seen.add(q.id);
-    let unknown=false;
-    for(const cond of conditions(q,schema)) {
-      const src=schema.find(x=>x.id===cond.qid);
-      if(!src){unknown=true;continue;}
-      const upstream=applicability(src,ans,schema,seen);
-      if(upstream===0)return 0;
-      if(upstream===null){unknown=true;continue;}
-      const raw=E.rawAnswer(ans,src);
-      if(raw==null || (src.tipo==='radio' && !(typeof raw==='object'?raw.estado:raw))){unknown=true;continue;}
-      const keys=(Array.isArray(cond.valor)?cond.valor:[cond.valor]).map(String);
-      let matches;
-      if(src.tipo==='probabilidad-opcion') {
-        // Un 0 explícito es dato; una opción sin valorar no lo es.
-        const known=keys.filter(k=>raw[k]!=null && Number.isFinite(Number(raw[k])));
-        matches=known.some(k=>Number(raw[k])>=0.5);
-        if(!matches&&known.length<keys.length){unknown=true;continue;}
-      } else if(Array.isArray(raw)) matches=raw.some(v=>keys.includes(String(typeof v==='object'?v?.nombre:v)));
-      else if(src.tipo==='radio') matches=keys.includes(String(typeof raw==='object'?raw.estado:raw));
-      else if(src.tipo==='voto-ponderado') matches=keys.some(k=>Number(raw[k])>0);
-      else {unknown=true;continue;}
-      if(cond.no?matches:!matches) return 0;
+  function conditions(q,schema){return conditionGroups(q,schema).flatMap(g=>g.rules);}
+  const combine=(values,and)=>and?(values.includes(0)?0:values.includes(null)?null:1):(values.includes(1)?1:values.includes(null)?null:0);
+  function applicability(q,ans,schema,trail=new Set()){
+    if(trail.has(q.id))return null;
+    const seen=new Set(trail);seen.add(q.id);
+    function rule(cond){
+      const src=schema.find(x=>x.id===cond.qid);if(!src)return null;
+      const upstream=applicability(src,ans,schema,seen);if(upstream!==1)return upstream;
+      const raw=E.rawAnswer(ans,src);if(raw==null||(src.tipo==='radio'&&!(typeof raw==='object'?raw.estado:raw)))return null;
+      const keys=(Array.isArray(cond.valor)?cond.valor:[cond.valor]).map(String);let matches;
+      if(src.tipo==='probabilidad-opcion'){
+        const known=keys.filter(k=>raw[k]!=null&&Number.isFinite(Number(raw[k])));matches=known.some(k=>Number(raw[k])>=0.5);if(!matches&&known.length<keys.length)return null;
+      }else if(Array.isArray(raw))matches=raw.some(v=>keys.includes(String(typeof v==='object'?v?.nombre:v)));
+      else if(src.tipo==='radio')matches=keys.includes(String(typeof raw==='object'?raw.estado:raw));
+      else if(src.tipo==='voto-ponderado')matches=cond.op==='igual'?keys.some(k=>Number(raw[k])===Number(keys[0])):keys.some(k=>Number(raw[k])>0);
+      else return null;
+      return Number(cond.no?!matches:matches);
     }
-    return unknown?null:1;
+    return combine(conditionGroups(q,schema).map(g=>combine(g.rules.map(rule),g.logic==='AND')),true);
   }
   function cohorts(q, rows, schema) {
     const out={applicable:[],excluded:[],unknown:[],answered:[],missing:[]};
@@ -115,7 +104,7 @@
     return schema.filter(q=>!q.config?.esEncabezado).map(q=>{
       const c=cohorts(q,rows,schema), kind=role(q);
       const s={qid:q.id,label:q.label,section:q.config?.seccion||'',kind,conditional:conditions(q,schema).length>0,applicable:c.applicable.length,answered:c.answered.length,missing:c.missing.length,excluded:c.excluded.length,unknown:c.unknown.length,pending};
-      if(kind==='transporte'){s.transport=transport(q,c.answered);const t=s.transport;s.status=(!s.answered||s.missing||s.unknown||s.pending||t.unknown.length)?'indeterminado':t.balance>=0?'factible':'infactible';}
+      if(kind==='transporte'){s.transport=transport(q,c.answered);const t=s.transport;if(q.config?.routeStudy)s.route=c.answered.length?root.RouteStudy.solve(q,c.answered,t):{status:"indeterminado",reason:"Todavía no hay respuestas de transporte en este estudio."};s.status=(!s.answered||s.missing||s.unknown||s.pending||t.unknown.length)?'indeterminado':t.balance>=0?'factible':'infactible';}
       else if(kind==='presupuesto'||q.tipo==='slider'){s.budget=budget(c.answered,kind==='presupuesto');s.status='descriptivo';}
       else if(kind==='fechas'||kind==='horarios'){s.dates=dateStudy(q,c.answered);s.status='descriptivo';}
       else if(['radio','checkbox','casas','voto-ponderado','probabilidad-opcion'].includes(q.tipo)){s.options=optionStudy(q,c.answered);s.prob=q.tipo==='probabilidad-opcion';s.points=q.tipo==='voto-ponderado';s.status='descriptivo';}
@@ -127,10 +116,11 @@
   function integratedMode(schema){
     const qs=schema.filter(q=>!q.config?.esEncabezado);
     const count=k=>qs.filter(q=>role(q)===k).length;
+    if(qs.some(q=>q.config?.routeStudy))return {enabled:false,reason:'Hay estudios de desplazamiento con horarios y ubicaciones. Se analizan por separado; el optimizador temporal antiguo no contempla recogidas.'};
     if(!count('fechas')&&!count('horarios'))return {enabled:false,reason:'No se está decidiendo una fecha. Los estudios independientes siguen disponibles.'};
     if(['fechas','horarios','transporte','presupuesto','alojamiento'].some(k=>count(k)>1))return {enabled:false,reason:'Hay varios estudios del mismo tipo. No se combinan automáticamente restricciones de problemas diferentes.'};
     if(qs.some(q=>conditions(q,schema).length))return {enabled:false,reason:'Hay ramas condicionales. Los estudios se calculan con sus propios participantes; la optimización conjunta por escenarios aún no está disponible.'};
     return {enabled:true,reason:''};
   }
-  root.DecisionModel={role,conditions,applicability,cohorts,studies,integratedMode};
+  root.DecisionModel={role,conditions,conditionGroups,applicability,cohorts,studies,integratedMode};
 })(typeof window!=='undefined'?window:globalThis);
