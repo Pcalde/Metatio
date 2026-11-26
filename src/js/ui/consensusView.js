@@ -56,18 +56,34 @@ function renderResultados() {
 
   if (_renderConsensusGate(container)) return;
 
+  const mode=DecisionModel.integratedMode(schema);
+  const studies=DecisionModel.studies(schema,respuestas,respondentes);
+  const overview=div('card');
+  overview.innerHTML=`<div class="card-title">Estudios independientes del cuestionario</div><p style="color:var(--muted)">${esc(mode.enabled?'Cada pregunta se analiza con sus propios datos. El optimizador temporal se muestra al final cuando procede.':mode.reason)}</p><p>${respuestas.length} respuestas enviadas · ${studies.length} estudios</p>`;
+  if (typeof asistenciaActiva!=='undefined' && asistenciaActiva) {
+    const ps=respondentes.map(r=>getEffectiveProb(r.nombre));
+    overview.innerHTML+=`<p>Asistencia esperada (modelo activo): ${ps.reduce((a,b)=>a+b,0).toFixed(1)} personas.</p>`;
+  } else overview.innerHTML+='<p>Estimación de asistencia desactivada. Sin ponderación por asistencia.</p>';
+  container.appendChild(overview);
+  for(const study of studies)container.appendChild(buildDecisionStudyCard(study));
+  if(!mode.enabled){appendDecisionReportButton(container);return;}
   const model = buildModelData();
+  if(!model.indiceFechas.length){const notice=div('card');notice.textContent='Factibilidad conjunta indeterminada: todavía no hay fechas evaluables.';container.appendChild(notice);appendDecisionReportButton(container);return;}
   const { soluciones, diagnosticos } = ejecutarMotorFactibilidad(model);
   const topo = computeTopologyAndSensitivity(model, soluciones);
-
   container.appendChild(buildExecutiveSummaryCard(model, soluciones, topo));
   container.appendChild(buildPreferenciasBooleanasCard(model));
-  container.appendChild(buildDiasMaxStatsCard(model));   // ← si la diste de alta
-  container.appendChild(buildFeasibleSolutionsSection(soluciones, diagnosticos, topo));
+  container.appendChild(buildDiasMaxStatsCard(model));
+  const incomplete=studies.some(x=>['fechas','horarios','transporte','presupuesto','alojamiento'].includes(x.kind)&&(x.missing||x.pending||x.unknown||x.dates&&x.dates.known<x.answered||x.transport&&x.transport.unknown.length));
+  if(!soluciones.length&&incomplete){const notice=div('card');notice.textContent='Factibilidad conjunta indeterminada: hay datos de decisiones pendientes.';container.appendChild(notice);}
+  else container.appendChild(buildFeasibleSolutionsSection(soluciones, diagnosticos, topo));
+  if (model.viajeros.length >= 2) container.appendChild(buildTopologyAndSensitivityCard(model, topo));
+  appendDecisionReportButton(container);
 
-  if (model.viajeros.length >= 2) {
-    container.appendChild(buildTopologyAndSensitivityCard(model, topo));
-  }
+
+}
+
+function appendDecisionReportButton(container) {
   if (typeof window.openPrintReport === 'function') {
     const rBtn = document.createElement('button');
     rBtn.type = 'button';
@@ -77,6 +93,21 @@ function renderResultados() {
     rBtn.addEventListener('click', () => window.openPrintReport());
     container.appendChild(rBtn);
   }
+}
+
+function buildDecisionStudyCard(s){
+  const card=div('card ref-card');
+  const label={transporte:'Transporte',presupuesto:'Presupuesto por persona',fechas:'Fechas',horarios:'Horarios',alojamiento:'Alojamiento',preferencia:'Preferencias'}[s.kind]||'Resultados';
+  const n=x=>x==null?'Sin dato':Number(x).toLocaleString('es-ES',{maximumFractionDigits:2});
+  card.innerHTML=`<div class="card-title">${esc(s.label)}</div><p style="color:var(--muted);font-size:.8rem">${esc(s.section?s.section+' · ':'')}${label}${s.conditional?' · Condicional':''} · ${s.answered}/${s.applicable} aplicables con respuesta · ${s.excluded} no aplican · ${s.unknown} rama desconocida · ${s.pending} sin envío</p>`;
+  const add=t=>{const p=document.createElement('p');p.textContent=t;p.style.marginTop='8px';card.appendChild(p);};
+  if(s.status==='no_aplicable'){add('No aplicable: ningún participante pertenece a esta rama.');return card;}
+  if(s.transport){const t=s.transport;add(`${s.status==='factible'?'Capacidad factible':s.status==='infactible'?'Capacidad insuficiente':'Capacidad global indeterminada'} · ${t.drivers.length} coches · ${t.seats} plazas libres · ${t.passengers.length} necesitan plaza · ${t.independent.length} por su cuenta.`);add(`Balance declarado: ${t.balance>=0?'+':''}${t.balance} plazas. No comprueba trayectos, horarios ni afinidades.`);if(t.unknown.length)add('Datos de transporte incompletos: '+t.unknown.join(', '));}
+  else if(s.budget){add(`Mediana declarada: ${n(s.budget.median)}${s.kind==='presupuesto'?' €':''}.`);if(s.kind==='presupuesto')add(`Tope común de quienes han respondido: ${n(s.budget.commonCap)} € por persona. No equivale al coste del plan.`);}
+  else if(s.dates){add(`${s.dates.known} participantes con días concretos. ${s.kind==='horarios'?'Coincidencia de días, no necesariamente de franjas.':'Disponibilidad por día, no ventanas completas.'}`);for(const d of s.dates.days.slice(0,10))add(`${fmtShortDate(d.date)} · ${d.count} disponibles`);}
+  else if(s.options){for(const o of s.options)add(`${o.label}: ${o.mean==null?'sin valoraciones':s.prob?n(100*o.mean)+'% de media · '+n(o.sum)+' suma de probabilidades':s.points?n(o.sum)+' puntos':n(o.sum)+' selecciones'} (${o.count} respuestas evaluadas)`);}
+  else add('Sin análisis cuantitativo específico.');
+  return card;
 }
 
 // ── VISTA REFORMULARIO (tarjetas interactivas por pregunta) ───────────────
@@ -123,7 +154,8 @@ function renderResultadosInteractivo() {
 
 function buildExecutiveSummaryCard(model, soluciones, topo) {
   const card = div('card ref-summary-card');
-  const nombres = respondentes.map(r => r.nombre);
+  const attendanceOn=typeof asistenciaActiva==='undefined'||asistenciaActiva;
+  const nombres = attendanceOn?respondentes.map(r => r.nombre):[];
   let expected = 0, variance = 0;
   const probs = nombres.map(nombre => {
     const p = getEffectiveProb(nombre);
@@ -146,12 +178,12 @@ function buildExecutiveSummaryCard(model, soluciones, topo) {
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <label class="toggle-label" style="font-size:0.78rem;background:var(--bg);padding:5px 10px;border-radius:8px;border:1px solid var(--border)">
-          <input type="checkbox" id="toggle-weight-prob" ${weightByProb ? 'checked' : ''}>
+          <input type="checkbox" id="toggle-weight-prob" ${weightByProb && attendanceOn ? 'checked' : ''} ${attendanceOn?'':'disabled'}>
           <span class="toggle-pill"></span>
           <span>Ponderar rankings por pᵢ</span>
         </label>
         <label class="toggle-label" style="font-size:0.78rem;background:var(--bg);padding:5px 10px;border-radius:8px;border:1px solid var(--border)">
-          <input type="checkbox" id="toggle-mc-empirical" ${mcUseEmpiricalProb ? 'checked' : ''}>
+          <input type="checkbox" id="toggle-mc-empirical" ${mcUseEmpiricalProb && attendanceOn ? 'checked' : ''} ${attendanceOn?'':'disabled'}>
           <span class="toggle-pill"></span>
           <span>Monte Carlo con ausencias votadas</span>
         </label>
@@ -160,12 +192,12 @@ function buildExecutiveSummaryCard(model, soluciones, topo) {
 
     <div class="kpi-grid">
       <div class="kpi-box">
-        <span class="kpi-label">Participantes (con fechas)</span>
+        <span class="kpi-label">Participantes en el modelo</span>
         <span class="kpi-val">${model.viajeros.length} <small>/ ${respondentes.length} resp.</small></span>
       </div>
       <div class="kpi-box">
         <span class="kpi-label">Esperanza asistencia E[N] (a priori)</span>
-        <span class="kpi-val">${expected.toFixed(1)} <small>± ${Math.sqrt(variance).toFixed(1)}</small></span>
+        <span class="kpi-val">${attendanceOn?expected.toFixed(1)+' ± '+Math.sqrt(variance).toFixed(1):'Desactivada'}</span>
       </div>
       <div class="kpi-box">
         <span class="kpi-label">Probabilidad efectiva por miembro</span>
@@ -852,12 +884,14 @@ function buildTopologyAndSensitivityCard(model, topo) {
 
 // ── 10. TARJETAS INTERACTIVAS DE REFORMULARIO POR PREGUNTA ──────────────────
 function buildAnalyticalCard(q, idx, myAns) {
+  if(q.config?.esEncabezado)return null;
   const card = div('card ref-card');
   const title = div('card-title');
   title.innerHTML = `<span class="num">${idx + 1}</span> ${esc(q.label)}`;
   card.appendChild(title);
 
-  const myVal = extractAnswer(myAns, q);
+  const applicable = DecisionModel.applicability(q,myAns||{},schema)===1;
+  const myVal = applicable ? extractAnswer(myAns, q) : null;
 
   switch (q.tipo) {
     case 'checkbox':
@@ -884,6 +918,7 @@ function buildAnalyticalCard(q, idx, myAns) {
       buildHorariosConsensus(card, q, myVal);
       break;
   }
+  if(!applicable){const note=div();note.textContent="No aplica o falta responder a la condición de origen. Los resultados son del grupo al que sí aplica.";card.appendChild(note);card.querySelectorAll("button,input,select,textarea").forEach(el=>el.disabled=true);}
   return card;
 }
 
@@ -1093,7 +1128,7 @@ function buildOptionsConsensus(card, q, myVal) {
 
   const map = new Map(opts.map(o => [o.key, o]));
 
-  respuestas.forEach(r => {
+  DecisionModel.cohorts(q,respuestas,schema).answered.forEach(r => {
     const v = extractAnswer(r.answers, q);
     if (!v) return;
     const w = userWeight(r.nombre);
@@ -1240,7 +1275,7 @@ function buildOptionsConsensus(card, q, myVal) {
 function buildSliderConsensus(card, q, myVal) {
   const cfg  = q.config || {};
   const min  = cfg.min ?? 10, max = cfg.max ?? 500, step = cfg.step ?? 10;
-  const unit = cfg.unit ?? (/^(precio|presu)/.test(q.id) ? ' €' : '');
+  const unit = cfg.unit ?? (DecisionModel.role(q)==='presupuesto'?' €':'');
 
   const unpackSlider = v => {
     if (v == null) return null;
@@ -1255,7 +1290,7 @@ function buildSliderConsensus(card, q, myVal) {
   };
 
   const entries = [];
-  respuestas.forEach(r => {
+  DecisionModel.cohorts(q,respuestas,schema).answered.forEach(r => {
     const parsed = unpackSlider(extractAnswer(r.answers, q));
     if (parsed) entries.push({ nombre: r.nombre, val: parsed.ideal, max: parsed.max, isDual: parsed.isDual });
   });
@@ -1345,43 +1380,9 @@ function buildSliderConsensus(card, q, myVal) {
   card.appendChild(wrap);
 }
 
-function buildDisponibilidadConsensus(card) {
-  const model = buildModelData();
-  if (!model.indiceFechas.length) {
-    card.innerHTML += `<p style="color:var(--muted);font-size:0.85rem">Sin fechas registradas.</p>`;
-    return;
-  }
-
-  const wrap = div();
-  const datesSlice = model.indiceFechas.slice(0, 45);
-  wrap.innerHTML = `
-    <div style="font-size:0.82rem;color:var(--muted);margin-bottom:8px">
-      Mapa de calor diario (${model.indiceFechas.length} días en el horizonte; las ventanas óptimas combinadas se muestran arriba):
-    </div>
-    <div style="overflow-x:auto">
-      <table class="compat-matrix-table">
-        <thead>
-          <tr>
-            <th style="text-align:left">Viajero (${model.viajeros.length})</th>
-            <th>díasMax</th>
-            ${datesSlice.map(f => `<th class="${isSatSunISO(f) ? 'wknd-col' : ''}">${fmtShortDate(f)}</th>`).join('')}
-          </tr>
-        </thead>
-        <tbody>
-          ${model.viajeros.map(v => `
-            <tr>
-              <th style="text-align:left">${esc(v.nombre)}</th>
-              <td><b>${v.diasMax}d</b></td>${datesSlice.map(f => {
-                const avail = model.matriz[f][v.nombre];
-                return `<td style="background:${avail ? 'rgba(58,107,74,0.65);color:#fff' : 'transparent'}">${avail ? '✓' : '·'}</td>`;
-              }).join('')}
-            </tr>
-          `).join('')}
-        </tbody>
-      </table>
-    </div>
-  `;
-  card.appendChild(wrap);
+function buildDisponibilidadConsensus(card,q) {
+  const s=DecisionModel.studies(schema,respuestas,respondentes).find(x=>x.qid===q.id);
+  if(s)card.appendChild(buildDecisionStudyCard(s));
 }
 
 function buildRadioConsensus(card, q, myVal) {
@@ -1398,7 +1399,7 @@ function buildRadioConsensus(card, q, myVal) {
     counts.set(norm.key, { val: norm.key, label: norm.label, users: [], extraSum: 0 });
   });
 
-  respuestas.forEach(r => {
+  DecisionModel.cohorts(q,respuestas,schema).answered.forEach(r => {
     const v = extractAnswer(r.answers, q);
     if (!v) return;
     const est = typeof v === 'object' ? v.estado : v;
@@ -1464,7 +1465,7 @@ function buildTextareaConsensus(card, q) {
     return;
   }
   const notes = [];
-  respuestas.forEach(r => {
+  DecisionModel.cohorts(q,respuestas,schema).answered.forEach(r => {
     const v = extractAnswer(r.answers, q);
     if (v && String(v).trim()) notes.push({ nombre: r.nombre, texto: String(v).trim() });
   });
@@ -1511,7 +1512,7 @@ function buildHorariosConsensus(card, q, myVal) {
   };
 
   const participantes = [], fechasSet = new Set(), duraciones = [];
-  respuestas.forEach(r => {
+  DecisionModel.cohorts(q,respuestas,schema).answered.forEach(r => {
     const v = extractAnswer(r.answers, q);
     if (!v || !Array.isArray(v.disponibilidades)) return;
     if (v.duracionHoras) duraciones.push(Number(v.duracionHoras));

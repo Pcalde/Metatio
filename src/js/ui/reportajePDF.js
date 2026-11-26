@@ -52,6 +52,9 @@ p, li { orphans: 3; widows: 3; }
 .report-subtitle { font-size: 10pt; color: var(--rp-muted); letter-spacing: 0.03em; }
 .report-meta { display: flex; justify-content: center; gap: 20px; flex-wrap: wrap; margin-top: 14px; font-size: 9.5pt; color: #444; }
 .report-section { margin-bottom: 24px; }
+.ref-card { margin: 10px 0; padding: 8px; border: 1px solid #bbb; break-inside: avoid; }
+.ref-card .card-title { font-weight: 600; }
+.ref-card p { margin: 4px 0; }
 .report-page-break { page-break-before: always; }
 .report-chart { margin: 8px 0 12px; }
 .report-chart svg { display: block; max-width: 100%; height: auto; }
@@ -201,7 +204,7 @@ function buildDivergingBarSvg(rows, opts) {
 }
 
   // ── Secciones del informe ────────────────────────────────────────────────
-  function buildCover(model, soluciones) {
+  function buildCover(model, soluciones, integrated=true) {
     return `
       <div class="report-cover">
         <h1>${e(encuestaTitulo || 'Viaje')}</h1>
@@ -209,14 +212,15 @@ function buildDivergingBarSvg(rows, opts) {
         <div class="report-meta">
           <span><b>${respondentes.length}</b> participantes</span>
           <span><b>${respuestas.length}</b> respuestas</span>
-          <span><b>${soluciones.length}</b> solución${soluciones.length === 1 ? '' : 'es'} factible${soluciones.length === 1 ? '' : 's'}</span>
+          <span>${integrated?`<b>${soluciones.length}</b> soluciones temporales encontradas`:'Estudios independientes'}</span>
           <span>${new Date().toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' })}</span>
         </div>
       </div>`;
   }
 
   function buildSynthesis(model, soluciones, topo) {
-    const probs = respondentes.map(r => getEffectiveProb(r.nombre));
+    const attendanceOn=typeof asistenciaActiva==='undefined'||asistenciaActiva;
+    const probs = attendanceOn?respondentes.map(r => getEffectiveProb(r.nombre)):[];
     const expected = probs.reduce((a, p) => a + p, 0);
     const variance = probs.reduce((a, p) => a + p * (1 - p), 0);
     const sigma = Math.sqrt(variance);
@@ -224,7 +228,7 @@ function buildDivergingBarSvg(rows, opts) {
 
     const parts = [`<h2>Síntesis ejecutiva</h2>`, `<div class="kpis">`];
     parts.push(`<div class="kpi"><div class="kpi-label">Asistencia esperada</div>
-      <div class="kpi-value">${expected.toFixed(1)} <small>± ${sigma.toFixed(1)}</small></div></div>`);
+      <div class="kpi-value">${attendanceOn?expected.toFixed(1)+' ± '+sigma.toFixed(1):'Desactivada'}</div></div>`);
     parts.push(`<div class="kpi"><div class="kpi-label">Soluciones factibles</div>
       <div class="kpi-value">${soluciones.length}</div></div>`);
     if (firstSol) {
@@ -630,15 +634,12 @@ function buildDivergingBarSvg(rows, opts) {
     const { soluciones } = ejecutarMotorFactibilidad(model);
     const topo = computeTopologyAndSensitivity(model, soluciones);
 
-    const parts = [
-      buildCover(model, soluciones),
-      buildSynthesis(model, soluciones, topo),
-      buildPreferences(model),
-      buildDaysStats(model),
-      buildSolutions(model, soluciones),
-      buildTopology(topo),
-    ];
-    if (options.includeReform) parts.push(buildReformSection());
+    const mode=DecisionModel.integratedMode(schema);
+    const integrated=mode.enabled&&model.indiceFechas.length>0;
+    const parts=[buildCover(model,soluciones,integrated),`<h2>Estudios independientes</h2><p>${e(mode.enabled?(integrated?'El estudio temporal conjunto se muestra a continuación.':'Factibilidad temporal indeterminada: sin fechas evaluables.'):mode.reason)}</p>`];
+    for(const study of DecisionModel.studies(schema,respuestas,respondentes))parts.push(buildDecisionStudyCard(study).outerHTML);
+    if(integrated){parts.push(buildSynthesis(model,soluciones,topo),buildPreferences(model),buildDaysStats(model));if(soluciones.length)parts.push(buildSolutions(model,soluciones));else parts.push('<p>No se encontraron ventanas en los datos evaluados. No implica que el problema completo sea infactible si faltan respuestas.</p>');parts.push(buildTopology(topo));}
+    if (options.includeReform && integrated) parts.push(buildReformSection());
 
     return `<!DOCTYPE html>
 <html lang="es">
