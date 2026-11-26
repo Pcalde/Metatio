@@ -58,29 +58,44 @@ function renderResultados() {
 
   const mode=DecisionModel.integratedMode(schema);
   const studies=DecisionModel.studies(schema,respuestas,respondentes);
-  const overview=div('card');
-  overview.innerHTML=`<div class="card-title">Estudios independientes del cuestionario</div><p style="color:var(--muted)">${esc(mode.enabled?'Cada pregunta se analiza con sus propios datos. El optimizador temporal se muestra al final cuando procede.':mode.reason)}</p><p>${respuestas.length} respuestas enviadas · ${studies.length} estudios</p>`;
-  if (typeof asistenciaActiva!=='undefined' && asistenciaActiva) {
-    const ps=respondentes.map(r=>getEffectiveProb(r.nombre));
-    overview.innerHTML+=`<p>Asistencia esperada (modelo activo): ${ps.reduce((a,b)=>a+b,0).toFixed(1)} personas.</p>`;
-  } else overview.innerHTML+='<p>Estimación de asistencia desactivada. Sin ponderación por asistencia.</p>';
-  container.appendChild(overview);
-  for(const study of studies)container.appendChild(buildDecisionStudyCard(study));
-  if(!mode.enabled){appendDecisionReportButton(container);return;}
-  const model = buildModelData();
-  if(!model.indiceFechas.length){const notice=div('card');notice.textContent='Factibilidad conjunta indeterminada: todavía no hay fechas evaluables.';container.appendChild(notice);appendDecisionReportButton(container);return;}
-  const { soluciones, diagnosticos } = ejecutarMotorFactibilidad(model);
-  const topo = computeTopologyAndSensitivity(model, soluciones);
-  container.appendChild(buildExecutiveSummaryCard(model, soluciones, topo));
-  container.appendChild(buildPreferenciasBooleanasCard(model));
-  container.appendChild(buildDiasMaxStatsCard(model));
-  const incomplete=studies.some(x=>['fechas','horarios','transporte','presupuesto','alojamiento'].includes(x.kind)&&(x.missing||x.pending||x.unknown||x.dates&&x.dates.known<x.answered||x.transport&&x.transport.unknown.length));
-  if(!soluciones.length&&incomplete){const notice=div('card');notice.textContent='Factibilidad conjunta indeterminada: hay datos de decisiones pendientes.';container.appendChild(notice);}
-  else container.appendChild(buildFeasibleSolutionsSection(soluciones, diagnosticos, topo));
-  if (model.viajeros.length >= 2) container.appendChild(buildTopologyAndSensitivityCard(model, topo));
+  const model=mode.enabled ? buildModelData() : null;
+  const integrated=!!model?.indiceFechas.length;
+  let joint=null;
+  if(integrated){
+    const {soluciones,diagnosticos}=ejecutarMotorFactibilidad(model);
+    joint={soluciones,diagnosticos,topo:computeTopologyAndSensitivity(model,soluciones)};
+  }
+  container.appendChild(buildResultsOverview(studies,mode,integrated));
+  if(joint){
+    container.appendChild(buildExecutiveSummaryCard(model,joint.soluciones,joint.topo));
+    container.appendChild(buildPreferenciasBooleanasCard(model));
+    container.appendChild(buildDiasMaxStatsCard(model));
+    const incomplete=studies.some(x=>['fechas','horarios','transporte','presupuesto','alojamiento'].includes(x.kind)&&(x.missing||x.pending||x.unknown||x.dates&&x.dates.known<x.answered||x.transport&&x.transport.unknown.length));
+    if(!joint.soluciones.length&&incomplete){const notice=div('card');notice.textContent='Factibilidad conjunta indeterminada: hay datos de decisiones pendientes.';container.appendChild(notice);}
+    else container.appendChild(buildFeasibleSolutionsSection(joint.soluciones,joint.diagnosticos,joint.topo));
+    if(model.viajeros.length>=2)container.appendChild(buildTopologyAndSensitivityCard(model,joint.topo));
+  }
+  const header=div('ref-section-divider');header.textContent='Análisis matemático por pregunta';container.appendChild(header);
+  const byId=new Map(studies.map(s=>[s.qid,s]));let previous=null;
+  schema.forEach((q,idx)=>{
+    const study=byId.get(q.id);if(!study)return;
+    if(study.section!==previous){const title=div('ref-section-divider');title.textContent=study.section||'General';container.appendChild(title);previous=study.section;}
+    try {
+      const card=buildAnalyticalCard(q,idx,null,{readOnly:true,study});
+      if(card)container.appendChild(card);
+    } catch(err){console.error('Error en análisis de '+q.id,err);container.appendChild(buildDecisionStudyCard(study));const warning=div('card');warning.textContent='No se ha podido mostrar el gráfico de esta pregunta. Se mantiene el resumen disponible.';container.appendChild(warning);}
+  });
   appendDecisionReportButton(container);
+}
 
-
+function buildResultsOverview(studies,mode,integrated){
+  const card=div('card ref-summary-card mt-results-overview');
+  const on=typeof asistenciaActiva==='undefined'||asistenciaActiva;
+  const ps=on?respondentes.map(r=>({nombre:r.nombre,p:getEffectiveProb(r.nombre)})):[];
+  const expected=ps.reduce((a,b)=>a+b.p,0),sd=Math.sqrt(ps.reduce((a,b)=>a+b.p*(1-b.p),0));
+  card.innerHTML=`<div class="ref-summary-header"><div><div class="card-title"><span class="num"><i class="fa-solid fa-chart-simple"></i></span> Panorama de resultados</div><p class="mt-results-note">${esc(integrated?'Optimización conjunta y estudios por pregunta.':mode.enabled?'Factibilidad temporal indeterminada: aún no hay fechas evaluables.':mode.reason)}</p></div>${on&&!integrated?`<label class="toggle-label"><input type="checkbox" class="mt-weight" ${weightByProb?'checked':''}><span class="toggle-pill"></span><span>Ponderar rankings por asistencia</span></label>`:''}</div><div class="kpi-grid"><div class="kpi-box"><span class="kpi-label">Respuestas enviadas</span><span class="kpi-val">${respuestas.length} <small>/ ${respondentes.length} participantes</small></span></div><div class="kpi-box"><span class="kpi-label">Estudios independientes</span><span class="kpi-val">${studies.length}</span></div><div class="kpi-box"><span class="kpi-label">Asistencia esperada a priori</span><span class="kpi-val">${on?expected.toFixed(1)+' ± '+sd.toFixed(1):'Desactivada'}</span>${on?'<small>Desviación típica bajo independencia</small>':''}</div></div>${on?`<div class="kpi-pills mt-attendance-pills">${ps.sort((a,b)=>b.p-a.p).map(x=>`<span class="user-prob-pill">${esc(x.nombre)} <b>${Math.round(100*x.p)}%</b></span>`).join('')}</div>`:''}`;
+  card.querySelector('.mt-weight')?.addEventListener('change',e=>{weightByProb=e.target.checked;renderResultados();});
+  return card;
 }
 
 function appendDecisionReportButton(container) {
@@ -891,13 +906,16 @@ function buildTopologyAndSensitivityCard(model, topo) {
 }
 
 // ── 10. TARJETAS INTERACTIVAS DE REFORMULARIO POR PREGUNTA ──────────────────
-function buildAnalyticalCard(q, idx, myAns) {
+function buildAnalyticalCard(q, idx, myAns, options={}) {
   if(q.config?.esEncabezado)return null;
   const card = div('card ref-card');
   const title = div('card-title');
   title.innerHTML = `<span class="num">${idx + 1}</span> ${esc(q.label)}`;
   card.appendChild(title);
 
+  const readOnly=!!options.readOnly;
+  const study=options.study;
+  if(study){const info=div('mt-study-meta');info.textContent=`${study.answered}/${study.applicable} aplicables con respuesta · ${study.excluded} fuera de la rama · ${study.unknown} rama desconocida · ${study.pending} sin envío`;card.appendChild(info);if(study.status==='no_aplicable'){const note=div('muted-note');note.textContent='No aplicable: ningún participante pertenece a esta rama.';card.appendChild(note);return card;}}
   const applicable = DecisionModel.applicability(q,myAns||{},schema)===1;
   const myVal = applicable ? extractAnswer(myAns, q) : null;
 
@@ -925,6 +943,13 @@ function buildAnalyticalCard(q, idx, myAns) {
     case 'horarios':
       buildHorariosConsensus(card, q, myVal);
       break;
+  }
+  if(readOnly){
+    card.classList.add('mt-readonly-analysis');
+    card.querySelectorAll('.ref-inline-pond,.btn-ref-toggle,.ref-reformulario-box').forEach(el=>el.remove());
+    card.querySelectorAll('.prob-scale-row').forEach(el=>el.parentElement.remove());
+    if(study?.transport)card.appendChild(buildTransportVisual(study));
+    return card;
   }
   if(!applicable){const note=div();note.textContent="No aplica o falta responder a la condición de origen. Los resultados son del grupo al que sí aplica.";card.appendChild(note);card.querySelectorAll("button,input,select,textarea").forEach(el=>el.disabled=true);}
   return card;
@@ -1079,6 +1104,7 @@ function buildProbabilidadOpcionConsensus(card, q, myVal) {
     <span>Votantes: <b>${evalRes.nVotantes}</b> · Asistencia esperada a priori: <b>${evalRes.eBase.toFixed(1)}</b> pers.</span>
   `;
   card.appendChild(summaryBar);
+  card.appendChild(buildParetoPlot(evalRes));
 
   const frontList = div('ref-opt-list');
   if (evalRes.frontera.length) {
@@ -1122,6 +1148,20 @@ function buildProbabilidadOpcionConsensus(card, q, myVal) {
     details.append(summary, discList);
     card.appendChild(details);
   }
+}
+
+// Diagrama de objetivos con las métricas del evaluador original (sin recalcularlas).
+function buildParetoPlot(result){
+  const items=result.opciones.filter(o=>o.nOpt>0),wrap=div('mt-pareto-plot');
+  if(!items.length)return wrap;
+  const W=560,H=260,L=48,R=20,T=20,B=47, xmax=Math.max(1,result.nVotantes,...items.map(o=>o.E));
+  const x=v=>L+(W-L-R)*v/xmax,y=v=>H-B-(H-B-T)*v;
+  const front=new Set(result.frontera.map(o=>o.key));
+  const frontier=items.filter(o=>front.has(o.key)).sort((a,b)=>a.E-b.E);
+  const groups=new Map();items.forEach((o,i)=>{const key=`${o.E.toFixed(8)}:${o.P25.toFixed(8)}`;if(!groups.has(key))groups.set(key,[]);groups.get(key).push({o,i});});
+  const points=[...groups.values()].map(group=>{const o=group[0].o,cls=group.some(v=>front.has(v.o.key))?'front':group.every(v=>v.o.inviableGrupoPequeno)?'veto':'dominated';const info=group.map(({o})=>`${o.label}: E=${o.E.toFixed(2)}, P25=${o.P25.toFixed(2)}, n=${o.nOpt}`).join(' | ');return `<g class="mt-pareto-point ${cls}" tabindex="0" role="img" aria-label="${esc(info)}"><title>${esc(info)}</title><circle cx="${x(o.E)}" cy="${y(o.P25)}" r="7"/><text x="${x(o.E)}" y="${y(o.P25)-11}" text-anchor="middle">${group.map(v=>v.i+1).join(', ')}</text></g>`;}).join('');
+  wrap.innerHTML=`<div class="mt-plot-title">Asistencia esperada frente a compromiso del grupo</div><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Diagrama de Pareto de asistencia esperada y percentil 25">${[0,.25,.5,.75,1].map(v=>`<line class="mt-plot-grid" x1="${L}" x2="${W-R}" y1="${y(v)}" y2="${y(v)}"/><text x="${L-8}" y="${y(v)+4}" text-anchor="end">${Math.round(v*100)}%</text>`).join('')}${[0,.25,.5,.75,1].map(v=>`<text x="${x(v*xmax)}" y="${H-B+17}" text-anchor="middle">${Number((v*xmax).toFixed(1))}</text>`).join('')}<path class="mt-plot-axis" d="M${L} ${T} V${H-B} H${W-R}"/>${frontier.length>1?`<polyline class="mt-pareto-line" points="${frontier.map(o=>`${x(o.E)},${y(o.P25)}`).join(' ')}"/>`:''}${points}<text x="${(L+W-R)/2}" y="${H-7}" text-anchor="middle">E[X] · personas esperadas</text><text x="12" y="${(T+H-B)/2}" text-anchor="middle" transform="rotate(-90 12 ${(T+H-B)/2})">P25</text></svg><div class="mt-plot-legend"><span class="mt-front">● No dominada</span><span class="mt-dominated">● Dominada</span><span class="mt-veto">● Veto en grupo pequeño</span></div><div class="mt-plot-labels">${items.map((o,i)=>`<span><b>${i+1}.</b> ${esc(o.label)} <small>(n=${o.nOpt})</small></span>`).join('')}</div><p class="mt-results-note">Cada punto utiliza las valoraciones disponibles de esa opción; si el número de votantes difiere, compara también n. La línea une las opciones no dominadas, no representa opciones intermedias factibles.</p>`;
+  return wrap;
 }
 
 function buildOptionsConsensus(card, q, myVal) {
@@ -1175,7 +1215,7 @@ function buildOptionsConsensus(card, q, myVal) {
 
   opts.forEach((o, rank) => {
     const row = div('ref-opt-row' + (rank === 0 && o.score > 0 ? ' is-leader' : ''));
-    const pct = Math.max(0, Math.min(100, (o.score / maxScore) * 100));
+    const pct = Math.max(0, Math.min(100, (Math.abs(o.score) / maxScore) * 100));
     const entriesPC = pcIdx.get(q.id + '\u0000' + o.key) || [];
     const pros = entriesPC.filter(e => e.tipo === 'pro').length;
     const cons = entriesPC.filter(e => e.tipo === 'contra').length;
@@ -1315,7 +1355,8 @@ function buildSliderConsensus(card, q, myVal) {
   const vMinCap   = hardCaps[0];
   const vMinIdeal = ideals[0];
   const q1   = ideals[Math.floor((ideals.length - 1) * 0.25)];
-  const med  = ideals[Math.floor((ideals.length - 1) * 0.50)];
+  const mid = Math.floor(ideals.length/2);
+  const med = ideals.length%2 ? ideals[mid] : (ideals[mid-1]+ideals[mid])/2;
   const mean = ideals.reduce((acc, x) => acc + x, 0) / ideals.length;
 
   const myParsed  = unpackSlider(myVal);
@@ -1327,14 +1368,14 @@ function buildSliderConsensus(card, q, myVal) {
   wrap.innerHTML = `
     <div class="kpi-grid" style="margin-bottom:14px">
       <div class="kpi-box">
-        <span class="kpi-label">Restricción Activa (Hard Cap)</span>
+        <span class="kpi-label">${DecisionModel.role(q)==='presupuesto'?'Restricción activa (tope común)':'Mínimo declarado'}</span>
         <span class="kpi-val" style="color:var(--accent)">${vMinCap}${esc(unit)}</span>
         <small>Por ${esc(entries[0].nombre)}${vMinIdeal < vMinCap ? ` ( cómodo mín: ${vMinIdeal}${esc(unit)} )` : ''}</small>
       </div>
       <div class="kpi-box">
         <span class="kpi-label">Percentil 25 (Q₁ cómodo)</span>
         <span class="kpi-val">${q1}${esc(unit)}</span>
-        <small>75% del grupo lo acepta</small>
+        <small>Cuantil empírico de valores declarados</small>
       </div>
       <div class="kpi-box">
         <span class="kpi-label">Mediana / Media</span>
@@ -1360,7 +1401,7 @@ function buildSliderConsensus(card, q, myVal) {
 
     <div class="ref-reformulario-box">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-        <span style="font-size:0.85rem;font-weight:500">Ajustar mi presupuesto cómodo en caliente:</span>
+        <span style="font-size:0.85rem;font-weight:500">${DecisionModel.role(q)==='presupuesto'?'Ajustar mi presupuesto cómodo en caliente:':'Ajustar mi valor en caliente:'}</span>
         <strong class="ref-live-val" style="color:var(--accent2);font-size:1.1rem">${curMyVal}${esc(unit)}</strong>
       </div>
       <input type="range" class="ref-live-slider" min="${min}" max="${max}" step="${step}" value="${curMyVal}">
@@ -1389,8 +1430,32 @@ function buildSliderConsensus(card, q, myVal) {
 }
 
 function buildDisponibilidadConsensus(card,q) {
-  const s=DecisionModel.studies(schema,respuestas,respondentes).find(x=>x.qid===q.id);
-  if(s)card.appendChild(buildDecisionStudyCard(s));
+  const cohort=DecisionModel.cohorts(q,respuestas,schema);
+  const entries=cohort.answered.map(r=>{
+    const v=r.value||{}, dates=new Set();
+    if(!v.noSe)for(const rg of v.rangos||[]){
+      const d=new Date(rg.desde+'T00:00:00Z'),end=new Date(rg.hasta+'T00:00:00Z');
+      for(let k=0;d<=end&&k<366;k++,d.setUTCDate(d.getUTCDate()+1)){
+        const f=d.toISOString().slice(0,10);if(!v.soloFinde||isWeekendISO(f))dates.add(f);
+      }
+    }
+    return {nombre:r.nombre,dates,days:v.diasMax,unknown:!!v.noSe||!dates.size};
+  });
+  const all=[...new Set(entries.flatMap(r=>[...r.dates]))].sort();
+  if(!all.length){card.appendChild(div('muted-note','Sin fechas concretas registradas en esta pregunta.'));return;}
+  const dates=all.slice(0,45),known=entries.filter(r=>!r.unknown);
+  const counts=all.map(f=>({f,n:known.filter(r=>r.dates.has(f)).length})).sort((a,b)=>b.n-a.n||a.f.localeCompare(b.f));
+  const wrap=div('mt-date-analysis');
+  wrap.innerHTML=`<div class="kpi-grid"><div class="kpi-box"><span class="kpi-label">Días con disponibilidad</span><span class="kpi-val">${all.length}</span></div><div class="kpi-box"><span class="kpi-label">Mayor coincidencia diaria</span><span class="kpi-val">${counts[0].n}/${known.length}</span><small>${fmtShortDate(counts[0].f)}</small></div></div><p class="mt-results-note">Mapa de calor por participante (${dates.length}/${all.length} días). «?» indica falta de fechas concretas, no indisponibilidad.</p><div style="overflow-x:auto"><table class="compat-matrix-table"><thead><tr><th>Participante</th><th>Días máx.</th>${dates.map(f=>`<th>${fmtShortDate(f)}</th>`).join('')}</tr></thead><tbody>${entries.map(r=>`<tr><th>${esc(r.nombre)}</th><td>${esc(r.days??'—')}</td>${dates.map(f=>`<td class="${r.dates.has(f)?'mt-date-yes':r.unknown?'mt-date-unknown':''}">${r.dates.has(f)?'✓':r.unknown?'?':'·'}</td>`).join('')}</tr>`).join('')}</tbody></table></div><p class="mt-results-note">Mejores días por número de disponibles (no equivale a una ventana conjunta factible).</p>${counts.slice(0,10).map(x=>`<div class="ref-dist-row"><span class="ref-dist-name">${fmtShortDate(x.f)}</span><div class="ref-bar-track" style="flex:1"><div class="ref-bar-fill" style="width:${100*x.n/Math.max(1,known.length)}%"></div></div><strong>${x.n}/${known.length}</strong></div>`).join('')}`;
+  card.appendChild(wrap);
+}
+
+function buildTransportVisual(s){
+  const t=s.transport,wrap=div('mt-transport-analysis');const scale=Math.max(1,t.seats,t.passengers.length);
+  const status={factible:'Capacidad suficiente',infactible:'Capacidad insuficiente',indeterminado:'Capacidad indeterminada',no_aplicable:'No aplicable'}[s.status]||s.status;
+  wrap.innerHTML=`<div class="kpi-grid"><div class="kpi-box"><span class="kpi-label">Coches</span><span class="kpi-val">${t.drivers.length}</span></div><div class="kpi-box"><span class="kpi-label">Plazas libres</span><span class="kpi-val">${t.seats}</span></div><div class="kpi-box"><span class="kpi-label">Necesitan transporte</span><span class="kpi-val">${t.passengers.length}</span></div><div class="kpi-box"><span class="kpi-label">Balance de plazas</span><span class="kpi-val" style="color:var(--${t.balance>=0?'ok':'err'})">${t.balance>=0?'+':''}${t.balance}</span></div></div><p class="mt-results-note">${esc(status)} · capacidad declarada, no garantiza compatibilidad de recorridos.</p>${[['Oferta',t.seats],['Demanda',t.passengers.length]].map(([label,n],i)=>`<div class="ref-dist-row"><span class="ref-dist-name">${label}</span><div class="ref-bar-track" style="flex:1"><div class="ref-bar-fill ${i?'negative':''}" style="width:${100*n/scale}%"></div></div><strong>${n}</strong></div>`).join('')}`;
+  if(s.route){const details=buildDecisionStudyCard(s);details.querySelector('.card-title')?.remove();details.className='mt-route-detail';wrap.appendChild(details);}
+  return wrap;
 }
 
 function buildRadioConsensus(card, q, myVal) {
@@ -1422,7 +1487,7 @@ function buildRadioConsensus(card, q, myVal) {
   });
 
   const myEstado = myVal ? (typeof myVal === 'object' ? myVal.estado : myVal) : null;
-  const myExtra  = (cs && myVal && typeof myVal === 'object' && myVal[cs.key || 'plazasLibres']) ? Number(myVal[cs.key || 'plazasLibres']) : (cs ? cs.default : 3);
+  const myExtra  = (cs && myVal && typeof myVal === 'object' && myVal[cs.key || 'plazasLibres'] != null) ? Number(myVal[cs.key || 'plazasLibres']) : (cs ? cs.default : 3);
 
   const list = div('ref-opt-list');
   counts.forEach(item => {
@@ -1438,6 +1503,7 @@ function buildRadioConsensus(card, q, myVal) {
           <button type="button" class="btn-ref-toggle ${isMine ? 'active' : ''}">${isMine ? '✓ Mi elección' : 'Cambiar aquí'}</button>
         </div>
       </div>
+      <div class="ref-bar-track" style="margin-top:8px"><div class="ref-bar-fill" style="width:${100*item.users.length/Math.max(1,[...counts.values()].reduce((a,v)=>a+v.users.length,0))}%"></div></div>
       <div class="ref-voters" style="margin-top:6px">
         ${item.users.map(u => {
           const favTxt = u.favs && u.favs.length ? ` · ★ ${u.favs.join(', ')}` : '';

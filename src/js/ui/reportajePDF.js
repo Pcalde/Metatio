@@ -469,7 +469,7 @@ function buildDivergingBarSvg(rows, opts) {
       const k = typeof optVal === 'function' ? optVal(q, op) : (typeof op === 'string' ? op : op.nombre);
       if (k != null) map.set(k, { key: k, label: k, votes: 0, score: 0, voters: [], vetoes: [] });
     });
-    respuestas.forEach(r => {
+    DecisionModel.cohorts(q,respuestas,schema).answered.forEach(r => {
       const v = extractAnswer(r.answers, q);
       if (v == null) return;
       if (q.tipo === 'voto-ponderado') {
@@ -530,7 +530,7 @@ function buildDivergingBarSvg(rows, opts) {
 
   function buildSliderSummary(q) {
     const entries = [];
-    respuestas.forEach(r => {
+    DecisionModel.cohorts(q,respuestas,schema).answered.forEach(r => {
       const v = extractAnswer(r.answers, q);
       if (v == null) return;
       const val = typeof v === 'object' ? Number(v.ideal ?? v.value ?? v.min) : Number(v);
@@ -574,7 +574,7 @@ function buildDivergingBarSvg(rows, opts) {
 
   function buildNotesSummary(q) {
     const notes = [];
-    respuestas.forEach(r => {
+    DecisionModel.cohorts(q,respuestas,schema).answered.forEach(r => {
       const v = extractAnswer(r.answers, q);
       if (v && String(v).trim()) notes.push({ nombre: r.nombre, texto: String(v).trim() });
     });
@@ -607,7 +607,7 @@ function buildDivergingBarSvg(rows, opts) {
     if (!schema || !schema.length) return '';
     const parts = [`<div class="report-section report-page-break"><h2>Respuestas del grupo, pregunta a pregunta</h2>`];
     schema.forEach((q, idx) => {
-      if (q.tipo === 'textarea' && q.config && q.config.descripcion) return; // informativa
+      if (q.config?.esEncabezado || (q.tipo === 'textarea' && q.config && q.config.descripcion)) return; // informativa
       parts.push(`<h3>${idx + 1}. ${e(q.label)}</h3>`);
       if (q.tipo === 'voto-ponderado' || q.tipo === 'checkbox' || q.tipo === 'casas' || q.tipo === 'radio') {
         parts.push(buildOptionsTable(q));
@@ -618,7 +618,8 @@ function buildDivergingBarSvg(rows, opts) {
       } else if (q.tipo === 'textarea') {
         parts.push(buildNotesSummary(q));
       } else if (q.tipo === 'disponibilidad') {
-        parts.push(buildDispoSummary());
+        const actual=DecisionModel.studies(schema,respuestas,respondentes).find(s=>s.qid===q.id);
+        parts.push(`<p>${(actual?.dates?.days||[]).slice(0,30).map(d=>e(fmtDate(d.date))+': '+d.count).join(' · ')||'Sin fechas concretas.'}</p>`);
       } else if (q.tipo === 'horarios') {
         parts.push(`<p style="font-size:9pt;color:#666;font-style:italic">Ver detalle de horarios en el Reformulario de la aplicación.</p>`);
       }
@@ -639,7 +640,7 @@ function buildDivergingBarSvg(rows, opts) {
     const parts=[buildCover(model,soluciones,integrated),`<h2>Estudios independientes</h2><p>${e(mode.enabled?(integrated?'El estudio temporal conjunto se muestra a continuación.':'Factibilidad temporal indeterminada: sin fechas evaluables.'):mode.reason)}</p>`];
     for(const study of DecisionModel.studies(schema,respuestas,respondentes))parts.push(buildDecisionStudyCard(study).outerHTML);
     if(integrated){parts.push(buildSynthesis(model,soluciones,topo),buildPreferences(model),buildDaysStats(model));if(soluciones.length)parts.push(buildSolutions(model,soluciones));else parts.push('<p>No se encontraron ventanas en los datos evaluados. No implica que el problema completo sea infactible si faltan respuestas.</p>');parts.push(buildTopology(topo));}
-    if (options.includeReform && integrated) parts.push(buildReformSection());
+    if (options.includeReform) parts.push(buildReformSection());
 
     return `<!DOCTYPE html>
 <html lang="es">
