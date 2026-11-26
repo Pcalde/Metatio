@@ -848,6 +848,7 @@ function renderTransportDynamicPanel(card, q) {
   const cs = card.state.stepperCfg;
   const wrap = card.querySelector('.trans-dynamic-wrap');
   if (!wrap) return;
+  if(q.config?.routeStudy){wrap.hidden=true;wrap.style.display='none';card.state.routeFields?.refresh();return;}
 
   const checked = card.querySelector('input[type=radio]:checked');
   const curVal  = checked ? checked.value : null;
@@ -1761,9 +1762,9 @@ var TIPOS = {
         if (isDriver && card.state.stepper) {
           out[cs.key || 'valor'] = card.state.stepper.get();
         }
-        if (isDriver && card.state.prefPasajeros && Object.keys(card.state.prefPasajeros).length) {
+        if (!card.state.routeFields && isDriver && card.state.prefPasajeros && Object.keys(card.state.prefPasajeros).length) {
           out.prefPasajeros = Object.assign({}, card.state.prefPasajeros);
-        } else if (!isDriver && card.state.prefCoches && Object.keys(card.state.prefCoches).length) {
+        } else if (!card.state.routeFields && !isDriver && card.state.prefCoches && Object.keys(card.state.prefCoches).length) {
           out.prefCoches = Object.assign({}, card.state.prefCoches);
         }
         const nota = card.state.notaRutaInp ? card.state.notaRutaInp.value.trim() : '';
@@ -1779,7 +1780,7 @@ var TIPOS = {
       const estado = typeof v === 'object' ? v.estado : v;
 
       if (cs && typeof v === 'object') {
-        card.state.routeFields?.write(v.ruta);
+        card.state.routeFields?.write(v.ruta ? {...v.ruta,afinidades:{...(v.prefPasajeros||{}),...(v.prefCoches||{}),...(v.ruta.afinidades||{})}} : null);
         card.state.prefPasajeros = (v.prefPasajeros && typeof v.prefPasajeros === 'object')
           ? Object.assign({}, v.prefPasajeros) : {};
         card.state.prefCoches = (v.prefCoches && typeof v.prefCoches === 'object')
