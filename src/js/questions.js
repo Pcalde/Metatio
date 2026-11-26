@@ -113,6 +113,7 @@ function buildQuestionCard(q, idx) {
     </div>
   `;
   card.appendChild(editBox);
+  const editRoute=q.config?.routeStudy?routeConfigEditor(null,editBox,q.config.routeStudy):null;
   // El desplegable de sección muestra un campo de texto para crear una nueva.
   const selSec = editBox.querySelector('.inp-eq-seccion');
   const inpSec = editBox.querySelector('.inp-eq-seccion-nombre');
@@ -152,6 +153,7 @@ function buildQuestionCard(q, idx) {
     const newLabel = editBox.querySelector('.inp-edit-q-label').value.trim();
     if (!newLabel || !user) return;
     let newCfg = Object.assign({}, q.config || {});
+    if(editRoute){try{newCfg.routeStudy=editRoute.read();}catch(e){showStatus(e.message,"err");return;}}
     if (q.tipo === 'probabilidad-opcion') newCfg.modoCasas = editBox.querySelector('.inp-eq-modo-casas').checked;
     if (q.tipo === 'slider') {
       newCfg.min  = Number(editBox.querySelector('.inp-eq-min').value);
@@ -177,9 +179,7 @@ function buildQuestionCard(q, idx) {
       if (secSel !== actual) {
         secCambiada = true;
         if (secSel) newCfg.seccion = secSel; else delete newCfg.seccion;
-        if (secSel && typeof secHeaderPara === 'function' && !secHeaderPara(secSel)) {
-          crearSeccion(secSel);   // fire-and-forget: pollOnce traerá la marca
-        }
+
       }
     }
     // Condición de visibilidad: cualquier origen sin ciclos.
@@ -196,7 +196,10 @@ function buildQuestionCard(q, idx) {
     }
     const proposedSchema=schema.map(x=>x.id===q.id?{...x,config:newCfg}:x);
     if (cicloCondicion(proposedSchema,q.id)) { showStatus('La sección o condición elegida genera una dependencia circular.','err',6000); return; }
+    const orderError=validatePresentationChange(proposedSchema);
+    if(orderError){showStatus(orderError,'err',8000);return;}
     try {
+      if(secCambiada&&newCfg.seccion&&!secHeaderPara(newCfg.seccion)){await crearSeccion(newCfg.seccion);if(!secHeaderPara(newCfg.seccion))throw Error('No se pudo crear la sección.');}
       await apiAuth({
         action: 'edit_pregunta',
         eid: user.eid, nombre: user.nombre, pinHash: user.pinHash,
@@ -204,6 +207,7 @@ function buildQuestionCard(q, idx) {
       });
       q.label = newLabel;
       q.config = newCfg;
+      saveDraft();
       renderAllQuestions();
       restoreDraft();
       // El raíl y las condiciones pueden haber cambiado (nuevo mostrarSi,
@@ -430,10 +434,10 @@ function syncSchemaToDOM() {
       if (nueva) card.replaceWith(nueva);
       return;
     }
-    if (q.tipo === 'horarios' && card.dataset.cfg !== JSON.stringify(q.config || {})) {
-      const prev  = TIPOS.horarios.read(card, q);
+    if ((q.tipo === 'horarios'||q.tipo==='radio'&&(q.config?.routeStudy||card.state?.routeFields)) && card.dataset.cfg !== JSON.stringify(q.config || {})) {
+      const type=TIPOS[q.tipo], prev=type.read(card,q);
       const nueva = buildQuestionCard(q, idx);
-      if (nueva) { card.replaceWith(nueva); TIPOS.horarios.write(nueva, q, prev); }
+      if (nueva) { card.replaceWith(nueva); type.write(nueva, q, prev); }
       return;
     }
 
@@ -479,21 +483,9 @@ function syncSchemaToDOM() {
 function moveCardDom(qid, dir) { syncQuestionCardOrder(); }
 
 async function moverPregunta(qid, dir) {
-  const i = schema.findIndex(x => x.id === qid), j = i + dir;
-  if (!user || i < 0 || j < 0 || j >= schema.length) return;
-
-  // Reordenar no modifica las aristas del grafo de dependencias.
-  [schema[i], schema[j]] = [schema[j], schema[i]];
-  moveCardDom(qid, dir);
-  try {
-    await apiAuth({ action: 'reordenar_preguntas', eid: user.eid, nombre: user.nombre,
-                    pinHash: user.pinHash, ids: schema.map(x => x.id) });
-    lastRaw = ''; // Aplicar el orden confirmado del servidor en el siguiente sondeo.
-    pollOnce();
-  } catch (e) {
-    [schema[i], schema[j]] = [schema[j], schema[i]];
-    moveCardDom(qid, -dir);
-    showStatus('No se pudo reordenar: ' + e.message, 'err');
-  }
-  if (typeof refreshSecciones === 'function') setTimeout(refreshSecciones, 0);
+  const gs=QuestionOrder.groups(schema), g=gs.find(g=>g.items.some(q=>q.id===qid));
+  if(!g)return;
+  const qs=g.items.filter(q=>!q.config?.esEncabezado), i=qs.findIndex(q=>q.id===qid), j=i+dir;
+  if(j>=0&&j<qs.length)openQuestionOrder(QuestionOrder.move(schema,qid,qs[j].id,dir>0));
+  else openQuestionOrder();
 }

@@ -1029,6 +1029,7 @@ function renderTransportDynamicPanel(card, q) {
 
 function toggleConditionalStepper(card, val) {
   const pw = card.querySelector('.plazas-wrap');
+  card.state?.routeFields?.show(val);
   const cs = card.state && card.state.stepperCfg;
   if (pw && cs) pw.style.display = val === cs.when ? 'flex' : 'none';
   if (cs && card.state && card.state.question) {
@@ -1745,6 +1746,7 @@ var TIPOS = {
         });
         card.state.notaRutaInp = notaInp;
         card.appendChild(dynWrap);
+        if(q.config?.routeStudy){dynWrap.hidden=true;card.state.routeFields=buildRouteAnswerFields(card,q);}
         renderTransportDynamicPanel(card, q);
       }
       card.appendChild(createAddOptForm(q));
@@ -1766,6 +1768,7 @@ var TIPOS = {
         }
         const nota = card.state.notaRutaInp ? card.state.notaRutaInp.value.trim() : '';
         if (nota) out.notaRuta = nota;
+        if(card.state.routeFields&&(isDriver||checked.value==='necesito'))out.ruta=card.state.routeFields.read();
         return out;
       }
       return checked.value;
@@ -1776,6 +1779,7 @@ var TIPOS = {
       const estado = typeof v === 'object' ? v.estado : v;
 
       if (cs && typeof v === 'object') {
+        card.state.routeFields?.write(v.ruta);
         card.state.prefPasajeros = (v.prefPasajeros && typeof v.prefPasajeros === 'object')
           ? Object.assign({}, v.prefPasajeros) : {};
         card.state.prefCoches = (v.prefCoches && typeof v.prefCoches === 'object')

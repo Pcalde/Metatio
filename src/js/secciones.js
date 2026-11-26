@@ -162,6 +162,7 @@ function fuentesCondicion(arr, currentQid, beforeIdx) {
 function buildCondEditor(host, schemaArr, currentQid, initial, beforeIdx) {
   host.innerHTML = '';
   const cur = initial && typeof initial === 'object' ? initial : null;
+  const compound=cur&&!cur.qid&&reglasCondicion(cur).length>0;
 
   const lbl = document.createElement('label');
   lbl.className = 'cond-editor-title';
@@ -181,16 +182,17 @@ function buildCondEditor(host, schemaArr, currentQid, initial, beforeIdx) {
   const refreshNote=()=>{
     const src=schemaArr.find(q=>q.id===selQ.value);
     if(!candidates.length) note.textContent='No hay preguntas con opciones compatibles que no generen una dependencia circular.';
-    else if(src && targetIdx>=0 && schemaArr.indexOf(src)>=targetIdx) note.textContent='La pregunta de origen está después. Al responderla, puede ser necesario volver a esta sección.';
+    else if(src && targetIdx>=0 && schemaArr.indexOf(src)>=targetIdx) note.textContent='La pregunta de origen está después. Cambia la posición o usa «Reordenar secciones y preguntas» antes de guardar.';
     else if(cur?.qid && !candidates.some(q=>q.id===cur.qid)) note.textContent='La condición anterior no está disponible: comprueba si genera un ciclo o si se eliminó su origen.';
     else note.textContent='Puedes usar preguntas de cualquier sección, siempre que no formen un ciclo.';
   };
   if (cur?.no) selNeg.value = '1';
 
   const fillQ = () => {
-    selQ.innerHTML = '<option value="">Sin condición</option>' +
+    selQ.innerHTML = '<option value="">Sin condición</option>' + (compound?'<option value="__compound__">Conservar condiciones múltiples (editar en el mapa)</option>':'') +
       candidates.map(q => `<option value="${esc(q.id)}">${esc(q.config?.seccion ? q.config.seccion + " · " + q.label : q.label)}</option>`).join('');
-    if (cur && cur.qid && candidates.some(q => q.id === cur.qid)) selQ.value = cur.qid;
+    if(compound)selQ.value="__compound__";
+    else if (cur && cur.qid && candidates.some(q => q.id === cur.qid)) selQ.value = cur.qid;
   };
   // 'alguno' admite una lista de valores; aquí se representa como «incluye
   // CUALQUIERA de…» y se guarda como {op:'alguno', valor:[...]}.
@@ -234,6 +236,7 @@ function buildCondEditor(host, schemaArr, currentQid, initial, beforeIdx) {
   host.append(lbl, grid, note);
   return {
     read() {
+      if (selQ.value==="__compound__")return cur;
       if (!selQ.value) return null;
       const multi = selOp.value === 'alguno';
       const valor = multi
@@ -251,7 +254,8 @@ function buildCondEditor(host, schemaArr, currentQid, initial, beforeIdx) {
 
 // Valida una condición contra el grafo real, no contra la posición visual.
 function validarMostrarSi(cond, schemaArr, selfId, beforeIdx) {
-  if (!cond || !cond.qid) return null;
+  if (!cond) return null;
+  if(!cond.qid){for(const r of reglasCondicion(cond)){const err=validarMostrarSi(r,schemaArr,selfId,beforeIdx);if(err)return err;}return null;}
   const src = schemaArr.find(q => q.id === cond.qid);
   if (!src) return 'La pregunta de la condición ya no existe.';
   if (condicionDependeDe(schemaArr,src.id,selfId)) return `«${src.label}» generaría una dependencia circular.`;
@@ -311,34 +315,21 @@ function _condDeSeccion(q) {
   const cfg = (q && q.config) || {};
   if (cfg.esEncabezado || !cfg.seccion) return null;
   const h = secHeaderPara(cfg.seccion);
-  return (h && h.config && h.config.mostrarSi && h.config.mostrarSi.qid) ? h : null;
+  return (h && reglasCondicion(h.config?.mostrarSi).length) ? h : null;
 }
 
 // ¿Visible según su condición y el borrador de respuestas actual?
 // Las cadenas circulares o condiciones rotas se tratan como "visible"
 // (fallback seguro: no ocultar contenido por un error de datos).
-function esVisible(q, answers, trail = new Set()) {
-  const st = answers || readState().answers;
-  if (!q) return true;
-  // Proteger también la dependencia heredada de sección antes de recursar.
-  if (trail.has(q.id)) return true;
-  const seen = new Set(trail); seen.add(q.id);
-  const hSec = _condDeSeccion(q);
-  if (hSec && !esVisible(hSec, st, seen)) return false;
-  const cond = q.config?.mostrarSi;
-  if (!cond || !cond.qid) return true;
-  const srcQ = schema.find(x => x.id === cond.qid);
-  if (srcQ && !esVisible(srcQ, st, seen)) return false;
-  const raw=st[cond.qid];
-  // Una respuesta de selección única todavía vacía no activa una rama negada.
-  if (raw == null || (srcQ?.tipo==='radio' && !(typeof raw==='object'?raw.estado:raw))) return false;
-  const ok = _condMatch(raw, cond.op || 'incluye', cond.valor, srcQ?.tipo);
-  return cond.no ? !ok : ok;
+function esVisible(q, answers) {
+  if(!q)return true;
+  return DecisionModel.applicability(q,{values:answers||readState().answers},schema)===1;
 }
 
 // Motivo legible por el que una pregunta está oculta (o '' si es visible).
 function secRazonOculta(q, answers) {
   const cond = q && q.config && q.config.mostrarSi;
+  if(cond&&!cond.qid&&reglasCondicion(cond).length)return 'porque no se cumplen sus condiciones de acceso';
   if (!cond || !cond.qid) return '';
   const st = answers || readState().answers;
   const src = schema.find(x => x.id === cond.qid);
@@ -394,7 +385,7 @@ function visibleQuestions() {
 // ¿Tiene la pregunta una condición «mostrarSi» (aunque esté rota)? Sirve para
 // distinguir en el reformulario «no aplica con tus respuestas» de «sin datos».
 function tieneCondicion(q) {
-  return !!(q && q.config && q.config.mostrarSi && q.config.mostrarSi.qid);
+  return !!(q && reglasCondicion(q.config?.mostrarSi).length);
 }
 
 // ── Ayudas de sección reutilizadas por questions.js / forms.js ──────────────
@@ -844,6 +835,8 @@ async function _secAbrirCondicion(host, sec, btnItem, panel) {
     }
     const cfg = Object.assign({}, h.config || {});
     if (cond) cfg.mostrarSi = cond; else delete cfg.mostrarSi;
+    const orderError=validatePresentationChange(schema.map(x=>x.id===h.id?{...x,config:cfg}:x));
+    if(orderError){showStatus(orderError,'err',8000);return;}
     try {
       await apiAuth({ action: 'edit_pregunta', eid: user.eid, nombre: user.nombre,
                       pinHash: user.pinHash, questionId: h.id, label: h.label, config: cfg });
@@ -896,7 +889,7 @@ document.addEventListener('keydown', e => {
 function _secMarcaConCondicion(sec) {
   if (!sec || !sec.nombre) return null;
   const h = secHeaderPara(sec.nombre);
-  return (h && h.config && h.config.mostrarSi && h.config.mostrarSi.qid) ? h : null;
+  return (h && reglasCondicion(h.config?.mostrarSi).length) ? h : null;
 }
 
 // Quita la condición de visibilidad a la marca de una sección: la sección deja
@@ -1119,6 +1112,7 @@ function abrirAddPreguntaEnSeccion(nombre) {
     const op = key ? [...sel.options].find(o => _secNormNombre(o.value) === key) : null;
     sel.value = op ? op.value : '';
     if (typeof syncAddQSeccionField === 'function') syncAddQSeccionField();
+    rebindAddQPosition(); rebindAddQCond(true);
   }
   if (f) f.scrollIntoView({ behavior: 'smooth', block: 'center' });
   const lbl = $('add-q-label');
