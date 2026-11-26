@@ -113,7 +113,7 @@ function extractAnswer(ansObj, q) {
 
 (function (root) {
   root.Esquema = { FRANJAS_HORARIAS, normalizeOption, optVal, getRadioStepperConfig,
-                   getFranjas, dispToMap, normPond, extractAnswer };
+                   getFranjas, dispToMap, normPond, extractAnswer, rawAnswer: _extractRaw };
 })(typeof window !== 'undefined' ? window : globalThis);
 
 // Metadatos independientes del tipo de votación.
