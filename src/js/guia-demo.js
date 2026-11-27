@@ -13,7 +13,7 @@
       pane.append(el('p','Cinco personas ficticias. Cambia las respuestas de la primera persona y explora cómo cambian los resultados del grupo. No se guarda ningún dato.','mg-muted'));
       const controls=el('div',null,'mg-demo-controls');const out=el('div',null,'mg-demo-output');
       function range(label,min,max,value,step,change,suffix=''){const l=el('label',null,'mg-range');const title=el('span',label);const val=el('strong',value+suffix);const top=el('span',null,'mg-range-top');top.append(title,val);const input=el('input');input.type='range';input.min=min;input.max=max;input.value=value;input.step=step;input.setAttribute('aria-label',label);input.oninput=()=>{val.textContent=input.value+suffix;change(+input.value);update();};l.append(top,input);controls.append(l);}
-      c.options.forEach((name,j)=>range(c.names[0]+' · asistencia si se elige '+name,0,100,Math.round(p[0][j]*100),5,n=>p[0][j]=n/100,'%'));
+      c.options.forEach((name,j)=>range(c.names[0]+' · asistencia si se elige '+name,0,Math.round(root.Esquema.PROB_OPTION_MAX*100),Math.round(p[0][j]*100),1,n=>p[0][j]=root.Esquema.clipProbOpcionCompartida(n/100),'%'));
       const voteLabel=el('label','Opción favorita de '+c.names[0]);const vote=el('select');c.options.forEach((name,j)=>{const o=el('option',name);o.value=j;vote.append(o);});vote.onchange=()=>{votes[0]=[1,1];votes[0][+vote.value]=3;update();};voteLabel.append(vote);controls.append(voteLabel);
       range('Presupuesto máximo de '+c.names[0],0,150,caps[0],5,n=>caps[0]=n,' €');range('Quórum mínimo',1,5,quorum,1,n=>quorum=n);
       if(c.need)range('Plazas libres disponibles',0,5,seats,1,n=>seats=n);

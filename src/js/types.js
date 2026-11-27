@@ -73,7 +73,7 @@ function div(cls, txt) {
     .btn-prob-cat.active[data-prob="0.5"]  { background:rgba(234,179,8,0.15);  border-color:#eab308; color:#ca8a04; font-weight:600; }
     .btn-prob-cat.active[data-prob="0.75"] { background:rgba(59,130,246,0.15); border-color:#3b82f6; color:#3b82f6; font-weight:600; }
     .btn-prob-cat.active[data-prob="0.9"],
-    .btn-prob-cat.active[data-prob="0.95"] { background:rgba(16,185,129,0.16); border-color:#10b981; color:#10b981; font-weight:600; }
+    .btn-prob-cat.active[data-prob="0.98"] { background:rgba(16,185,129,0.16); border-color:#10b981; color:#10b981; font-weight:600; }
     .btn-prob-cat.active small { color:inherit; opacity:0.85; }
 
     /* Clases de soporte para consensusView.js */
@@ -483,7 +483,7 @@ const ESCALA_PROB_6 = [
   { id: 'quizas',      label: 'Quizás / ns',            val: 0.40, pct: '40%',  desc: 'Indecisión genuina a la baja' },
   { id: 'probable',    label: 'Probable',               val: 0.6, pct: '60%',  desc: 'Indecisión genuina a la alta' },
   { id: 'casi_seguro', label: 'Bastante seguro',        val: 0.80, pct: '80%',  desc: 'Aprobación fuerte' },
-  { id: 'seguro',      label: 'Seguro',                 val: 0.98, pct: '98%*', desc: 'Compromiso total (truncado internamente a 0.98)' },
+  { id: 'seguro',      label: 'Seguro',                 val: Esquema.PROB_OPTION_MAX, pct: '98%*', desc: 'Compromiso total (truncado internamente a 0.98)' },
 ];
 
 const ESCALA_PROB_5 = [
@@ -491,14 +491,14 @@ const ESCALA_PROB_5 = [
   { id: 'poco_prob',   label: 'Poco probable',      val: 0.25, pct: '25%',  desc: 'Preferencia fuerte en contra' },
   { id: 'quizas',      label: 'Quizás / ns',        val: 0.50, pct: '50%',  desc: 'Indecisión genuina' },
   { id: 'probable',    label: 'Probable',           val: 0.75, pct: '75%',  desc: 'Aprobación clara' },
-  { id: 'casi_seguro', label: 'Casi seguro',        val: 0.98, pct: '98%',  desc: 'Compromiso firme (máximo operativo 0.98)' },
+  { id: 'casi_seguro', label: 'Casi seguro',        val: Esquema.PROB_OPTION_MAX, pct: '98%',  desc: 'Compromiso firme (máximo operativo 0.98)' },
 ];
 
 // Garantiza que ningún valor almacenado supere 0.98 ni sea negativo (§3)
 function clipProbabilidad(p) {
   const n = Number(p);
   if (!isFinite(n) || n <= 0) return 0.00;
-  return Math.min(0.98, Math.round(n * 100) / 100);
+  return Esquema.clipProbOpcionCompartida(n);
 }
 
 function getEscalaProbabilidad(q) {
@@ -1287,7 +1287,7 @@ var TIPOS = {
       card.state.question = q;
       const hint = div();
       hint.style.cssText = 'font-size:0.79rem;color:var(--muted);margin-bottom:8px';
-      hint.innerHTML = 'Declara tu probabilidad absoluta de asistir al viaje si sale elegida cada opción (<b>Nunca</b> = veto duro; <b>Seguro</b> se acota a 0.95 para simulación):';
+      hint.innerHTML = 'Declara tu probabilidad absoluta de asistir al viaje si sale elegida cada opción (<b>Nunca</b> = veto duro; <b>Seguro</b> se acota al 98 % para el cálculo y la simulación):';
 
       const list = div('options-list');
       list.dataset.qid = q.id;
