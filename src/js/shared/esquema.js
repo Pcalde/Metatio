@@ -111,8 +111,22 @@ function extractAnswer(ansObj, q) {
   return q.tipo === 'voto-ponderado' ? normPond(v) : v;
 }
 
+// Máximo operativo de una probabilidad por opción (0 = veto explícito).
+const PROB_OPTION_MAX = 0.98;
+function clipProbOpcionCompartida(p) {
+  const n = Number(p);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return Math.min(PROB_OPTION_MAX, Math.round(n * 100) / 100);
+}
+
+// Los datos importados pueden expresar una probabilidad como porcentaje.
+function normalizarProbOpcion(p) {
+  const n = Number(p);
+  return clipProbOpcionCompartida(n > 1 && n <= 100 ? n / 100 : n);
+}
+
 (function (root) {
-  root.Esquema = { FRANJAS_HORARIAS, normalizeOption, optVal, getRadioStepperConfig,
+  root.Esquema = { PROB_OPTION_MAX, clipProbOpcionCompartida, normalizarProbOpcion, FRANJAS_HORARIAS, normalizeOption, optVal, getRadioStepperConfig,
                    getFranjas, dispToMap, normPond, extractAnswer, rawAnswer: _extractRaw };
 })(typeof window !== 'undefined' ? window : globalThis);
 
