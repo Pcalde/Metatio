@@ -90,7 +90,7 @@
   function optionStudy(q,answered){
     return (q.opciones||[]).map(o=>{const n=E.normalizeOption(q,o),scores=[];
       for(const r of answered){const v=r.value;
-        if(q.tipo==='probabilidad-opcion'){if(v&&v[n.key]!=null&&Number.isFinite(Number(v[n.key])))scores.push(Math.max(0,Math.min(1,Number(v[n.key]))));}
+        if(q.tipo==='probabilidad-opcion'){if(v&&v[n.key]!=null&&Number.isFinite(Number(v[n.key])))scores.push(E.normalizarProbOpcion(v[n.key]));}
         else if(q.tipo==='voto-ponderado')scores.push(Number(v?.[n.key]||0));
         else if(q.tipo==='radio')scores.push(Number((typeof v==='object'?v.estado:v)===n.key));
         else if(Array.isArray(v))scores.push(Number(v.some(x=>(typeof x==='object'?x?.nombre:x)===n.key)));

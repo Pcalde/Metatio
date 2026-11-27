@@ -49,12 +49,9 @@ function createSeededRNG(seed = 22) {
   };
 }
 
-// Acota la probabilidad individual al rango operativo [0.00, 0.95] (§3)
+// Acota la probabilidad individual al rango operativo [0.00, 0.98] (§3)
 function clipProbMotor(p) {
-  const n = Number(p);
-  if (!isFinite(n) || n <= 0) return 0.00;
-  if (n > 1 && n <= 100) return Math.min(0.95, Math.round(n) / 100);
-  return Math.min(0.95, Math.round(n * 100) / 100);
+  return root.Esquema.normalizarProbOpcion(p);
 }
 
 // Percentil 25 robusto (§4.2):
@@ -265,7 +262,7 @@ function evaluarCatalogoProbabilidad(q, viajerosSubgrupo = null, incluirDeriva =
     else if (deltaBase >= 0.05) diffPhrase = `lo cual es ${diffAbs} más de lo que se esperaba a priori (${eBaseOpt.toFixed(1)})`;
 
     const msgE   = `Se espera que a este viaje asistan ${E.toFixed(1)} personas, ${diffPhrase}.`;
-    const msgP25 = `El 75% de los votantes tienen como mínimo ${P25.toFixed(2)} de probabilidad de asistir a esta opción.`;
+    const msgP25 = `El indicador de compromiso bajo (P25) es ${(100 * P25).toFixed(0)}%. Resume las probabilidades más bajas; en grupos pequeños usa el mínimo o el segundo menor.`;
 
     // §4.3 Cuadrante 2x2
     const refE  = eBaseOpt > 0 ? eBaseOpt * 0.75 : nOpt * 0.55;
@@ -535,7 +532,7 @@ function simularFragilidad(dictAsignacion, viajerosAsignados, nSim = 250, pGloba
     // usamos 1 - p_{i,X} (donde p_{i,X} = 0.00 es un veto duro -> ausencia segura 1.00).
     if (probCondicionalMap && v.nombre in probCondicionalMap) {
       const pCond = clipProbMotor(probCondicionalMap[v.nombre]);
-      probFalta[v.nombre] = pCond === 0 ? 1.00 : Math.max(0.05, Math.min(0.95, 1 - pCond));
+      probFalta[v.nombre] = pCond === 0 ? 1.00 : Math.max(1 - root.Esquema.PROB_OPTION_MAX, Math.min(0.95, 1 - pCond));
     } else {
       probFalta[v.nombre] = mcUseEmpiricalProb
         ? Math.max(0.02, Math.min(0.95, 1 - v.probEfectiva))
