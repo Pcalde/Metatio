@@ -927,7 +927,7 @@ function buildProbabilidadOpcionConsensus(card, q, myVal) {
     { label: 'Quizás / ns', val: 0.50, pct: '50%' },
     { label: 'Probable', val: 0.75, pct: '70%' },
     { label: 'Casi seguro', val: 0.90, pct: '90%' },
-    { label: 'Seguro', val: 0.98, pct: '98%*' },
+    { label: 'Seguro', val: Esquema.PROB_OPTION_MAX, pct: '98%*' },
   ];
   const myDict = typeof normProbOpcion === 'function' ? normProbOpcion(myVal) : (myVal || {});
 
@@ -1036,7 +1036,7 @@ function buildProbabilidadOpcionConsensus(card, q, myVal) {
       btn.addEventListener('click', () => {
         const pVal = typeof clipProbabilidad === 'function'
           ? clipProbabilidad(btn.dataset.prob)
-          : Math.min(0.95, Math.max(0, Number(btn.dataset.prob)));
+          : Esquema.clipProbOpcionCompartida(btn.dataset.prob);
         const next = Object.assign({}, myDict);
         if (next[it.key] != null && Math.abs(next[it.key] - pVal) < 0.03) {
           delete next[it.key];
