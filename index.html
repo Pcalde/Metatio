@@ -17,6 +17,7 @@
 <link rel="stylesheet" href="src/css/question-order.css?v=15">
 <link rel="stylesheet" href="src/css/results-v13.css?v=13">
 <link rel="stylesheet" href="src/css/results-v16.css?v=16.4">
+<link rel="stylesheet" href="src/css/guia.css?v=1">
 </head>
 <body>
 
@@ -59,7 +60,7 @@
         <aside class="mt-left" aria-label="Cuenta y navegación">
         <div class="trips-profile-row ma-account"><span class="trips-avatar" aria-hidden="true"><i class="fa-solid fa-user"></i></span><div class="trips-profile-txt"><strong id="global-display-name"></strong><span id="global-email-label" class="trips-note"></span></div><button type="button" id="global-logout" class="btn-link-like">Cerrar sesión</button></div>
         <details id="mt-profile-edit"><summary>Editar perfil</summary><div class="login-field"><label for="mt-name">Nombre visible</label><input id="mt-name" maxlength="40" autocomplete="nickname"></div><p class="trips-note">No tiene que coincidir con tu correo ni cambia los nombres de viajes anteriores.</p><button type="button" class="btn-propose" id="mt-save-name">Guardar nombre</button></details>
-        <nav class="mt-nav" aria-label="Atajos"><button type="button" class="btn-link-like" data-mt-target="global-trips-list"><i class="fa-solid fa-suitcase"></i> Mis viajes</button><button type="button" class="btn-link-like" data-mt-target="mt-contacts"><i class="fa-solid fa-users"></i> Contactos</button><button type="button" class="btn-link-like" data-mt-target="mt-guide"><i class="fa-solid fa-book-open"></i> Guía</button><button type="button" class="btn-link-like" data-mt-target="global-recover-details"><i class="fa-solid fa-clock-rotate-left"></i> Recuperar viaje</button></nav>
+        <nav class="mt-nav" aria-label="Atajos"><button type="button" class="btn-link-like" data-mt-target="global-trips-list"><i class="fa-solid fa-suitcase"></i> Mis viajes</button><button type="button" class="btn-link-like" data-mt-target="mt-contacts"><i class="fa-solid fa-users"></i> Contactos</button><button type="button" class="btn-link-like" id="mt-open-guide"><i class="fa-solid fa-book-open"></i> Guía</button><button type="button" class="btn-link-like" id="mt-open-docs"><i class="fa-solid fa-book"></i> Documentación</button><button type="button" class="btn-link-like" data-mt-target="global-recover-details"><i class="fa-solid fa-clock-rotate-left"></i> Recuperar viaje</button></nav>
         </aside>
         <main id="global-travel-panel" class="mt-main">
           <div class="mt-title-row"><h2>Mis viajes</h2><button type="button" class="btn-link-like" id="global-refresh">Actualizar</button></div>
@@ -98,7 +99,7 @@
           <section class="mt-module"><h2>Invitaciones y solicitudes <span id="mt-count" class="mt-count"></span></h2><div id="mt-inbox"></div></section>
           <section class="mt-module"><h2>Pendientes</h2><div id="mt-pending"></div></section>
           <section class="mt-module" id="mt-contacts"><h2>Contactos</h2><p class="trips-note">Comparte tu código personal para añadir contactos sin mostrar tu correo.</p><div class="mt-code-row"><code id="mt-code">—</code><button type="button" class="btn-link-like" id="mt-copy-code">Copiar</button></div><div class="login-field"><label for="mt-friend-code">Código de un contacto</label><input id="mt-friend-code" maxlength="20" autocomplete="off"></div><button type="button" class="btn-propose" id="mt-add-contact">Enviar solicitud</button><div id="mt-contact-list"></div></section>
-          <section class="mt-module" id="mt-guide"><h2>Primeros pasos</h2><div id="mt-guide-content"><p class="trips-note">Metatio ayuda a tomar decisiones en grupo: crea una encuesta, invita a personas, recoge preferencias y consulta las alternativas factibles.</p><div id="mt-guide-progress"></div><ol class="mt-guide-list"><li>Elige tu nombre de perfil.</li><li>Crea un viaje o acepta una invitación.</li><li>Responde las preguntas de la encuesta.</li><li>Consulta las conclusiones y el consenso.</li><li>Invita a un contacto desde tu viaje.</li></ol></div><button type="button" class="btn-link-like" id="mt-toggle-guide">Ocultar guía</button></section>
+          <section class="mt-module" id="mt-guide"><h2>¿Qué quieres hacer?</h2><p class="trips-note">Recorre Metatio paso a paso o experimenta sin modificar viajes reales.</p><div class="mt-guide-choices"><button type="button" class="btn-propose" data-guide-role="participant">Voy a entrar a un viaje</button><button type="button" class="btn-propose" data-guide-role="organizer">Voy a organizar un viaje</button><button type="button" class="btn-propose" data-guide-role="demo">Estoy probando</button></div><button type="button" class="btn-link-like" id="mt-guide-manual">Manual de uso</button></section>
         </aside>
         <div class="mt-settings">
         <details id="global-password-details"><summary>Contraseña de la cuenta</summary>
@@ -401,6 +402,8 @@
       <button type="button" class="mode-tab side-menu-action" id="btn-print-report">
         <span><i class="fa-solid fa-file-pdf" aria-hidden="true"></i> Compartir plan de viaje (PDF)</span>
       </button>
+      <button type="button" class="mode-tab side-menu-action" id="btn-guide-modal"><span><i class="fa-solid fa-circle-question" aria-hidden="true"></i> Guía</span></button>
+      <button type="button" class="mode-tab side-menu-action" id="btn-docs-modal"><span><i class="fa-solid fa-book" aria-hidden="true"></i> Documentación</span></button>
       <button type="button" class="mode-tab side-menu-action" id="btn-account-modal">
         <span><i class="fa-solid fa-user-gear" aria-hidden="true"></i> Mi cuenta</span>
       </button>
@@ -658,8 +661,8 @@
 <script src="src/js/perfil.js?v=6"></script>
 <script src="src/js/profileBackup.js?v=7"></script>
 <script src="src/js/access.js?v=13"></script>
-<script src="src/js/globalProfile.js?v=7"></script>
-<script src="src/js/dashboard.js?v=7"></script>
+<script src="src/js/globalProfile.js?v=8"></script>
+<script src="src/js/dashboard.js?v=8"></script>
 <script src="src/js/geoProvider.js?v=14"></script>
 <script src="src/js/routeFields.js?v=15"></script>
 <script src="src/js/types.js?v=15"></script>
@@ -683,7 +686,10 @@
 <script src="src/js/cuenta.js?v=5"></script>
 <script src="src/js/debate.js"></script>
 <script src="src/js/polling.js?v=15"></script>
-<script src="src/js/auth.js?v=10.2"></script>
+<script src="src/js/auth.js?v=10.3"></script>
 <script src="src/js/main.js?v=10.3"></script>
+<script src="src/js/guia-contenido.js?v=1"></script>
+<script src="src/js/guia-demo.js?v=1"></script>
+<script src="src/js/guia.js?v=1"></script>
 </body>
 </html>
