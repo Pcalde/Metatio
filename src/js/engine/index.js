@@ -17,6 +17,7 @@
   function snapshot() {
     return {
       schema, respuestas, respondentes, ausencias,
+      decisiones:typeof decisionesActuales==='function'?decisionesActuales():{},
       attendanceEnabled: typeof asistenciaActiva==='undefined' || asistenciaActiva,
       lastHorariosRange: (typeof lastHorariosRange !== 'undefined') ? lastHorariosRange : null,
       weightByProb: overrides.weightByProb ?? weightByProb,
@@ -33,9 +34,9 @@
     run() {
       return withCtx(() => {
         const model = Core.buildModelData();
-        const { soluciones, diagnosticos, estado, motivo } = Core.ejecutarMotorFactibilidad(model);
+        const { soluciones, diagnosticos, estado, motivo, ranking } = Core.ejecutarMotorFactibilidad(model);
         const topo = Core.computeTopologyAndSensitivity(model, soluciones);
-        return { model, soluciones, diagnosticos, topo, estado, motivo, estudios: root.DecisionModel.studies(schema,respuestas,respondentes), probabilidades: model.probGlobal || {} };
+        return { model, soluciones, diagnosticos, topo, estado, motivo, ranking, estudios: root.DecisionModel.studies(schema,respuestas,respondentes), probabilidades: model.probGlobal || {} };
       });
     },
 
@@ -44,12 +45,12 @@
       const original = snapshot();
       const qs = questions.map(q => { const config={...q.config}; delete config.mostrarSi; delete config.seccion; return {...q,config}; });
       const ctx = {...original, schema:qs, respuestas:rows, respondentes:registered,
-        mcEmpirico: options.mcEmpirico ?? original.mcEmpirico};
+        mcEmpirico: options.mcEmpirico ?? original.mcEmpirico,params:{...original.params,...(options.quorum!=null?{QUORUM:options.quorum}:{}),...(options.params||{})}};
       Core.configure(ctx);
       try {
         const model=Core.buildModelData();
-        const {soluciones,diagnosticos,estado,motivo}=Core.ejecutarMotorFactibilidad(model);
-        return {model,soluciones,diagnosticos,estado,motivo,topo:Core.computeTopologyAndSensitivity(model,soluciones)};
+        const {soluciones,diagnosticos,estado,motivo,ranking}=Core.ejecutarMotorFactibilidad(model);
+        return {model,soluciones,diagnosticos,estado,motivo,ranking,topo:Core.computeTopologyAndSensitivity(model,soluciones)};
       } finally { Core.configure(original); }
     },
 

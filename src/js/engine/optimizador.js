@@ -8,6 +8,7 @@ let attendanceEnabled = true;
 let lastHorariosRange = null, mcUseEmpiricalProb = true, UMBRAL_HORA_SOLAPE = 1.5;
 const { extractAnswer, getRadioStepperConfig, getFranjas, dispToMap, optVal } = root.Esquema;
 let P = {};
+let decisiones = {};
 const par = (k, d) => (P[k] != null ? P[k] : d);
 function getEffectiveProb(nombre) { return attendanceEnabled ? root.EngineProb.efectiva(nombre, respondentes, ausencias) : 1; }
 function configure(ctx) {
@@ -18,6 +19,7 @@ function configure(ctx) {
   mcUseEmpiricalProb = ctx.mcEmpirico !== false;
   UMBRAL_HORA_SOLAPE = (ctx.params && ctx.params.UMBRAL_HORA_SOLAPE != null) ? ctx.params.UMBRAL_HORA_SOLAPE : 1.5;
   P = ctx.params || {};
+  decisiones=ctx.decisiones||{};
 }
 // ══════════════════════════════════════════════════════════════════════════
 //  MOTOR MATEMÁTICO PURO — src/js/engine/optimizador.js
@@ -520,8 +522,28 @@ function resolverVentana(viajerosCandidatos, matriz, indiceFechas, nombresNucleo
   return bestSol;
 }
 
+// Additive search: retain the legacy solver as reference. No score-based pruning
+// in this branch; bounded enumeration of subsets and trajectories, with a
+// reproducible sampling order when the space is too large.
+function resolverAlternativas(viajeros,matriz,fechas,nucleo,rango,L,k,limit=par('CANDIDATE_BUDGET',384),accept=()=>true){
+  const ns=new Set(nucleo), rng=createSeededRNG(23);
+  const options=viajeros.map(v=>({v,opts:ns.has(v.nombre)?[rango,null]:[...generarTrayectoriasOptimas(v.conjuntoFechas,v.diasMax,rango).filter(t=>t.every(d=>rango.includes(d)||fechas.includes(d))),null]}));
+  const size=options.reduce((a,o)=>a*o.opts.length,1);const legacy=size>limit?resolverVentana(viajeros,matriz,fechas,nucleo,rango,L):null;const seen=new Set(),pool=[];let evaluated=0;
+  const score=a=>Object.values(a).reduce((s,t)=>s+t.reduce((x,d)=>x+(rango.includes(d)?par('W_NUCLEO',100):viajeros.filter(v=>matriz[d]?.[v.nombre]).length>=viajeros.length/2?par('W_EXPANSION',10):par('W_MINORIA',-50)),0),0);
+  function add(a,known){const names=Object.keys(a);if(names.filter(n=>ns.has(n)).length<2)return;const sig=JSON.stringify(Object.entries(a).sort(([a],[b])=>a.localeCompare(b)));if(seen.has(sig))return;seen.add(sig);evaluated++;if(!accept(names))return;const f=known?{viable:true,flujo:known.flujo}:construirFlujoTransporte(viajeros,a);if(!f.viable)return;const members=viajeros.filter(v=>Object.hasOwn(a,v.nombre)),asistencia=root.PlanPrioridades.attendance(members,k);pool.push({asignacion:{...a},flujo:f.flujo,objetivo:known?.objetivo??-(score(a)+2*(f.flujo.afinidadTotal||0)),viajerosAsignados:members,asistencia,N:members.length,personDays:Object.values(a).reduce((x,t)=>x+t.length,0)});}
+  if(legacy)add(legacy.asignacion,legacy);
+  if(size<=limit){function dfs(i,a){if(i===options.length){add(a);return;}const {v,opts}=options[i];for(const t of opts){if(t)a[v.nombre]=t;else delete a[v.nombre];dfs(i+1,a);}delete a[options[i].v.nombre];}dfs(0,{});}
+  else {const full=Object.fromEntries(options.filter(o=>o.opts[0]).map(o=>[o.v.nombre,o.opts[0]]));add(full);for(const n of Object.keys(full)){if(evaluated>=limit)break;const a={...full};delete a[n];add(a);}for(let i=0;i<limit*3&&evaluated<limit;i++){const a={};const omit=.1+.7*(i%7)/6;for(const {v,opts} of options){if(rng()<omit)continue;const t=opts[Math.floor(rng()*Math.max(1,opts.length-1))];if(t)a[v.nombre]=t;}add(a);}}
+  // Preserve distinct participation sets (not just consecutive dates). Retain
+  // several representatives and explicitly expose truncation.
+  const maxKeep=size<=64?64:12;const best=[];const keep=s=>{if(s&&!best.includes(s)&&best.length<maxKeep)best.push(s)};
+  const orderings=[(a,b)=>b.N-a.N||b.asistencia.E-a.asistencia.E,(a,b)=>b.asistencia.E-a.asistencia.E,(a,b)=>b.asistencia.Q-a.asistencia.Q,(a,b)=>a.objetivo-b.objetivo,(a,b)=>b.personDays-a.personDays,(a,b)=>{const pa=a.viajerosAsignados.filter(v=>v.transporte==='llevo-coche').length,pb=b.viajerosAsignados.filter(v=>v.transporte==='llevo-coche').length;return pb-pa||b.asistencia.E-a.asistencia.E;},(a,b)=>{const ma=Math.min(...a.viajerosAsignados.map(v=>v.probEfectiva??.8)),mb=Math.min(...b.viajerosAsignados.map(v=>v.probEfectiva??.8));return mb-ma||b.asistencia.E-a.asistencia.E;}];
+  if(legacy)keep(pool.find(s=>s.objetivo===legacy.objetivo&&JSON.stringify(s.asignacion)===JSON.stringify(legacy.asignacion)));for(const cmp of orderings)keep([...pool].sort(cmp)[0]);for(const x of [...pool].sort(orderings[1]))keep(x);
+  return {soluciones:best,evaluated,space:size,feasible:pool.length,truncated:size>limit||pool.length>best.length};
+}
+
 // ── 6. SIMULACIÓN MONTE CARLO DE RESILIENCIA (Con soporte condicional p_{i,X}) ──
-function simularFragilidad(dictAsignacion, viajerosAsignados, nSim = 250, pGlobal = 0.12, nCadena = 100, seed = 23, probCondicionalMap = null) {
+function simularFragilidad(dictAsignacion, viajerosAsignados, nSim = 250, pGlobal = 0.12, nCadena = 100, seed = 23, probCondicionalMap = null, probGeneralMap = null) {
   const personas = Object.keys(dictAsignacion);
   if (!attendanceEnabled || !personas.length) return null;
 
@@ -530,7 +552,9 @@ function simularFragilidad(dictAsignacion, viajerosAsignados, nSim = 250, pGloba
   viajerosAsignados.forEach(v => {
     // Si la ventana tiene una opción candidata con probabilidades condicionales p_{i,X},
     // usamos 1 - p_{i,X} (donde p_{i,X} = 0.00 es un veto duro -> ausencia segura 1.00).
-    if (probCondicionalMap && v.nombre in probCondicionalMap) {
+    if(probGeneralMap && Object.hasOwn(probGeneralMap,v.nombre)){
+      probFalta[v.nombre]=1-Math.max(0,Math.min(1,probGeneralMap[v.nombre]));
+    } else if (probCondicionalMap && v.nombre in probCondicionalMap) {
       const pCond = clipProbMotor(probCondicionalMap[v.nombre]);
       probFalta[v.nombre] = pCond === 0 ? 1.00 : Math.max(1 - root.Esquema.PROB_OPTION_MAX, Math.min(0.95, 1 - pCond));
     } else {
@@ -1091,6 +1115,8 @@ function construirFlujoTransporte(viajerosGrupo, dictAsignacion) {
 }
 
 // ── 7. BÚSQUEDA GLOBAL DE SOLUCIONES FACTIBLES (Con Presupuesto Núcleo, Coherencia y Desglose) ──
+function probRes(v){return mcUseEmpiricalProb?Math.max(0,Math.min(1,v.probEfectiva??.8)):.88;}
+function estimarResiliencia(c,nSim){const rng=createSeededRNG(23);const people=[...c.viajerosAsignados].sort((a,b)=>a.nombre.localeCompare(b.nombre));if(!people.some(v=>v.tieneLogistica))return 1-people.reduce((p,v)=>p*(1-probRes(v)),1);let ok=0;for(let i=0;i<nSim;i++){const group=people.filter(v=>rng()<probRes(v));if(!group.length)continue;const a=Object.fromEntries(group.map(v=>[v.nombre,c.asignacion[v.nombre]]));if(construirFlujoTransporte(group,a).viable)ok++;}return ok/nSim;}
 function ejecutarMotorFactibilidad(model) {
   const { viajeros, indiceFechas, matriz, lMaxEval } = model;
   const mode=root.DecisionModel.integratedMode(schema);
@@ -1121,6 +1147,15 @@ function ejecutarMotorFactibilidad(model) {
   }
 
   const candidatosBrutos = [];
+  const multi=!!root.PlanPrioridades && par('MULTI_CANDIDATES',true);
+  const quorum=Math.max(1,Math.floor(par('QUORUM',Math.ceil(Math.max(respondentes.length,viajeros.length)/2))));
+  const qFecha=schema.find(q=>root.DecisionModel.role(q)==='fechas');
+  const fijaFecha=qFecha&&decisiones[qFecha.id]?.value;
+  const fijaPlan=qOpts&&decisiones[qOpts.id]?.value;
+  const fijaCasa=qCasas&&decisiones[qCasas.id]?.value;
+  let evaluated=0,limited=false,retained=0;
+  const windows=Math.max(1,indiceFechas.length*Math.max(1,lMaxEval-(model.lMinEval||1)+1));
+  const windowBudget=Math.max(12,Math.min(par('CANDIDATE_BUDGET',384),Math.floor(16000/windows)));
   const diagnosticos = [];
   const lMin = model.lMinEval || 1;
 
@@ -1138,11 +1173,12 @@ function ejecutarMotorFactibilidad(model) {
       .map(v => v.nombre);
   }
 
-  for (let L = lMin; L <= lMaxEval; L++) {
+  for (let L = fijaFecha?Math.max(1,diffDaysISO(fijaFecha.desde,fijaFecha.hasta)+1):lMin; L <= lMaxEval; L++) {
     for (let i = 0; i <= indiceFechas.length - L; i++) {
       const diasRango = indiceFechas.slice(i, i + L);
       const fIni = diasRango[0], fFin = diasRango[diasRango.length - 1];
 
+      if(fijaFecha&&(fIni!==fijaFecha.desde||fFin!==fijaFecha.hasta))continue;
       let nombresNucleo = nucleoPernocta(L, diasRango);
       const esExcursion = L === 1 && nombresNucleo.length < 2;
       if (esExcursion) nombresNucleo = nucleoExcursion(fIni);
@@ -1150,7 +1186,7 @@ function ejecutarMotorFactibilidad(model) {
       if (nombresNucleo.length < 2) continue;
 
       const cruceHor = cruzHorarioNucleo(nombresNucleo, diasRango);
-      if (!cruceHor.ok) {
+      if (!cruceHor.ok && !multi) {
         diagnosticos.push(`Ventana ${fmtShortDate(fIni)}–${fmtShortDate(fFin)} (${L}d): horarios incompatibles entre el núcleo (solape < ${UMBRAL_HORA_SOLAPE} h).`);
         continue;
       }
@@ -1166,17 +1202,20 @@ function ejecutarMotorFactibilidad(model) {
       const dfCandidatos = [
         ...viajeros.filter(v => nucleoSet.has(v.nombre)),
         ...satelites,
-      ];
+      ].map(v=>fijaFecha?{...v,conjuntoFechas:new Set([...v.conjuntoFechas].filter(d=>diasRango.includes(d)))}:v);
 
-      const sol = resolverVentana(dfCandidatos, matriz, indiceFechas, nombresNucleo, diasRango, L);
-      if (!sol) {
+      const search=multi?resolverAlternativas(dfCandidatos,matriz,indiceFechas,nombresNucleo,diasRango,L,quorum,windowBudget,names=>cruzHorarioNucleo(names.filter(n=>nucleoSet.has(n)),diasRango).ok):{soluciones:[resolverVentana(dfCandidatos,matriz,indiceFechas,nombresNucleo,diasRango,L)].filter(Boolean),evaluated:0,truncated:false};
+      evaluated+=search.evaluated;limited||=search.truncated;retained+=search.soluciones.length;
+      if (!search.soluciones.length) {
         diagnosticos.push(`Ventana ${fmtShortDate(fIni)}–${fmtShortDate(fFin)} (${L}d): sin flujo logístico factible.`);
         continue;
       }
 
+      for(const sol of search.soluciones){
       const asig = sol.asignacion;
       const dfAsig = sol.viajerosAsignados;
       const asistentesNucleo = nombresNucleo.filter(n => n in asig);
+      const cruceAsignado=cruzHorarioNucleo(asistentesNucleo,diasRango);if(!cruceAsignado.ok)continue;
       const nucleoAsigSet = new Set(asistentesNucleo);
       const dfNucleo = dfAsig.filter(v => nucleoAsigSet.has(v.nombre));
       const satelitesAsignados = dfAsig.map(v => v.nombre).filter(n => !nucleoAsigSet.has(n));
@@ -1250,6 +1289,7 @@ function ejecutarMotorFactibilidad(model) {
         }).filter(p => p.detallesVotantes.length > 0)
           .sort((a, b) => (b.apoyosNucleo - a.apoyosNucleo) || (b.apoyosTotal - a.apoyosTotal) || (b.scoreTotal - a.scoreTotal));
 
+        if(fijaPlan)planesEvaluados=planesEvaluados.filter(p=>p.key===fijaPlan.option);
         if (planesEvaluados.length) {
           planGanadorKey = planesEvaluados[0].key;
           const top = planesEvaluados[0];
@@ -1257,6 +1297,7 @@ function ejecutarMotorFactibilidad(model) {
         }
       }
 
+      if(fijaPlan&&!planGanadorKey)continue;
       // ── 3. COHERENCIA CONDICIONAL: ¿APLICA MOSTRAR CASAS EN ESTA VENTANA/PLAN? ──
       const casasSonCoherentes = qCasas
         ? preguntaEsCoherenteConPlan(qCasas, qOpts, planGanadorKey, esPlanExcursion)
@@ -1323,7 +1364,7 @@ function ejecutarMotorFactibilidad(model) {
           const key   = typeof optVal === 'function' ? optVal(qCasas, rawOp) : (rawOp && rawOp.nombre ? rawOp.nombre : String(rawOp));
           const label = (rawOp && typeof rawOp === 'object' && rawOp.nombre) ? rawOp.nombre : key;
           const cost = accommodationCost(rawOp, Math.max(1,nTotal), diffDaysISO(fIni,fFin));
-          if (!key || !cost) return;
+          if (!key || !cost || (fijaCasa&&key!==fijaCasa.option)) return;
 
           const detallesVotantes = [];
           let apoyosNucleo = 0, apoyosSat = 0, vetosNucleo = 0;
@@ -1341,7 +1382,7 @@ function ejecutarMotorFactibilidad(model) {
 
           const apoyosTotal = apoyosNucleo + apoyosSat;
           const pItem       = paretoCasas ? paretoCasas.opciones.find(o => o.key === key) : null;
-          if (apoyosTotal === 0 && (!pItem || pItem.nOpt === 0)) return;
+          if (!fijaCasa && apoyosTotal === 0 && (!pItem || pItem.nOpt === 0)) return;
 
           const pCoop      = cost.pp;
           const divisorCoal = pItem ? Math.max(1, pItem.E) : Math.max(1, apoyosTotal);
@@ -1388,15 +1429,24 @@ function ejecutarMotorFactibilidad(model) {
         );
       }
 
+      if(fijaCasa&&(!casasSonCoherentes||!casasEvaluadas.some(c=>c.viable)))continue;
       const incluyeFinde = diasRango.some(isSatSunISO);
+      const selectedHouse=casasEvaluadas.find(c=>c.viable);
+      const selectedPlan=planesEvaluados[0];
+      // A priori probabilities, not a product of conditional responses.
+      const asistencia=multi?root.PlanPrioridades.attendance(dfAsig,quorum):null;
 
-      candidatosBrutos.push({
+      const candidato={
         L,
         fIni,
         fFin,
         diasRango,
         incluyeFinde,
-        cruceHorario: cruceHor.solape,
+        cruceHorario: cruceAsignado.solape,
+        asistencia,
+        costeAlojamiento:selectedHouse?.p_coop??null,
+        alojamientoPropuesto:selectedHouse?.key??null,
+        satisfaccion:selectedPlan?selectedPlan.apoyosTotal/nTotal:null,
         excursion: esPlanExcursion,
         N: nTotal,
         N_full: asistentesNucleo.length,
@@ -1423,10 +1473,24 @@ function ejecutarMotorFactibilidad(model) {
         objetivo: sol.objetivo,
         asignacion: asig,
         viajerosAsignados: dfAsig,
-      });
+      };
+      if(multi&&selectedHouse){for(const house of casasEvaluadas.filter(c=>c.viable)){candidatosBrutos.push({...candidato,alojamientoPropuesto:house.key,costeAlojamiento:house.p_coop,casasEvaluadas:[house,...casasEvaluadas.filter(c=>c!==house)]});}}else candidatosBrutos.push(candidato);
+      }
     }
   }
 
+  if(multi){
+    // Cheap reproducible estimate across retained candidates; full simulation only for displayed plans.
+    const nRes=Math.max(16,Math.min(64,Math.floor(16000/Math.max(1,candidatosBrutos.length))));
+    const resCache=new Map();for(const c of candidatosBrutos){const key=JSON.stringify(c.asignacion);if(!resCache.has(key))resCache.set(key,attendanceEnabled?estimarResiliencia(c,nRes):null);c.resilienciaEstimacion=resCache.get(key);}
+    if(!candidatosBrutos.length&&(fijaFecha||fijaCasa||fijaPlan))diagnosticos.push("No se encontró un candidato compatible con las decisiones fijadas y las restricciones evaluadas.");
+    const rank=root.PlanPrioridades.rank(candidatosBrutos,respuestas,attendanceEnabled);
+    const soluciones=[];const keep=c=>{if(c&&!soluciones.includes(c))soluciones.push(c);};
+    for(const c of rank.ordered.slice(0,3))keep(c);keep(rank.extremes.Linf);if(rank.ordered[0])rank.ordered[0].ranking.etiquetas.unshift('Mejor compromiso según prioridades');
+    for(const c of Object.values(rank.extremes))keep(c);
+    for(const c of soluciones)c.fragilidad=simularFragilidad(c.asignacion,c.viajerosAsignados,250,.12,100,23,null,Object.fromEntries(c.viajerosAsignados.map(v=>[v.nombre,probRes(v)])));
+    return {soluciones,diagnosticos,ranking:{voters:rank.voters,weights:rank.weights,counts:rank.counts,defaultWeights:rank.defaultWeights,missing:rank.missing,quorum,evaluated,retained,candidates:candidatosBrutos.length,limited,resilienceSamples:nRes,method:"L1/Linf",asistenciaActiva:attendanceEnabled},...(par('RETURN_CANDIDATES',false)?{candidatos:candidatosBrutos}:{})};
+  }
   candidatosBrutos.sort((a, b) =>
     (b.N - a.N) || (b.N_full - a.N_full) || (b.L - a.L) || (a.objetivo - b.objetivo)
   );
@@ -1539,6 +1603,6 @@ function computeTopologyAndSensitivity(model, soluciones) {
 root.EngineCore = {
   configure, buildModelData, ejecutarMotorFactibilidad, computeTopologyAndSensitivity,
   evaluarCatalogoProbabilidad, simularFragilidad, construirFlujoTransporte,
-  resolverVentana, generarTrayectoriasOptimas,
+  resolverVentana, resolverAlternativas, generarTrayectoriasOptimas,
 };
 })(typeof window !== 'undefined' ? window : globalThis);
