@@ -156,7 +156,6 @@ async function refreshGlobalProfile() {
       row.append(text,b); mtDecorateTrip(row,trip); host.append(row);
     }
     renderGlobalLocalChoices();
-    window.MetatioGuide?.welcome(_globalAccount.id);
   } catch(e) { if(version===_globalRefreshVersion) globalStatus(e.message); }
 }
 function renderGlobalLocalChoices() {

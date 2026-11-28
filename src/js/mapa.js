@@ -29,24 +29,47 @@ function fotoExtraFor(qid, nombre) {
 // Recoge todas las opciones geolocalizables del esquema (checkbox, casas, radio…)
 // junto con los votos del grupo sobre cada una.
 function collectGeoDestinations() {
-  const out=[];
-  for(const q of schema||[]){
-    const cfg=q.config?.routeStudy;
-    if(cfg?.destino){const d=cfg.destino;out.push({qid:q.id,pregunta:q.label,nombre:d.texto||'Destino del desplazamiento',geo:RouteStudy.point(d),address:d.texto||'',kind:'destination',fotos:[],enlaces:[],voters:[]});}
-    for(const op of q.opciones||[]){
-      if(!op||typeof op!=='object'||!op.geo)continue;
-      const n=normalizeOption(q,op),geo=geoDeOp(op),address=typeof op.geo==='string'?op.geo:op.geo.texto||'';
-      if(!geo&&!address)continue;
-      const voters=[];for(const r of respuestas||[]){if(DecisionModel.applicability(q,r.answers||{},schema)!==1)continue;const v=extractAnswer(r.answers||{},q);if(v==null)continue;let yes;
-        if(q.tipo==='voto-ponderado')yes=Number(v[n.key])>0;
-        else if(q.tipo==='probabilidad-opcion')yes=Number(v[n.key]??0)>=.5;
-        else if(Array.isArray(v))yes=v.some(x=>(typeof x==='object'?x?.nombre:x)===n.key);
-        else yes=(typeof v==='object'?v.estado:v)===n.key;
-        if(yes)voters.push(r.nombre);}
-      out.push({qid:q.id,key:n.key,pregunta:q.label,nombre:n.label,geo,address,kind:'option',precio:optionPriceLabel(op),url:safeUrl(op.url),enlaces:optionLinks(op),fotos:[safeUrl(op.foto),safeUrl(fotoExtraFor(q.id,n.key))].filter(Boolean),km:optKmFromSchema(op),voters,raw:op});
-    }
-    if(cfg){const c=DecisionModel.cohorts(q,respuestas||[],schema);for(const r of c.answered){if(![getRadioStepperConfig(q)?.when,'necesito'].includes(r.value?.estado))continue;const a=r.value?.ruta,geo=RouteStudy.point(a?.origen);if(!geo)continue;out.push({qid:q.id,pregunta:q.label,nombre:r.nombre,geo,address:a.origen.texto||'',kind:'pickup',role:r.value.estado===getRadioStepperConfig(q)?.when?'Salida de conductor':'Punto de recogida',schedule:[a.desde,a.hasta].filter(Boolean).join('–'),fotos:[],enlaces:[],voters:[]});}}
-  }
+  const out = [];
+  (schema || []).forEach(q => {
+    if (!Array.isArray(q.opciones)) return;
+    q.opciones.forEach(op => {
+      const geo = geoDeOp(op);
+      if (!geo) return;
+      const nombre = optVal(q, op);
+      const obj    = (op && typeof op === 'object') ? op : {};
+      const fotos  = [safeUrl(obj.foto), safeUrl(fotoExtraFor(q.id, nombre))].filter(Boolean);
+      out.push({
+        qid: q.id,
+        pregunta: q.label,
+        nombre,
+        geo,
+        precio: optionPriceLabel(obj),
+        url: safeUrl(obj.url),
+        enlaces: optionLinks(obj),
+        fotos,
+        km: optKmFromSchema(op),
+        voters: [],
+      });
+    });
+  });
+
+  // Votos actuales del grupo (respuesta enviada o mi borrador hidratado)
+  const countVotes = (r, q, dest) => {
+    const v = extractAnswer(r.answers || {}, q);
+    if (v == null) return false;
+    if (q.tipo === 'voto-ponderado') return Number(v[dest.nombre]) > 0;
+    if (q.tipo === 'casas') return Array.isArray(v) && v.some(c => (typeof c === 'string' ? c : c.nombre) === dest.nombre);
+    if (q.tipo === 'probabilidad-opcion') return Number(v[dest.nombre] ?? 0) >= 0.5;
+    if (Array.isArray(v)) return v.includes(dest.nombre);
+    return String(v) === dest.nombre;
+  };
+  out.forEach(dest => {
+    const q = schema.find(x => x.id === dest.qid);
+    if (!q) return;
+    (respuestas || []).forEach(r => {
+      if (countVotes(r, q, dest)) dest.voters.push(r.nombre);
+    });
+  });
   return out;
 }
 
@@ -59,11 +82,10 @@ function renderMapPopup(d, enSolucion) {
   }
   const meta = [];
   if (d.precio) meta.push(`Precio: ${esc(d.precio)}`);
-  if (d.km != null) meta.push(`${fmtKm(d.km)} en línea recta desde tu salida`);
-  if(d.address)meta.push(esc(d.address));if(d.role)meta.push(esc(d.role));if(d.schedule)meta.push(esc(d.schedule));
+  if (d.km != null) meta.push(`${fmtKm(d.km)} desde salida`);
   if (meta.length) parts.push(`<div style="font-size:0.8rem;margin-bottom:4px">${meta.join(' · ')}</div>`);
   for (const [i,link] of (d.enlaces || []).entries()) { const u=safeUrl(link.url); if(u) parts.push(`<div style="margin-bottom:4px"><a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(link.titulo || `Enlace ${i+1}`)}</a></div>`); }
-  if(d.kind==='option')parts.push(`<div style="font-size:0.78rem">${d.voters.length ? 'Votado por: ' + d.voters.map(esc).join(', ') : 'Sin votos aún'}</div>`);else if(d.kind==='destination')parts.push('<b>Destino del estudio de transporte</b>');
+  parts.push(`<div style="font-size:0.78rem">${d.voters.length ? 'Votado por: ' + d.voters.map(esc).join(', ') : 'Sin votos aún'}</div>`);
   if (enSolucion) {
     parts.push(`<div style="font-size:0.75rem;color:#2f855a;margin-top:4px">Incluido en una solución factible del grupo</div>`);
   }
@@ -81,28 +103,103 @@ function ensureMap(mapHost) {
 }
 
 function refreshMapMarkers() {
-  if(_mapaLayer)_mapaLayer.clearLayers();const all=collectGeoDestinations(),filter=document.getElementById('mt-map-filter'),legend=document.getElementById('mt-map-list');
-  if(filter){const old=filter.value;const qs=[...new Map(all.map(x=>[x.qid,x.pregunta]))];filter.replaceChildren(new Option('Todas las preguntas',''),...qs.map(([id,n])=>new Option(n,id)));filter.value=qs.some(([id])=>id===old)?old:'';}
-  const dests=all.filter(d=>!filter?.value||d.qid===filter.value),pts=[];
-  if(legend)legend.replaceChildren();
-  const colors={destination:'#299b6c',option:'#468bc1',pickup:'#b88941'};
-  for(const d of dests){
-    let marker=null;if(d.geo&&_mapaLayer){pts.push([d.geo.lat,d.geo.lng]);marker=L.circleMarker([d.geo.lat,d.geo.lng],{radius:d.kind==='destination'?11:8,color:colors[d.kind],fillColor:colors[d.kind],fillOpacity:.85,weight:3}).addTo(_mapaLayer).bindPopup(renderMapPopup(d,false));}
-    if(!legend)continue;
-    const row=div('mt-map-place');const title=div();title.innerHTML=`<i class="fa-solid ${d.kind==='destination'?'fa-flag-checkered':d.kind==='pickup'?'fa-person':'fa-location-dot'}" style="color:${colors[d.kind]}"></i> <b>${esc(d.nombre)}</b><small>${esc(d.pregunta)}${d.role?' · '+esc(d.role):''}${!d.geo?' · Sin punto confirmado':''}</small>`;row.append(title);
-    if(marker){const b=document.createElement('button');b.type='button';b.className='btn-pc';b.textContent='Ver';b.onclick=()=>{_mapaInstance.setView([d.geo.lat,d.geo.lng],14);marker.openPopup();};row.append(b);}else if(!d.geo&&d.kind==='option'&&d.address&&respondentes.some(r=>r.nombre.toLowerCase()===user?.nombre?.toLowerCase()&&r.organizer===true)){const b=document.createElement('button');b.type='button';b.className='btn-pc';b.textContent='Localizar';b.onclick=()=>{b.disabled=true;const box=div('mt-map-fix');row.append(box);const picker=locationPicker(box);picker.writeText(d.address);const save=document.createElement('button');save.type='button';save.className='btn-pc';save.textContent='Guardar ubicación';save.onclick=async()=>{const geo=picker.read();if(!geo){showStatus('Selecciona el punto correcto primero.','err');return;}try{save.disabled=true;await apiAuth({action:'edit_opcion',...user,questionId:d.qid,oldOptKey:d.key,nuevaOpcion:{...d.raw,geo}});const data=await apiAuth({action:'all',...user});applyPollUpdate(data);refreshMapMarkers();}catch(e){showStatus(e.message,'err');save.disabled=false;}};box.append(save);};row.append(b);}
-    legend.append(row);
+  if (!_mapaInstance || !_mapaLayer) return;
+  _mapaLayer.clearLayers();
+  const dests = collectGeoDestinations();
+
+  // Soluciones del motor: los destinos presentes en alguna solución factible
+  // se marcan con borde destacado para poder ver el mapa "con soluciones".
+  let nombresSolucion = new Set();
+  try {
+    if (typeof buildModelData === 'function' && typeof ejecutarMotorFactibilidad === 'function') {
+      const model = buildModelData();
+      const { soluciones } = ejecutarMotorFactibilidad(model);
+      nombresSolucion = new Set(soluciones.flatMap(s => s.asistentesNucleo.concat(s.satelitesAsignados)));
+      window._solucionesMapa = soluciones; // accesible desde el popup
+    }
+  } catch (e) { /* el mapa funciona aunque el motor falle */ }
+
+  dests.forEach(d => {
+    const enSolucion = d.voters.some(n => nombresSolucion.has(n));
+    const mk = L.marker([d.geo.lat, d.geo.lng], {
+      opacity: enSolucion ? 1 : 0.75,
+    }).addTo(_mapaLayer);
+    mk.bindPopup(renderMapPopup(d, enSolucion));
+  });
+
+  const origin = puntoPartida();
+  if (origin) {
+    L.circleMarker([origin.lat, origin.lng], {
+      radius: 8, color: '#b7791f', fillColor: '#f6e05e', fillOpacity: 0.9,
+    }).addTo(_mapaLayer).bindPopup('<b>Tu punto de partida</b>' + (origin.texto ? '<div style="font-size:0.78rem">' + esc(origin.texto) + '</div>' : ''));
   }
-  if(legend&&!dests.length)legend.textContent='Todavía no hay opciones o puntos de transporte con ubicación guardada.';
-  const origin=puntoPartida();if(origin&&_mapaLayer){pts.push([origin.lat,origin.lng]);L.circleMarker([origin.lat,origin.lng],{radius:8,color:'#b7791f',fillColor:'#f6e05e',fillOpacity:.9}).addTo(_mapaLayer).bindPopup('<b>Tu punto de partida</b>'+ (origin.texto?'<div>'+esc(origin.texto)+'</div>':''));}
-  if(!_mapaInstance)return;
-  if(pts.length===1)_mapaInstance.setView(pts[0],12);else if(pts.length>1)_mapaInstance.fitBounds(L.latLngBounds(pts).pad(.2),{maxZoom:15});
+
+  const pts = dests.map(d => [d.geo.lat, d.geo.lng]);
+  if (origin) pts.push([origin.lat, origin.lng]);
+  if (pts.length === 1) _mapaInstance.setView(pts[0], 12);
+  else if (pts.length > 1) _mapaInstance.fitBounds(L.latLngBounds(pts).pad(0.2));
 }
 
 // ── Editor del punto de partida (propio y común del grupo) ─────────────────
 function buildOriginEditor(host) {
-  host.replaceChildren();const title=div('', 'Tu punto de partida (opcional)');host.append(title);const pickerHost=div();host.append(pickerHost);const picker=locationPicker(pickerHost);picker.write(puntoPartida());
-  const actions=div('mt-geo-actions');const save=document.createElement('button');save.type='button';save.className='btn-pc';save.textContent='Fijar mi salida';save.onclick=()=>{const p=picker.read();if(!p){showStatus('Selecciona un punto de salida.','err');return;}setPuntoPartida(p);refreshMapMarkers();};const clear=document.createElement('button');clear.type='button';clear.className='btn-pc';clear.textContent='Borrar mi salida';clear.onclick=()=>{setPuntoPartida(null);picker.reset();refreshMapMarkers();};actions.append(save,clear);host.append(actions);
+  const propio = puntoPartida();
+  host.innerHTML = `
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:0.85rem">
+      <label><i class="fa-solid fa-person-walking-arrow-right" aria-hidden="true"></i> Tu punto de partida:</label>
+      <input type="text" class="mp-origen-q" placeholder="${propio ? 'Actual: ' + propio.lat.toFixed(4) + ', ' + propio.lng.toFixed(4) + ' («' + (propio.texto || '') + '»)' : 'Calle, ciudad o «40.4168,-3.7038»'}" style="flex:1;min-width:180px;padding:6px 8px">
+      <button type="button" class="btn-pc mp-origen-buscar">Fijar</button>
+      <button type="button" class="btn-pc mp-origen-geo" title="Usar mi ubicación actual"><i class="fa-solid fa-location-crosshairs" aria-hidden="true"></i> Mi ubicación</button>
+      <button type="button" class="btn-pc mp-origen-clear">Borrar</button>
+      <span class="mp-origen-status" style="color:var(--muted);font-size:0.78rem"></span>
+    </div>
+    <p style="font-size:0.76rem;color:var(--muted);margin-top:6px">Indica desde dónde sales el día del viaje: los destinos mostrarán su distancia respecto a este punto. Puedes cambiarlo también en «Mi cuenta».</p>`;
+
+  const inp = host.querySelector('.mp-origen-q');
+  const status = host.querySelector('.mp-origen-status');
+  const p = puntoPartida();
+  if (p) inp.placeholder = `Actual: ${p.lat.toFixed(4)}, ${p.lng.toFixed(4)} («${p.texto || ''}»)`;
+
+  const fijar = (coords, texto) => {
+    setPuntoPartida({ lat: coords.lat, lng: coords.lng, texto: texto || '' });
+    status.textContent = 'Origen actualizado';
+    inp.value = '';
+    refreshMapMarkers();
+    if (typeof renderAllQuestions === 'function') renderAllQuestions();
+    if (typeof restoreDraft === 'function') restoreDraft();
+    if (activeMode === 'consensus'    && typeof renderResultados === 'function')             renderResultados();
+    if (activeMode === 'reformulario' && typeof renderReformularioInteractivo === 'function') renderReformularioInteractivo();
+  };
+
+  host.querySelector('.mp-origen-buscar').addEventListener('click', async () => {
+    const q = inp.value.trim();
+    if (!q) { status.textContent = 'Escribe algo que buscar'; return; }
+    const c = parseCoordStr(q);
+    if (c) { fijar(c, q); return; }
+    status.textContent = 'Buscando…';
+    try {
+      const res = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(q), {
+        headers: { 'Accept-Language': 'es' },
+      });
+      const arr = await res.json();
+      if (arr && arr.length) fijar({ lat: parseFloat(arr[0].lat), lng: parseFloat(arr[0].lon) }, arr[0].display_name);
+      else status.textContent = 'Sin resultados';
+    } catch (e) { status.textContent = 'Error de red'; }
+  });
+
+  host.querySelector('.mp-origen-geo').addEventListener('click', () => {
+    if (!navigator.geolocation) { status.textContent = 'Geolocalización no disponible'; return; }
+    status.textContent = 'Localizando…';
+    navigator.geolocation.getCurrentPosition(
+      pos => fijar({ lat: pos.coords.latitude, lng: pos.coords.longitude }, 'Mi ubicación'),
+      () => { status.textContent = 'Permiso denegado'; }
+    );
+  });
+
+  host.querySelector('.mp-origen-clear').addEventListener('click', () => {
+    setPuntoPartida(null);
+    status.textContent = 'Origen borrado';
+    refreshMapMarkers();
+  });
 }
 
 // ── Construcción de la vista completa ───────────────────────────────────────
@@ -113,7 +210,8 @@ function buildMapView(container) {
   card.innerHTML = `
     <div class="card-title"><span class="num">M</span> Mapa de destinos</div>
     <p style="font-size:0.82rem;color:var(--muted);margin-bottom:10px">
-      Opciones, destinos de transporte y puntos de salida o recogida. Azul: opción · verde: destino · ocre: salida/recogida. Las direcciones sin confirmar se enumeran debajo; no se inventan ubicaciones.
+      Todos los destinos geolocalizados del cuestionario (fotos, enlaces, precios y distancia al punto de partida).
+      Haz clic en un marcador para ver la ficha completa. Las coordenadas se fijan editando cada opción (editor de opcion, campo Destino).
     </p>`;
   const originHost = div('mp-origin-editor');
   originHost.style.marginBottom = '10px';
@@ -121,13 +219,12 @@ function buildMapView(container) {
 
   const mapHost = div('map-view');
   mapHost.style.cssText = 'height:420px;border-radius:10px;border:1px solid var(--border);z-index:0';
-  const filter=document.createElement('select');filter.id='mt-map-filter';filter.setAttribute('aria-label','Filtrar mapa por pregunta');filter.onchange=refreshMapMarkers;card.append(filter,mapHost);
-  const list=div('mt-map-list');list.id='mt-map-list';card.append(list);
+  card.appendChild(mapHost);
   container.appendChild(card);
 
   if (typeof L === 'undefined') {
-    mapHost.style.height='auto';mapHost.innerHTML = '<p style="padding:16px;color:var(--accent)">Leaflet no está cargado (comprueba tu conexión CDN). Las ubicaciones guardadas se listan abajo.</p>';
-    buildOriginEditor(originHost);refreshMapMarkers();return;
+    mapHost.innerHTML = '<p style="padding:16px;color:var(--accent)">Leaflet no está cargado (comprueba tu conexión CDN).</p>';
+    return;
   }
 
   ensureMap(mapHost);

@@ -3,6 +3,8 @@
 const ident = b => ({ p_eid: b.eid, p_nombre: b.nombre, p_pin: b.pinHash });
 
 const RPC = {
+  get_decisions: {fn:'get_trip_decisions',args:b=>ident(b)},
+  set_decision: {fn:'set_trip_decision',args:b=>({...ident(b),p_qid:b.qid,p_value:b.value})},
   rename_trip: { fn: 'rename_trip', args: b => ({ ...ident(b), p_titulo: b.titulo }) },
   set_attendance: { fn: 'set_attendance', args: b => ({ ...ident(b), p_enabled: b.enabled }) },
   open_session: { fn: 'open_session', args: b => ident(b) },

@@ -121,26 +121,6 @@ async function accessUi(action) {
   try { await action(); } catch (e) { showStatus(e.message, 'err', 10000); }
 }
 function bindAccessControls() {
-  $('access-save-title')?.addEventListener('click', e => accessUi(async () => {
-    const btn=e.currentTarget, field=$('access-trip-title'), title=field.value.trim();
-    if(!title || [...title].length>80) throw new Error('Introduce un título de 1 a 80 caracteres.');
-    const eid=user.eid; btn.disabled=true;
-    try {
-      const result=await apiPost({action:'rename_trip',...user,titulo:title});
-      if(user?.eid!==eid)return;
-      encuestaTitulo=result.titulo; $('survey-main-title').textContent=encuestaTitulo;
-      field.value=encuestaTitulo; field.dataset.saved=encuestaTitulo;
-      if(typeof _guardarMeta==='function')_guardarMeta(eid,{alias:encuestaTitulo});
-      lastRaw=''; invalidateReadStateCache(); await pollOnce();
-      showStatus('Título actualizado. El código de acceso no cambia.','ok');
-    } finally {btn.disabled=false;}
-  }));
-  $('access-attendance-enabled')?.addEventListener('change',async e=>{
-    const el=e.currentTarget; const desired=el.checked; el.disabled=true;
-    try{await apiPost({action:'set_attendance',...user,enabled:desired});asistenciaActiva=desired;lastRaw='';invalidateReadStateCache();if(typeof renderAusencias==='function')renderAusencias();if(activeMode==='consensus')renderResultados();if(activeMode==='reformulario')renderReformularioInteractivo();await pollOnce();showStatus('Configuración de asistencia actualizada','ok');}
-    catch(err){el.checked=asistenciaActiva;showStatus(err.message,'err');}
-    finally{el.disabled=!ajustesModeloDisponibles;}
-  });
   $('btn-change-profile-password')?.addEventListener('click', e => _busy(e.currentTarget,'Cambiando…','',async () => {
     const old = $('profile-old-password'), next = $('profile-new-password');
     try { await changeProfilePassword(old.value,next.value); tripsErr('Contraseña cambiada. Descarga una copia nueva de tus accesos.'); }

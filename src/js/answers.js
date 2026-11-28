@@ -58,7 +58,7 @@ function readState() {
     const card = cardFor(q.id), type = TIPOS[q.tipo];
     if (card && type) answers[q.id] = type.read(card, q);
   });
-  return Object.assign({ answers }, (typeof readAusencias === 'function' && readAusencias()) || {});
+  return Object.assign({ answers, prioridades: typeof readPrioridades==='function'?readPrioridades():{} }, (typeof readAusencias === 'function' && readAusencias()) || {});
 }
 
 // Borrador y envío comparten la misma lectura: la probabilidad personal y
@@ -87,6 +87,7 @@ function restoreDraft() {
       catch (e) { console.warn('Borrador: no se pudo restaurar', q.id, e); }
     });
     if (typeof writeAusencias === 'function') writeAusencias(d);
+    if(typeof writePrioridades==='function')writePrioridades(d.prioridades||{});
     setDraftDirty(true);
   } catch (e) {
     console.warn('Borrador ilegible, se ignora.', e);
@@ -116,6 +117,7 @@ function hydrateFromServerIfNoDraft() {
       prob_asistencia_propia: mine.answers.prob_asistencia_propia,
     });
   }
+  if(typeof writePrioridades==='function')writePrioridades(mine.answers.prioridades||{});
   setDraftDirty(false);
 }
 
@@ -142,6 +144,7 @@ function collectAnswers() {
   const result = {
     timestamp: new Date().toISOString(),
     values: {},
+    prioridades: st.prioridades,
   };
 
   schema.forEach(q => {

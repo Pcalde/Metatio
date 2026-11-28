@@ -12,18 +12,24 @@ function resetAusencias() {
   ausInicializado = false;
   ausMarcados = new Set();
   if ($('aus-respondentes-list')) $('aus-respondentes-list').replaceChildren();
-  if ($('aus-prob-slider')) setProb(80);
+  if ($('aus-prob-slider')) setProb(75);
+  if(typeof writePrioridades==='function')writePrioridades({});
 }
 
 function myVote() {
   return (user && ausencias.find(a => a.votante === user.nombre)) || null;
 }
 
+const ASISTENCIA_CATEGORIAS = [[0,'No voy'],[25,'Poco probable'],[50,'Quizás'],[75,'Probable'],[98,'Casi seguro']];
 function setProb(v) {
-  const s = $('aus-prob-slider');
-  s.value = v;
-  $('aus-prob-display').textContent = s.value + '%';
-  s.style.setProperty('--pct', s.value + '%');
+  const s = $('aus-prob-slider'); if(!s)return;
+  const val=Number(v);s.value=Number.isFinite(val)?Math.max(0,Math.min(100,val)):75;
+  const box=$('aus-prob-choices');if(!box)return;
+  const current=[...box.querySelectorAll('input')];if(current.some(i=>+i.value===+s.value)&&current.length===ASISTENCIA_CATEGORIAS.length){current.forEach(i=>i.checked=+i.value===+s.value);return;}
+  box.replaceChildren();const options=[...ASISTENCIA_CATEGORIAS];
+  // Preserve old numerical answers until their owner explicitly changes them.
+  if(!options.some(([p])=>p===+s.value))options.push([+s.value,'Valor anterior']);
+  for(const [p,label] of options){const l=document.createElement('label'),i=document.createElement('input'),t=document.createElement('span'),sm=document.createElement('small');i.type='radio';i.name='asistencia-propia';i.value=p;i.checked=p===+s.value;t.textContent=label;sm.textContent=p+' %';t.append(sm);l.append(i,t);i.onchange=()=>{setProb(p);box.querySelector('input:checked')?.focus();triggerSave()};box.append(l);}
 }
 
 function readAusCandidatos() {
@@ -128,9 +134,4 @@ function renderVotosPublicos() {
   }
 }
 
-function bindAusencias() {
-  $('aus-prob-slider').addEventListener('input', function () {
-    setProb(this.value);
-    triggerSave();
-  });
-}
+function bindAusencias() { setProb(75); if(typeof bindPrioridades==='function')bindPrioridades(); }

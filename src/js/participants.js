@@ -25,7 +25,7 @@ function renderParticipants() {
     return `<div class="participant-row">
       <span class="participant-name">${esc(name)}${own ? ' <span class="participant-you">(tú)</span>' : ''}</span>
       <span class="participant-vote ${voted ? 'is-voter' : 'not-voter'}"><i class="fa-solid ${voted ? 'fa-circle-check' : 'fa-clock'}" aria-hidden="true"></i> ${voted ? 'Ha votado' : 'Pendiente'}</span>
-      <button type="button" class="participant-delete" data-participant="${esc(name)}" ${own ? 'data-own="1"' : ''} aria-label="Eliminar a ${esc(name)}" title="${own ? 'Eliminar tu participación' : 'Eliminar participante'}"><i class="fa-solid fa-trash" aria-hidden="true"></i></button>
+      ${own ? `<button type="button" class="participant-delete" data-participant="${esc(name)}" data-own="1" aria-label="Eliminar tu participación" title="Eliminar tu participación"><i class="fa-solid fa-trash" aria-hidden="true"></i></button>` : ''}
     </div>`;
   }).join('');
 

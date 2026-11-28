@@ -548,6 +548,8 @@ function _applyMetaCardVisibility(cur, secs, answers) {
     if (show) propia.style.removeProperty('display');
     else propia.style.setProperty('display', 'none', 'important');
   }
+  const prioridadesCard=$('prioridades-card');if(prioridadesCard)prioridadesCard.style.display=isFirstSec?'':'none';
+  const decisionesCard=$('decisiones-card');if(decisionesCard)decisionesCard.style.display=isFirstSec?'':'none';
   const participCard = $('participants-card');
   if (participCard) participCard.style.display = isFirstSec ? '' : 'none';
   const ausCard = $('ausencias-card');

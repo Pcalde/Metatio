@@ -129,6 +129,7 @@ function enterSurvey() {
   restoreDraft();
   if (typeof refreshSecciones === 'function') setTimeout(refreshSecciones, 0);
   startPolling();
+  if(typeof refreshDecisiones==='function')void refreshDecisiones();
   window.MetatioGuide?.enteredTrip();
 }
 

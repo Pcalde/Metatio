@@ -21,9 +21,17 @@
   const esMarca = q => !!(q.config && q.config.esEncabezado);
   const valoresDe = c => (Array.isArray(c.valor) ? c.valor : (c.valor != null ? [c.valor] : [])).map(String);
 
-  function reglasPropias(q){const raw=q.config?.mostrarSi;return {logic:raw?.logic==='AND'?'AND':'OR',rules:reglasCondicion(raw)};}
   function reglasEfectivas(q) {
-    const gs=DecisionModel.conditionGroups(q,schema);return {logic:gs.length===1?gs[0].logic:'AND',rules:gs.flatMap(g=>g.rules.map(r=>({...r,_owner:g.owner})))};
+    let raw = q.config && q.config.mostrarSi;
+    if (!raw || (!raw.qid && !Array.isArray(raw) && !Array.isArray(raw.rules))) {
+      const h = typeof _condDeSeccion === 'function' ? _condDeSeccion(q) : null;
+      raw = h && h.config ? h.config.mostrarSi : null;
+    }
+    if (!raw) return { logic: 'OR', rules: [] };
+    if (Array.isArray(raw)) return { logic: 'OR', rules: raw.filter(r => r && r.qid) };
+    if (Array.isArray(raw.rules)) return { logic: raw.logic === 'AND' ? 'AND' : 'OR', rules: raw.rules.filter(r => r && r.qid) };
+    if (raw.qid) return { logic: 'OR', rules: [raw] };
+    return { logic: 'OR', rules: [] };
   }
 
   function textoCond(c) {
@@ -107,21 +115,24 @@
 
     // Propagación de alcance (quién llega a cada pregunta)
     const alcance = new Map();
-    const enCalculo = new Set();
     function calcAlcance(q) {
       if (alcance.has(q.id)) return alcance.get(q.id);
-      if (enCalculo.has(q.id)) return [];
-      enCalculo.add(q.id);
       const padres = parentsMap.get(q.id) || [];
       if (!padres.length) {
         alcance.set(q.id, gente);
-        enCalculo.delete(q.id);
         return gente;
       }
       const { logic } = reglasEfectivas(q);
-      const filtrados = gente.filter(resp => DecisionModel.applicability(q,resp.answers||{},schema)===1);
+      const filtrados = gente.filter(resp => {
+        const evals = padres.map(p => {
+          const qPadre = byId.get(p.fromId);
+          const base = calcAlcance(qPadre);
+          if (!base.includes(resp)) return false;
+          return cumpleRegla(extractAnswer(resp.answers || {}, qPadre), p.rule, qPadre);
+        });
+        return logic === 'AND' ? evals.every(Boolean) : evals.some(Boolean);
+      });
       alcance.set(q.id, filtrados);
-      enCalculo.delete(q.id);
       return filtrados;
     }
     preguntas.forEach(calcAlcance);
@@ -235,12 +246,11 @@
         `<span class="grafo-tipo">${esc(TIPOS_TXT[q.tipo] || q.tipo)}</span>` +
         (q.tipo !== 'textarea' ? `<span class="grafo-n" title="Respondieron / Llegan a esta pregunta">${nResp}/${genteNodo.length} <i class="fa-solid fa-user" aria-hidden="true"></i></span>` : '') +
         `<div class="grafo-node-actions">` +
-          `<button type="button" class="sec-rail-tool grafo-order-handle mt-order-control" draggable="true" title="Arrastrar para cambiar el recorrido"><i class="fa-solid fa-grip-vertical"></i></button>` +
           `<button type="button" class="sec-rail-tool arbol-go" data-idx="${idx}" title="Ir a esta pregunta"><i class="fa-solid fa-arrow-right" aria-hidden="true"></i></button>` +
           `<button type="button" class="sec-rail-tool arbol-branch" data-idx="${idx}" title="Crear pregunta condicionada a esta"><i class="fa-solid fa-plus" aria-hidden="true"></i></button>` +
         `</div>` +
       `</header>` +
-      `<div class="grafo-node-title">${QuestionOrder.flatten(QuestionOrder.groups(schema)).filter(x=>!esMarca(x)).findIndex(x=>x.id===q.id)+1}. ${esc(q.label)}</div>` +
+      `<div class="grafo-node-title">${esc(q.label)}</div>` +
       (optsHtml ? `<div class="grafo-opts">${optsHtml}</div>` : '') +
     `</article>`;
   }
@@ -365,9 +375,9 @@
   }
 
   function eliminarReglaDeNodo(toId, fromId, ruleToRemove) {
-    const qHija = (schema || []).find(q => q.id === (ruleToRemove._owner||toId));
+    const qHija = (schema || []).find(q => q.id === toId);
     if (!qHija) return;
-    const actual = reglasPropias(qHija);
+    const actual = reglasEfectivas(qHija);
     const restantes = actual.rules.filter(r => !(r.qid === fromId && JSON.stringify(r.valor) === JSON.stringify(ruleToRemove.valor)));
     if (!restantes.length) {
       actualizarCondicionPregunta(qHija, null);
@@ -386,7 +396,7 @@
     cerrarPopoverArista();
     const preguntas = (schema || []).filter(q => !esMarca(q));
     const qPadre = preguntas.find(q => q.id === edge.fromId);
-    const qHija  = schema.find(q => q.id === (edge.rule._owner||edge.toId));
+    const qHija  = preguntas.find(q => q.id === edge.toId);
     if (!qPadre || !qHija) return;
 
     const valsActuales = new Set(valoresDe(edge.rule));
@@ -448,12 +458,12 @@
 
       const nuevaRegla = {
         qid: edge.fromId,
-        op: qPadre.tipo==='radio'?'igual':nuevosValores.length > 1 ? 'alguno' : (edge.rule.op || 'incluye'),
+        op: nuevosValores.length > 1 ? 'alguno' : (edge.rule.op || 'incluye'),
         valor: nuevosValores.length === 1 ? nuevosValores[0] : nuevosValores,
         no: isNo
       };
 
-      const actual = reglasPropias(qHija);
+      const actual = reglasEfectivas(qHija);
       const nuevasRules = actual.rules.map(r =>
         (r.qid === edge.fromId && JSON.stringify(r.valor) === JSON.stringify(edge.rule.valor)) ? nuevaRegla : r
       );
@@ -503,8 +513,8 @@
       return;
     }
 
-    const nuevaRegla = { qid: qPadre.id, op: qPadre.tipo==='radio'?'igual':'incluye', valor: optKey, no: false };
-    const actual = reglasPropias(qDestino);
+    const nuevaRegla = { qid: qPadre.id, op: 'incluye', valor: optKey, no: false };
+    const actual = reglasEfectivas(qDestino);
 
     const yaExiste = actual.rules.some(r => r.qid === qPadre.id && valoresDe(r).includes(String(optKey)));
     if (!yaExiste) {
@@ -633,26 +643,58 @@
   }
 
   function creariaCiclo(sourceId, targetId, preguntas) {
-    // Incluye dependencias heredadas de la sección, no solo aristas dibujadas.
-    return condicionDependeDe(schema, sourceId, targetId);
+    if (sourceId === targetId) return true;
+    const visitados = new Set([targetId]);
+    const cola = [targetId];
+    while (cola.length) {
+      const curr = cola.shift();
+      for (const q of preguntas) {
+        const { rules } = reglasEfectivas(q);
+        if (rules.some(r => r.qid === curr)) {
+          if (q.id === sourceId) return true;
+          if (!visitados.has(q.id)) {
+            visitados.add(q.id);
+            cola.push(q.id);
+          }
+        }
+      }
+    }
+    return false;
   }
 
   async function actualizarCondicionPregunta(q, nuevoMostrarSi) {
-    if(!canEditQuestionOrder()){showStatus('Solo el organizador puede editar las condiciones.','err');return;}
-    const cfg={...q.config};
-    if(!nuevoMostrarSi||!reglasCondicion(nuevoMostrarSi).length)delete cfg.mostrarSi;else cfg.mostrarSi=nuevoMostrarSi;
-    const proposed=schema.map(x=>x.id===q.id?{...x,config:cfg}:x);
-    if(cicloCondicion(proposed,q.id)){showStatus('La conexión generaría una dependencia circular.','err');return;}
-    const orderError=validatePresentationChange(proposed);
-    if(orderError){showStatus(orderError,'err',8000);openQuestionOrder();return;}
-    try{
-      await apiAuth({action:'edit_pregunta',eid:user.eid,nombre:user.nombre,pinHash:user.pinHash,questionId:q.id,label:q.label,config:cfg});
-      const current=schema.find(x=>x.id===q.id);if(current)current.config=cfg;
-      const prevZoom=_zoom,prevPanX=_panX,prevPanY=_panY;
-      render();_zoom=prevZoom;_panX=prevPanX;_panY=prevPanY;aplicarTransform();
-      refreshSecciones();lastRaw='';await pollOnce();
-      if(QuestionOrder.violations(QuestionOrder.flatten(QuestionOrder.groups(schema))).length)showStatus('Condición guardada. Revisa el recorrido para evitar retrocesos.','info',6000);else showStatus('Condición guardada','ok');
-    }catch(err){showStatus('No se pudo guardar la condición: '+err.message,'err',6000);}
+    if (!q.config) q.config = {};
+    if (!nuevoMostrarSi || (Array.isArray(nuevoMostrarSi.rules) && !nuevoMostrarSi.rules.length)) {
+      delete q.config.mostrarSi;
+    } else {
+      q.config.mostrarSi = nuevoMostrarSi;
+    }
+
+    const prevZoom = _zoom, prevPanX = _panX, prevPanY = _panY;
+    render(true);
+    _zoom = prevZoom; _panX = prevPanX; _panY = prevPanY;
+    aplicarTransform();
+
+    if (typeof renderAllQuestions === 'function') renderAllQuestions();
+    if (typeof restoreDraft === 'function') restoreDraft();
+    if (typeof renderRail === 'function') renderRail();
+
+    try {
+      if (typeof saveQuestionCondition === 'function') {
+        await saveQuestionCondition(q.id, q.config.mostrarSi || null);
+      } else if (typeof apiPost === 'function' && typeof user !== 'undefined' && user) {
+        await apiPost({
+          action: 'update_question_config',
+          eid: user.eid,
+          nombre: user.nombre,
+          pinHash: user.pinHash,
+          qid: q.id,
+          config: q.config
+        });
+      }
+    } catch (err) {
+      console.warn('Cambio aplicado localmente; avisa si el backend requiere otra acción:', err);
+    }
   }
 
   function render() {
@@ -689,7 +731,7 @@
         `<p class="arbol-nota"><i class="fa-solid fa-route" aria-hidden="true"></i> ` +
         `<b>Ruta base (A1 → A2…)</b> en el eje central: las preguntas condicionales abren subramas (<b>B, C…</b>) y al terminar reconvergen de nuevo a la ruta base. ` +
         `Arrastra con el ratón para moverte por el mapa y usa la rueda para hacer zoom.</p>` +
-      `<button type="button" class="btn-pc mt-order-control" id="grafo-order-open">Editar recorrido</button></div>` +
+      `</div>` +
       `<div class="grafo-viewport" id="grafo-viewport">` +
         `<div class="grafo-hud">` +
           `<button type="button" class="grafo-hud-btn" id="grafo-z-in" title="Acercar">+</button>` +
@@ -722,14 +764,6 @@
 
     const vp = document.getElementById('grafo-viewport');
     if (vp) bindPanZoom(vp);
-    host.querySelector('#grafo-order-open')?.addEventListener('click',()=>openQuestionOrder());
-    host.querySelectorAll('.grafo-node:not(.is-end-node)').forEach(node=>{
-      const grip=node.querySelector('.grafo-order-handle');
-      grip?.addEventListener('dragstart',e=>{if(!canEditQuestionOrder()){e.preventDefault();return;}e.dataTransfer.setData('text/plain',node.dataset.qid);e.dataTransfer.effectAllowed='move';});
-      node.addEventListener('dragover',e=>{if(canEditQuestionOrder()){e.preventDefault();node.classList.add('mt-order-over');}});
-      node.addEventListener('dragleave',()=>node.classList.remove('mt-order-over'));
-      node.addEventListener('drop',e=>{e.preventDefault();node.classList.remove('mt-order-over');const from=e.dataTransfer.getData('text/plain');if(canEditQuestionOrder()&&schema.some(q=>q.id===from)&&from!==node.dataset.qid)openOrderFromGraph(from,node.dataset.qid,e.clientY>node.getBoundingClientRect().top+node.getBoundingClientRect().height/2);});
-    });
 
     document.getElementById('grafo-z-in')?.addEventListener('click', () => {
       _zoom = Math.min(2.2, _zoom * 1.2);

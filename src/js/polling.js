@@ -51,6 +51,7 @@ async function pollOnce() {
     const data = await apiAuth({ action: 'all', eid: user.eid, nombre: user.nombre, pinHash: user.pinHash });
     if (!pollActive || !user) return;
     pollFails = 0;
+    if(typeof refreshDecisiones==='function')void refreshDecisiones();
     const raw = JSON.stringify(data);
     if (raw !== lastRaw) {
       lastRaw = raw;

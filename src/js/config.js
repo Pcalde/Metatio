@@ -3,6 +3,8 @@
 // Deben mantenerse sincronizados con analizador_viaje.py (port por lotes).
 
 const ENGINE_PARAMS = {
+  MULTI_CANDIDATES: true, // false = buscador y selección clásicos (comparación / reversión)
+  CANDIDATE_BUDGET: 384,  // techo por ventana; se reduce para calendarios extensos
   UMBRAL_HORA_SOLAPE: 1.5,   // θ (R7): horas mínimas de solape horario en el núcleo
   MC_P_GLOBAL:        0.12,  // p (Monte Carlo) probabilidad global de baja por viajero
   MC_N_SIM:           250,   // S escenarios de resiliencia §7
