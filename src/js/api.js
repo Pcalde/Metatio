@@ -3,6 +3,8 @@
 const ident = b => ({ p_eid: b.eid, p_nombre: b.nombre, p_pin: b.pinHash });
 
 const RPC = {
+  get_census:{fn:"get_trip_census",args:b=>ident(b)},
+  edit_census:{fn:"edit_trip_census",args:b=>({...ident(b),p_action:b.operation,p_data:b.data,p_revision:b.revision})},
   get_decisions: {fn:'get_trip_decisions',args:b=>ident(b)},
   set_decision: {fn:'set_trip_decision',args:b=>({...ident(b),p_qid:b.qid,p_value:b.value})},
   rename_trip: { fn: 'rename_trip', args: b => ({ ...ident(b), p_titulo: b.titulo }) },

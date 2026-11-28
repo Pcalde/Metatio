@@ -6,8 +6,33 @@ function mtLine(host,text,meta) {const row=mtEl('div',null,'mt-feed-row');row.ap
 function mtEmpty(host,text){host.replaceChildren(mtEl('p',text,'trips-note'));}
 function mtRpc(action,data={}){return globalRpc('metatio_action',{p_action:action,p_data:data});}
 async function mtAct(action,data,message){await mtRpc(action,data);await refreshGlobalProfile();globalStatus(message||'Cambios guardados.');}
-function mtReset(){mtData=null;mtOwner=null;for(const id of ['mt-events','mt-inbox','mt-contact-list','mt-pending','mt-guide-progress'])$(id)?.replaceChildren();if($('mt-code'))$('mt-code').textContent='—';if($('mt-count'))$('mt-count').textContent='';if($('mt-name'))$('mt-name').value='';}
-async function mtLoad(version){const owner=_globalAccount?.id;if(!owner)return;try{const data=await mtRpc('dashboard');if(version!==_globalRefreshVersion||_globalAccount?.id!==owner)return;mtData=data;mtOwner=owner;mtRender();return data;}catch(e){if(version===_globalRefreshVersion){mtReset();for(const id of ['mt-events','mt-inbox','mt-contact-list','mt-pending'])mtEmpty($(id),'No disponible. Comprueba la migración 005 y pulsa Actualizar.');globalStatus(e.message);}return null;}}
+function mtReset(){mtData=null;mtOwner=null;for(const id of ['mt-events','mt-inbox','mt-contact-list','mt-pending'])$(id)?.replaceChildren();if($('mt-code'))$('mt-code').textContent='—';if($('mt-count'))$('mt-count').textContent='';if($('mt-name'))$('mt-name').value='';}
+// Distinguish RPC failures from invalid responses and DOM rendering errors.
+async function mtLoad(version) {
+ const owner=_globalAccount?.id;
+ if(!owner)return;
+ const current=()=>version===_globalRefreshVersion&&_globalAccount?.id===owner;
+ let stage='servidor';
+ try {
+  const data=await mtRpc('dashboard');
+  if(!current())return;
+  stage='respuesta';
+  if(!data||typeof data!=='object'||!data.profile||typeof data.profile.code!=='string'||!data.profile.code.trim()||typeof data.profile.name!=='string')throw new Error('El perfil no contiene un código personal o nombre válido.');
+  for(const key of ['trips','events','contacts','requests'])if(!Array.isArray(data[key]))throw new Error('El campo '+key+' no es una lista.');
+  stage='interfaz';
+  for(const id of ['global-display-name','mt-name','mt-code','mt-count','mt-events','mt-pending','mt-inbox','mt-contact-list'])if(!$(id))throw new Error('Falta el elemento #'+id+' en index.html.');
+  mtData=data;mtOwner=owner;mtRender();return data;
+ } catch(e) {
+  if(!current())return null;
+  const detail=e?.message||String(e);
+  console.error('[Metatio] Panel global ('+stage+'): '+detail,e);
+  mtReset();
+  const message='No se pudo cargar el panel ('+stage+'). '+detail+' Pulsa Actualizar.';
+  for(const id of ['mt-events','mt-inbox','mt-contact-list','mt-pending']){const el=$(id);if(el)mtEmpty(el,message);}
+  globalStatus(message);
+  return null;
+ }
+}
 function mtRender(){if(!mtData)return;const {profile,trips,events,contacts,requests}=mtData;
  $('global-display-name').textContent=profile.name;
  if(document.activeElement!==$('mt-name'))$('mt-name').value=profile.name;
@@ -26,12 +51,11 @@ function mtRender(){if(!mtData)return;const {profile,trips,events,contacts,reque
  row.append(mtButton('Aceptar',async()=>{let alias=r.alias;if(r.kind==='invite'){alias=window.prompt('Nombre dentro del viaje',profile.name);if(alias===null)return;if(!alias.trim())throw new Error('Indica un nombre.');}if(!window.confirm('Esto crea una participación nueva si no existe una vinculada a esa cuenta. Si ya existía una participación antigua, recupera primero ese acceso. ¿Continuar?'))return;await mtAct('trip_accept',{id:r.id,alias},'Acceso aceptado.');}),mtButton('Rechazar',()=>mtAct('trip_reject',{id:r.id}),'btn-link-like'));}
  if(!inbox.children.length)mtEmpty(inbox,'No hay invitaciones ni solicitudes pendientes.');
  const host=$('mt-contact-list');host.replaceChildren();for(const c of contacts){if(c.status==='pending'&&c.incoming)continue;const row=mtLine(host,c.name,c.status==='accepted'?'Contacto':'Solicitud enviada');if(c.status==='accepted')row.append(mtButton('Invitar',async()=>{const list=trips.filter(t=>t.organizer);if(!list.length)throw new Error('No organizas ningún viaje todavía.');mtInvitePicker(row,c,list);},'btn-link-like'));row.append(mtButton('Quitar',async()=>{if(confirm('¿Quitar este contacto o solicitud?'))await mtAct('contact_remove',{id:c.id});},'btn-link-like'));}if(!host.children.length)mtEmpty(host,'Aún no tienes contactos.');
- const progress=$('mt-guide-progress');progress.replaceChildren();const done=Number(profile.name!=='Viajero')+Number(trips.length>0)+Number(trips.some(t=>t.mine));const bar=mtEl('progress',null,'mt-progress');bar.max=3;bar.value=done;bar.setAttribute('aria-label','Progreso de primeros pasos');progress.append(mtEl('p',`${done} de 3 primeros pasos realizados`,'trips-note'),bar);
- $('mt-guide-content').hidden=profile.guide_hidden;$('mt-toggle-guide').textContent=profile.guide_hidden?'Mostrar guía':'Ocultar guía';
+
 }
 function mtInvitePicker(row,c,trips){row.querySelector('.mt-invite-picker')?.remove();const box=mtEl('div',null,'mt-invite-picker');const select=mtEl('select');select.setAttribute('aria-label','Viaje al que invitar');for(const t of trips){const o=mtEl('option',t.title);o.value=t.eid;select.append(o);}box.append(select,mtButton('Enviar invitación',()=>mtAct('trip_invite',{eid:select.value,uid:c.uid,alias:c.name},'Invitación enviada.')));row.append(box);}
 function mtDecorateTrip(row,trip){const t=mtData?.trips.find(t=>t.eid===trip.eid);if(!t)return;const p=mtEl('progress',null,'mt-progress');p.max=Math.max(1,t.total);p.value=t.answered;p.setAttribute('aria-label','Participación');row.append(p,mtEl('small',`${t.answered} de ${t.total} han respondido${t.mine?' · Ya has respondido':''}`,'mt-meta'));}
 function bindMetatioDashboard(){
  const refreshIfIdle=()=>{if(!_globalAccount||_globalBusy||_globalRecovery||document.hidden||$('trips-screen').style.display==='none'||document.querySelector('#global-account-panel details[open]')||document.activeElement?.matches('input,select,textarea'))return;void refreshGlobalProfile();};
  setInterval(refreshIfIdle,45000);document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshIfIdle();});
-const on=(id,fn)=>$(id)?.addEventListener('click',e=>void globalTask(e.currentTarget,fn));on('mt-save-name',async()=>{const name=globalVal('mt-name');await mtAct('profile',{name},'Nombre de perfil actualizado.');for(const id of ['global-join-name','global-new-name'])$(id).value=name;$('mt-profile-edit').open=false;});on('mt-add-contact',async()=>{await mtAct('contact_request',{code:globalVal('mt-friend-code')},'Solicitud enviada.');$('mt-friend-code').value='';});on('mt-copy-code',async()=>{if(!mtData)throw new Error('El código no está disponible.');await navigator.clipboard.writeText(mtData.profile.code);globalStatus('Código copiado.');});on('mt-mark-seen',()=>mtAct('seen',{},'Actividad marcada como leída.'));on('mt-toggle-guide',()=>{if(!mtData)throw new Error('La guía no está disponible.');return mtAct('hide_guide',{hide:!mtData.profile.guide_hidden});});document.querySelectorAll('[data-mt-target]').forEach(b=>b.addEventListener('click',()=>{const el=$(b.dataset.mtTarget);if(el.tagName==='DETAILS')el.open=true;el.scrollIntoView({block:'nearest',behavior:'smooth'});}));}
+const on=(id,fn)=>$(id)?.addEventListener('click',e=>void globalTask(e.currentTarget,fn));on('mt-save-name',async()=>{const name=globalVal('mt-name');await mtAct('profile',{name},'Nombre de perfil actualizado.');for(const id of ['global-join-name','global-new-name'])$(id).value=name;$('mt-profile-edit').open=false;});on('mt-add-contact',async()=>{await mtAct('contact_request',{code:globalVal('mt-friend-code')},'Solicitud enviada.');$('mt-friend-code').value='';});on('mt-copy-code',async()=>{if(!mtData)throw new Error('El código no está disponible.');await navigator.clipboard.writeText(mtData.profile.code);globalStatus('Código copiado.');});on('mt-mark-seen',()=>mtAct('seen',{},'Actividad marcada como leída.'));document.querySelectorAll('[data-mt-target]').forEach(b=>b.addEventListener('click',()=>{const el=$(b.dataset.mtTarget);if(el.tagName==='DETAILS')el.open=true;el.scrollIntoView({block:'nearest',behavior:'smooth'});}));}

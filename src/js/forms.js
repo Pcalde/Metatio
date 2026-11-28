@@ -42,6 +42,7 @@ function bindQuestionFields(prefix) {
   const get = suffix => $(prefix + suffix);
   const select = get('-tipo'), container = get('-opts-container');
   const rows = [];
+  const routeEditor=routeConfigEditor(prefix);
   const addRow = () => {
     const row = div('mt-initial-option');
     const editor = buildOptionEditor({tipo:select.value}, '', {compact:true});
@@ -52,21 +53,26 @@ function bindQuestionFields(prefix) {
   };
   const sync = () => {
     const t=select.value;
+    routeEditor.sync(t==='transporte-ruta');
     get('-opciones-wrap').style.display = OPTION_TYPES.includes(t) ? 'block':'none';
-    get('-slider-wrap').style.display = t==='slider'?'block':'none';
+    get('-slider-wrap').style.display = ['slider','presupuesto'].includes(t)?'block':'none';
     get('-horarios-wrap').style.display = t==='horarios'?'block':'none';
     get('-casas-mode').style.display = t==='probabilidad-opcion'?'block':'none';
   };
   let getFranjas;
   function reset() {
-    rows.length=0; container.replaceChildren(); addRow();
+    rows.length=0; container.replaceChildren(); addRow(); routeEditor.reset();
     get('-min').value=0; get('-max').value=100; get('-step').value=10; get('-dur').value=3;
     get('-modo-casas').checked=false; get('-desc').value='';
     get('-franjas-host').replaceChildren(); getFranjas=buildFranjasEditor(get('-franjas-host'), FRANJAS_HORARIAS); sync();
   }
   function read() {
-    const tipo=select.value; let opciones=[], config={};
-    if (OPTION_TYPES.includes(tipo)) {
+    const preset=select.value; const tipo=preset==='presupuesto'?'slider':['transporte','transporte-ruta'].includes(preset)?'radio':preset; let opciones=[], config={};
+    if (['transporte','transporte-ruta'].includes(preset)) {
+      opciones=['llevo-coche|Llevo coche','necesito|Necesito que me lleven','propio|Me desplazo por mi cuenta'];
+      config={modelRole:'transporte',conditionalStepper:{when:'llevo-coche',key:'plazasLibres',label:'Plazas libres (sin contar al conductor):',min:0,max:8,default:3}};
+      if(preset==='transporte-ruta')config.routeStudy=routeEditor.read();
+    } else if (OPTION_TYPES.includes(tipo)) {
       opciones=rows.map(x=>x.editor.read(tipo)).filter(Boolean);
       if (new Set(opciones.map(o=>optVal({tipo},o))).size !== opciones.length) throw Error('Hay opciones con nombres duplicados.');
     }
@@ -74,6 +80,8 @@ function bindQuestionFields(prefix) {
       config={min:Number(get('-min').value),max:Number(get('-max').value),step:Number(get('-step').value)};
       if (!Number.isFinite(config.min)||!Number.isFinite(config.max)||!(config.max>config.min)||!(config.step>0)) throw Error('Rango inválido: comprueba mínimo, máximo y paso.');
       config.default=(config.min+config.max)/2;
+      config.modelRole=preset==='presupuesto'?'presupuesto':'preferencia';
+      if(preset==='presupuesto'){if(config.min<0)throw Error('El presupuesto no puede ser negativo.');config.unit=' €';config.dual=true;}
     } else if (tipo==='horarios') {
       const franjas=getFranjas(); if (!franjas.length) throw Error('Define al menos una franja válida.');
       config={duracionIdeal:Math.max(1,Math.min(12,+get('-dur').value||3)),franjas};
@@ -119,26 +127,23 @@ function aqSeccionElegida() {
 
 // Desplegable «Posición en el cuestionario»: permite insertar la pregunta
 // nueva ANTES de cualquiera de las existentes (o al final, predeterminado).
-function rebindAddQPosition() {
-  const sel = $('add-q-pos');
-  if (!sel) return;
-  const qs = schema.filter(q => !(q.config && q.config.esEncabezado));
-  const cur = sel.value;
-  sel.innerHTML = '<option value="">Al final (predeterminado)</option>' +
-    qs.map(q => `<option value="${esc(q.id)}">Antes de: ${esc(q.label)}</option>`).join('');
-  if (cur && [...sel.options].some(o => o.value === cur)) sel.value = cur;
+function fillPositionOptions(sel, entries, endLabel) {
+  const cur=sel.value;
+  sel.replaceChildren(new Option(endLabel,''));
+  if(entries.length)sel.add(new Option('Al principio','start:'));
+  for(const e of entries){sel.add(new Option('Antes de: '+e.label,'before:'+e.id));sel.add(new Option('Después de: '+e.label,'after:'+e.id));}
+  if([...sel.options].some(o=>o.value===cur))sel.value=cur;
 }
-
-// Desplegable «Posición de la sección» del formulario de secciones: la marca
-// y su primera pregunta se mueven justo antes de la sección elegida.
+function rebindAddQPosition() {
+  const sel=$('add-q-pos');if(!sel)return;
+  const sec=aqSeccionElegida(), gs=QuestionOrder.groups(schema);
+  const g=sec&&gs.find(g=>g.key==='s:'+_secNormNombre(sec));
+  const entries=sec?(g?.items||[]).filter(q=>!q.config?.esEncabezado).map(q=>({id:q.id,label:q.label})):gs.map(g=>({id:g.items[0].id,label:g.title}));
+  fillPositionOptions(sel,entries,sec?'Al final de la sección':'Al final del cuestionario');
+}
 function rebindAddSecPosition() {
-  const sel = $('add-sec-pos');
-  if (!sel) return;
-  const secs = (typeof seccionesDelEsquema === 'function') ? seccionesDelEsquema() : [];
-  const cur = sel.value;
-  sel.innerHTML = '<option value="">Al final (predeterminado)</option>' +
-    secs.map(s => `<option value="${esc(s.nombre || s.titulo)}">Antes de la sección: ${esc(s.titulo)}</option>`).join('');
-  if (cur && [...sel.options].some(o => o.value === cur)) sel.value = cur;
+  const sel=$('add-sec-pos');if(!sel)return;
+  fillPositionOptions(sel,QuestionOrder.groups(schema).map(g=>({id:g.items[0].id,label:g.title})),'Al final del cuestionario');
 }
 
 function resetAddQuestionForm() {
@@ -173,8 +178,9 @@ function abrirAddPreguntaCondicionado(parentQ) {
   const posSel = $('add-q-pos');
   if (posSel) {
     const pIdx = schema.indexOf(parentQ);
-    const nextQ = (pIdx >= 0 && pIdx + 1 < schema.length) ? schema[pIdx + 1] : null;
-    if (nextQ && [...posSel.options].some(o => o.value === nextQ.id)) posSel.value = nextQ.id;
+    rebindAddQPosition();
+    const candidate='after:'+parentQ.id;
+    if ([...posSel.options].some(o=>o.value===candidate)) posSel.value=candidate;
   }
 
   const allVals = (parentQ.opciones || []).map(o => optVal(parentQ,o));
@@ -188,23 +194,20 @@ function abrirAddPreguntaCondicionado(parentQ) {
 window.abrirAddPreguntaCondicionado = abrirAddPreguntaCondicionado;
 
 // Reconstruye el editor «mostrar solo si…» del formulario de pregunta nueva.
-// Sin `currentQid`: la pregunta se añadirá al final, así que puede depender
-// de cualquier pregunta existente con opciones. Se expone en host._getCond().
-function addQInsertAt(arr, beforeQid, secElegida) {
-  if (beforeQid) { const i = arr.findIndex(q => q.id === beforeQid); if (i >= 0) return i; }
-  if (secElegida) {
-    for (let i = arr.length - 1; i >= 0; i--) {
-      const q = arr[i];
-      if (!q.config?.esEncabezado && _secNormNombre(q.config?.seccion) === _secNormNombre(secElegida)) return i + 1;
-    }
-  }
-  return arr.length;
+// Se utiliza el esquema completo; la posición solo sirve para avisar de
+// dependencias hacia preguntas posteriores. Se expone en host._getCond().
+function positionIndex(arr, pos, sec) {
+  const gs=QuestionOrder.groups(arr), g=sec&&gs.find(g=>g.key==='s:'+_secNormNombre(sec));
+  const inds=g?g.items.map(q=>arr.indexOf(q)):[];
+  if(!pos)return inds.length?Math.max(...inds)+1:arr.length;
+  const [side,id]=pos.split(':');
+  if(side==='start')return g?Math.min(...inds.filter(i=>!arr[i].config?.esEncabezado),Math.max(...inds)+1):0;
+  if(g){const i=arr.findIndex(q=>q.id===id);return i<0?Math.max(...inds)+1:i+(side==='after'?1:0);}
+  const target=gs.find(g=>g.items.some(q=>q.id===id));if(!target)return arr.length;
+  const is=target.items.map(q=>arr.indexOf(q));return side==='after'?Math.max(...is)+1:Math.min(...is);
 }
-function addSecInsertAt() {
-  const before = $('add-sec-pos')?.value || '';
-  const target = before && seccionesDelEsquema().find(s => _secNormNombre(s.nombre || s.titulo) === _secNormNombre(before));
-  return target ? (target.items[0]?.i ?? schema.length) : schema.length;
-}
+function addQInsertAt(arr,pos,sec){return positionIndex(arr,pos,sec);}
+function addSecInsertAt(){return positionIndex(schema,$('add-sec-pos')?.value||'','');}
 function rebindCondHost(id, idx, keep, initial) {
   const host = $(id);
   if (!host || typeof buildCondEditor !== 'function') return;
@@ -250,9 +253,8 @@ async function submitNewQuestion() {
   const pregunta = { id, tipo, label, opciones, config };
 
   // Condición «mostrar solo si…» del editor de #add-q-cond-host. Se valida
-  // sobre el esquema «virtual» con la pregunta ya colocada en su posición:
-  // así la regla anti-ciclos («la fuente debe ir antes») se respeta también
-  // cuando la pregunta nueva se inserta en medio del cuestionario.
+  // sobre el esquema «virtual» con la pregunta ya colocada en su posición.
+  // La validación comprueba dependencias, independientemente del orden.
   const condHost = $('add-q-cond-host');
   if (condHost && typeof condHost._getCond === 'function') {
     const cond = condHost._getCond();
@@ -266,10 +268,16 @@ async function submitNewQuestion() {
     }
   }
 
+  const proposedAt=addQInsertAt(schema,beforeQid,secElegida);
+  const proposed=[...schema.slice(0,proposedAt),pregunta,...schema.slice(proposedAt)];
+  const orderError=validatePresentationChange(proposed);
+  if(orderError){showStatus(orderError,'err',8000);return;}
+
   if (secElegida) {
     if (typeof secHeaderPara === 'function' && !secHeaderPara(secElegida) &&
         typeof crearSeccion === 'function') {
-      crearSeccion(secElegida);   // fire-and-forget: pollOnce traerá la marca
+      await crearSeccion(secElegida);
+      if(!secHeaderPara(secElegida)){showStatus("No se pudo crear la sección.","err");return;}
     }
   }
 
@@ -280,7 +288,7 @@ async function submitNewQuestion() {
   const card = buildQuestionCard(pregunta, insertAt);
   const contQ = $('questions-container');
   if (card && contQ) {
-    const refCard = beforeQid ? cardFor(beforeQid) : null;
+    const refCard = schema[insertAt+1] ? cardFor(schema[insertAt+1].id) : null;
     if (refCard && refCard.parentElement === contQ) refCard.before(card);
     else contQ.appendChild(card);
     renumberCards();
@@ -298,7 +306,7 @@ async function submitNewQuestion() {
     if (beforeQid || secElegida) {
       try {
         await apiPost({ action: 'reordenar_preguntas', eid: user.eid, nombre: user.nombre,
-                        pinHash: user.pinHash, ids: schema.map(q => q.id) });
+                        pinHash: user.pinHash, ids: QuestionOrder.flatten(QuestionOrder.groups(schema)).map(q => q.id) });
       } catch (eReord) {
         // La pregunta ya existe en el servidor (al final); solo falla la
         // posición. No hacemos rollback de la creación: avisamos y alineamos
@@ -345,6 +353,8 @@ async function submitNewSection() {
       if (err) { showStatus(err,'err',6000); btn.disabled=false; btn.textContent='Crear sección →'; return; }
       primera.config.mostrarSi = cond;
     }
+    const at=addSecInsertAt(),orderError=validatePresentationChange([...schema.slice(0,at),primera,...schema.slice(at)]);
+    if(orderError){showStatus(orderError,'err',8000);btn.disabled=false;btn.textContent='Crear sección →';return;}
   }
 
   // Posición elegida: mover la marca (y su primera pregunta) delante de la
@@ -352,7 +362,9 @@ async function submitNewSection() {
   const beforeSec = ($('add-sec-pos')?.value) || '';
 
   try {
-    await crearSeccion(nombre);            // crea la marca (optimista + add_pregunta)
+    if(secHeaderPara(nombre))throw Error('Ya existe una sección con ese nombre.');
+    await crearSeccion(nombre);
+    if(!secHeaderPara(nombre))throw Error('No se pudo guardar la sección.');
     if (primera) {
       schema.push(primera);
       const card = buildQuestionCard(primera, schema.length - 1);
@@ -371,45 +383,14 @@ async function submitNewSection() {
       showStatus(`Sección «${nombre}» creada`, 'ok', 3000);
     }
 
-    // ── Colocar la sección en la posición pedida («antes de X») ───────────
-    if (beforeSec && typeof seccionesDelEsquema === 'function') {
-      const secs = seccionesDelEsquema();
-      const targetSec = secs.find(s => _secNormNombre(s.nombre || s.titulo) === _secNormNombre(beforeSec));
-      const marca = secHeaderPara(nombre);
-      if (targetSec && marca) {
-        const anchorIdx = targetSec.items[0]?.i ?? schema.length;
-        schema.splice(schema.indexOf(marca), 1);
-        schema.splice(Math.min(anchorIdx, schema.length), 0, marca);
-        if (primera && schema.includes(primera)) {
-          schema.splice(schema.indexOf(primera), 1);
-          schema.splice(schema.indexOf(marca) + 1, 0, primera);
-        }
-        // Reubica las tarjetas DOM en el nuevo orden del esquema (el sondeo
-        // nunca reordena; solo añade/quitan tarjetas).
-        const contQ = $('questions-container');
-        if (contQ) {
-          let ref = null;
-          for (let j = schema.indexOf(marca) + 1; j < schema.length; j++) {
-            const c = cardFor(schema[j].id);
-            if (c && c.parentElement === contQ) { ref = c; break; }
-          }
-          const marcaCard = cardFor(marca.id);
-          if (marcaCard && marcaCard.parentElement === contQ) {
-            if (ref) ref.before(marcaCard); else contQ.appendChild(marcaCard);
-          }
-          if (primera) {
-            const pCard = cardFor(primera.id);
-            const mCard = cardFor(marca.id);
-            if (pCard && pCard.parentElement === contQ && mCard) {
-              if (ref) ref.before(pCard); else mCard.after(pCard);
-            }
-          }
-          renumberCards();
-        }
-        try {
-          await apiPost({ action: 'reordenar_preguntas', eid: user.eid, nombre: user.nombre,
-                          pinHash: user.pinHash, ids: schema.map(q => q.id) });
-        } catch (e3) { console.warn('reordenar secciones:', e3); }
+    // Reordenar la sección como un bloque, conservando los IDs y las respuestas.
+    if(beforeSec){
+      const marca=secHeaderPara(nombre), gs=QuestionOrder.groups(schema);
+      if(marca){
+        const group=gs.find(g=>g.items.some(q=>q.id===marca.id));
+        const [side,id]=beforeSec.split(':');
+        if(group){gs.splice(gs.indexOf(group),1);const target=gs.find(g=>g.items.some(q=>q.id===id));const index=side==='start'?0:target?gs.indexOf(target)+(side==='after'?1:0):gs.length;gs.splice(index,0,group);}
+        try{await persistQuestionOrder(QuestionOrder.flatten(gs));}catch(e){showStatus('Sección creada, pero no se pudo guardar la posición: '+e.message,'err',7000);}
       }
     }
 
@@ -461,7 +442,7 @@ function bindForms() {
   if (typeof renderSecManageList === 'function') renderSecManageList();
 
   const aqSecSel = $('add-q-seccion');
-  if (aqSecSel) aqSecSel.addEventListener('change', () => { syncAddQSeccionField(); rebindAddQCond(true); });
+  if (aqSecSel) aqSecSel.addEventListener('change', () => { syncAddQSeccionField(); rebindAddQPosition(); rebindAddQCond(true); });
   $('add-q-pos')?.addEventListener('change', () => rebindAddQCond(true));
   $('add-q-seccion-nombre')?.addEventListener('change', () => rebindAddQCond(true));
   $('add-sec-pos')?.addEventListener('change', () => rebindAddSecCond(true));

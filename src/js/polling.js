@@ -52,6 +52,7 @@ async function pollOnce() {
     if (!pollActive || !user) return;
     pollFails = 0;
     if(typeof refreshDecisiones==='function')void refreshDecisiones();
+  if(typeof refreshCensus==='function')void refreshCensus();
     const raw = JSON.stringify(data);
     if (raw !== lastRaw) {
       lastRaw = raw;

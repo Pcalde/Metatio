@@ -130,6 +130,7 @@ function enterSurvey() {
   if (typeof refreshSecciones === 'function') setTimeout(refreshSecciones, 0);
   startPolling();
   if(typeof refreshDecisiones==='function')void refreshDecisiones();
+  if(typeof refreshCensus==='function')void refreshCensus();
   window.MetatioGuide?.enteredTrip();
 }
 

@@ -51,7 +51,7 @@ function renderParticipants() {
 
 function textoRecordatorio() {
   const votaron = new Set((respuestas || []).map(r => String(r.nombre).toLowerCase()));
-  const faltan = (respondentes || []).map(r => r.nombre).filter(n => !votaron.has(n.toLowerCase()));
+  const faltan = typeof censusDirectory==='function'?censusDirectory().filter(p=>!p.account||!votaron.has(p.account.toLowerCase())).map(p=>p.label):(respondentes || []).map(r => r.nombre).filter(n => !votaron.has(n.toLowerCase()));
   const sinDebate = schema.filter(q => !(q.config && q.config.esEncabezado) && (q.opciones || []).length &&
                                        !proscontras.some(p => p.qid === q.id)).length;
   const link = location.origin + location.pathname + '?e=' + encodeURIComponent(user.eid);

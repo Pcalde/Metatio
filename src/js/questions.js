@@ -75,6 +75,7 @@ function buildQuestionCard(q, idx) {
       <input type="text" class="inp-edit-q-label" value="${esc(q.label)}" maxlength="200">
       ${q.tipo === 'probabilidad-opcion' ? `<label><input type="checkbox" class="inp-eq-modo-casas" ${cfg.modoCasas === true ? 'checked' : ''}> Las opciones son alojamientos</label>` : ''}
       ${q.tipo === 'slider' ? `
+        <label>Función matemática <select class="inp-eq-role"><option value="preferencia" ${DecisionModel.role(q)!=='presupuesto'?'selected':''}>Magnitud genérica</option><option value="presupuesto" ${DecisionModel.role(q)==='presupuesto'?'selected':''}>Presupuesto por persona</option></select></label>
         <div class="slider-config" style="margin-top:4px">
           <div><label>Mínimo</label><input type="number" class="inp-eq-min" value="${cfg.min ?? 10}"></div>
           <div><label>Máximo</label><input type="number" class="inp-eq-max" value="${cfg.max ?? 500}"></div>
@@ -112,6 +113,7 @@ function buildQuestionCard(q, idx) {
     </div>
   `;
   card.appendChild(editBox);
+  const editRoute=q.config?.routeStudy?routeConfigEditor(null,editBox,q.config.routeStudy):null;
   // El desplegable de sección muestra un campo de texto para crear una nueva.
   const selSec = editBox.querySelector('.inp-eq-seccion');
   const inpSec = editBox.querySelector('.inp-eq-seccion-nombre');
@@ -130,7 +132,7 @@ function buildQuestionCard(q, idx) {
   }
   let getFr = null;
   if (q.tipo === 'horarios') getFr = buildFranjasEditor(editBox.querySelector('.eq-franjas-host'), getFranjas(q));
-  // Editor de la condición «mostrar solo si…» (secciones.js): pregunta previa
+  // Editor de la condición «mostrar solo si…» (secciones.js): pregunta de origen
   // + operador + valor. Se pinta cuando el panel se abre, con el estado actual.
   let getCond = null;
   const condHost = editBox.querySelector('.q-cond-host');
@@ -151,11 +153,16 @@ function buildQuestionCard(q, idx) {
     const newLabel = editBox.querySelector('.inp-edit-q-label').value.trim();
     if (!newLabel || !user) return;
     let newCfg = Object.assign({}, q.config || {});
+    if(editRoute){try{newCfg.routeStudy=editRoute.read();}catch(e){showStatus(e.message,"err");return;}}
     if (q.tipo === 'probabilidad-opcion') newCfg.modoCasas = editBox.querySelector('.inp-eq-modo-casas').checked;
     if (q.tipo === 'slider') {
       newCfg.min  = Number(editBox.querySelector('.inp-eq-min').value);
       newCfg.max  = Number(editBox.querySelector('.inp-eq-max').value);
       newCfg.step = Number(editBox.querySelector('.inp-eq-step').value) || 1;
+      newCfg.modelRole=editBox.querySelector('.inp-eq-role').value;
+      if(newCfg.modelRole==='presupuesto'){newCfg.unit=' €';newCfg.dual=true;}
+      else if(DecisionModel.role(q)==='presupuesto'){delete newCfg.unit;newCfg.dual=false;}
+      if(!Number.isFinite(newCfg.min)||!Number.isFinite(newCfg.max)||!(newCfg.max>newCfg.min)||!(newCfg.step>0)||(newCfg.modelRole==='presupuesto'&&newCfg.min<0)){showStatus('Rango inválido','err');return;}
     }
     if (q.tipo === 'horarios') {
       newCfg.franjas = getFr();
@@ -172,25 +179,27 @@ function buildQuestionCard(q, idx) {
       if (secSel !== actual) {
         secCambiada = true;
         if (secSel) newCfg.seccion = secSel; else delete newCfg.seccion;
-        if (secSel && typeof secHeaderPara === 'function' && !secHeaderPara(secSel)) {
-          crearSeccion(secSel);   // fire-and-forget: pollOnce traerá la marca
-        }
+
       }
     }
-    // Condición de visibilidad: solo sobre preguntas ANTERIORES en el orden
-    // (regla anti-ciclos, validada también aquí y al reordenar).
+    // Condición de visibilidad: cualquier origen sin ciclos.
     if (getCond) {
       const cond = getCond.read();
       if (cond) {
         const errCond = typeof validarMostrarSi === 'function'
-          ? validarMostrarSi(cond, schema, q.id) : null;
+          ? validarMostrarSi(cond, schema.map(x=>x.id===q.id?{...x,config:newCfg}:x), q.id) : null;
         if (errCond) { showStatus(errCond, 'err', 6000); return; }
         newCfg.mostrarSi = cond;
       } else {
         delete newCfg.mostrarSi;
       }
     }
+    const proposedSchema=schema.map(x=>x.id===q.id?{...x,config:newCfg}:x);
+    if (cicloCondicion(proposedSchema,q.id)) { showStatus('La sección o condición elegida genera una dependencia circular.','err',6000); return; }
+    const orderError=validatePresentationChange(proposedSchema);
+    if(orderError){showStatus(orderError,'err',8000);return;}
     try {
+      if(secCambiada&&newCfg.seccion&&!secHeaderPara(newCfg.seccion)){await crearSeccion(newCfg.seccion);if(!secHeaderPara(newCfg.seccion))throw Error('No se pudo crear la sección.');}
       await apiAuth({
         action: 'edit_pregunta',
         eid: user.eid, nombre: user.nombre, pinHash: user.pinHash,
@@ -198,6 +207,7 @@ function buildQuestionCard(q, idx) {
       });
       q.label = newLabel;
       q.config = newCfg;
+      saveDraft();
       renderAllQuestions();
       restoreDraft();
       // El raíl y las condiciones pueden haber cambiado (nuevo mostrarSi,
@@ -424,10 +434,10 @@ function syncSchemaToDOM() {
       if (nueva) card.replaceWith(nueva);
       return;
     }
-    if (q.tipo === 'horarios' && card.dataset.cfg !== JSON.stringify(q.config || {})) {
-      const prev  = TIPOS.horarios.read(card, q);
+    if ((q.tipo === 'horarios'||q.tipo==='radio'&&(q.config?.routeStudy||card.state?.routeFields)) && card.dataset.cfg !== JSON.stringify(q.config || {})) {
+      const type=TIPOS[q.tipo], prev=type.read(card,q);
       const nueva = buildQuestionCard(q, idx);
-      if (nueva) { card.replaceWith(nueva); TIPOS.horarios.write(nueva, q, prev); }
+      if (nueva) { card.replaceWith(nueva); type.write(nueva, q, prev); }
       return;
     }
 
@@ -473,38 +483,9 @@ function syncSchemaToDOM() {
 function moveCardDom(qid, dir) { syncQuestionCardOrder(); }
 
 async function moverPregunta(qid, dir) {
-  const i = schema.findIndex(x => x.id === qid), j = i + dir;
-  if (!user || i < 0 || j < 0 || j >= schema.length) return;
-
-  // Regla anti-ciclos: ninguna pregunta condicionada puede quedar POR
-  // DELANTE de la fuente de su condición. Al mover una sola posición, basta
-  // comprobar si `moved` salta por encima del origen directo de alguna
-  // dependencia (p.ej. mover «¿Cuánto?» delante de «¿Tienes coche?» cuando
-  // los gastos dependen del coche).
-  const moved = schema[i];
-  for (const q of schema) {
-    if (q.id === moved.id) continue;
-    const cond = q.config && q.config.mostrarSi;
-    if (!cond || !cond.qid || cond.qid !== moved.id) continue;
-    const qi = schema.findIndex(x => x.id === q.id);
-    const cruzaria = dir > 0 ? (qi <= j && qi > i) : (qi >= j && qi < i);
-    if (cruzaria) {
-      showStatus(`No puedes mover «${moved.label}» por delante de «${q.label}»: esta se muestra solo según aquella.`, 'err', 7000);
-      return;
-    }
-  }
-
-  [schema[i], schema[j]] = [schema[j], schema[i]];
-  moveCardDom(qid, dir);
-  try {
-    await apiAuth({ action: 'reordenar_preguntas', eid: user.eid, nombre: user.nombre,
-                    pinHash: user.pinHash, ids: schema.map(x => x.id) });
-    lastRaw = ''; // Aplicar el orden confirmado del servidor en el siguiente sondeo.
-    pollOnce();
-  } catch (e) {
-    [schema[i], schema[j]] = [schema[j], schema[i]];
-    moveCardDom(qid, -dir);
-    showStatus('No se pudo reordenar: ' + e.message, 'err');
-  }
-  if (typeof refreshSecciones === 'function') setTimeout(refreshSecciones, 0);
+  const gs=QuestionOrder.groups(schema), g=gs.find(g=>g.items.some(q=>q.id===qid));
+  if(!g)return;
+  const qs=g.items.filter(q=>!q.config?.esEncabezado), i=qs.findIndex(q=>q.id===qid), j=i+dir;
+  if(j>=0&&j<qs.length)openQuestionOrder(QuestionOrder.move(schema,qid,qs[j].id,dir>0));
+  else openQuestionOrder();
 }

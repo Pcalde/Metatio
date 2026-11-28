@@ -13,12 +13,18 @@ function switchMode(mode) {
   const vSurvey    = $('view-survey');
   const vConsensus = $('view-consensus');
   const vDebate    = $('view-debate');
+  const vReformulario = $('view-reformulario');
+  const vDecisions = $('view-decisions');
+  const vPeople = $('view-participants');
 
   // Nota: debe ser 'grid' (no 'flex'); el valor inline anterior rompía la
   // cuadrícula de .form-wrap (raíl + columna principal) definida en styles.css.
   if (vSurvey)    vSurvey.style.display    = mode === 'survey'    ? 'grid'  : 'none';
   if (vConsensus) vConsensus.style.display = mode === 'consensus' ? 'block' : 'none';
   if (vDebate)    vDebate.style.display    = mode === 'debate'    ? 'block' : 'none';
+  if (vReformulario) vReformulario.style.display = mode === 'reformulario' ? 'block' : 'none';
+  if (vDecisions) vDecisions.style.display = mode === 'decisions' ? 'block' : 'none';
+  if (vPeople) vPeople.style.display = mode === 'participants' ? 'block' : 'none';
 
   // Barra inferior fija: solo acompañar al usuario en la vista del cuestionario.
   // La lógica vive en secciones.js (updateFloatingBars); el fallback cubre el
@@ -33,7 +39,10 @@ function switchMode(mode) {
   // Repintar raíl, paginación por secciones y barra tras cambiar de vista.
   if (mode === 'survey' && typeof refreshSecciones === 'function') refreshSecciones();
 
-  if (mode === 'consensus' && typeof renderReformulario === 'function') renderReformulario();
+  if (mode === 'consensus') renderResultados();
+  if (mode === 'reformulario') renderReformularioInteractivo();
+  if (mode === 'decisions') { renderDecisiones(); void refreshDecisiones(true); }
+  if (mode === 'participants') { renderParticipants(); renderCensus(); void refreshCensus(true); }
   if (mode === 'debate'    && typeof renderDebate === 'function')       renderDebate();
 
   closeSideNav();
@@ -190,7 +199,8 @@ function bindCreateTripUI() {
         if (typeof SEC_ESTADO !== 'undefined') SEC_ESTADO.idx = 0;
         renderSecciones();
         if (typeof renderAusencias === 'function') renderAusencias();
-        if (typeof renderReformulario === 'function') renderReformulario();
+        if (activeMode === 'consensus') renderResultados();
+        if (activeMode === 'reformulario') renderReformularioInteractivo();
         if (typeof renderDebate === 'function') renderDebate();
         startPolling();
       } catch (e) {
@@ -234,7 +244,8 @@ function bindNavigation() {
       if (surveyScreen.style.display !== 'none' && user) {
         hydrateFromServerIfNoDraft();
         if (typeof renderAusencias === 'function') renderAusencias();
-        if (typeof renderReformulario === 'function') renderReformulario();
+        if (activeMode === 'consensus') renderResultados();
+        if (activeMode === 'reformulario') renderReformularioInteractivo();
         if (typeof renderDebate === 'function') renderDebate();
       }
     });
