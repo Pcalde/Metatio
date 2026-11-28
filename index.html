@@ -4,21 +4,23 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Metatio</title>
+<meta name="metatio-version" content="17.3.1">
+<script>if (location.protocol === "file:" || ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname)) document.title = "Metatio 17.3.1 · Local";</script>
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;1,9..144,400&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
-  <link rel="stylesheet" href="src/css/styles.css?v=7">
-  <link rel="stylesheet" href="src/css/access.css?v=7">
-  <link rel="stylesheet" href="src/css/identity.css?v=7">
-<link rel="stylesheet" href="src/css/options.css?v=8">
-<link rel="stylesheet" href="src/css/question-order.css?v=15">
-<link rel="stylesheet" href="src/css/results-v13.css?v=13">
-<link rel="stylesheet" href="src/css/results-v16.css?v=16.4">
-<link rel="stylesheet" href="src/css/guia.css?v=2">
-<link rel="stylesheet" href="src/css/decision-priorities.css?v=1">
+  <link rel="stylesheet" href="src/css/styles.css?v=17.3.1">
+  <link rel="stylesheet" href="src/css/access.css?v=17.3.1">
+  <link rel="stylesheet" href="src/css/identity.css?v=17.3.1">
+<link rel="stylesheet" href="src/css/options.css?v=17.3.1">
+<link rel="stylesheet" href="src/css/question-order.css?v=17.3.1">
+<link rel="stylesheet" href="src/css/results-v13.css?v=17.3.1">
+<link rel="stylesheet" href="src/css/results-v16.css?v=17.3.1">
+<link rel="stylesheet" href="src/css/guia.css?v=17.3.1">
+<link rel="stylesheet" href="src/css/decision-priorities.css?v=17.3.1">
 </head>
 <body>
 
@@ -456,20 +458,34 @@
       <!-- Probabilidad personal: antes de mostrar participantes, preguntas y votos ajenos. -->
       <section class="card survey-intro-card" id="asistencia-propia-card" hidden>
         <div class="card-title"><span class="num"><i class="fa-solid fa-chart-line" aria-hidden="true"></i></span> ¿Qué probabilidad tienes de venir?</div>
-        <p class="participants-note">Estima tu probabilidad de asistencia antes de consultar las demás respuestas. Se usa en las simulaciones del viaje.</p>
+        
         <div class="aus-prob" style="margin-top:8px">
           <div id="aus-prob-choices" class="mt-word-choices" role="radiogroup" aria-label="Probabilidad de asistencia"></div>
           <input type="hidden" id="aus-prob-slider" value="75">
         </div>
       </section>
 
+      <section class="card survey-intro-card" id="quorum-card">
+        <div class="card-title"><span class="num"><i class="fa-solid fa-people-group" aria-hidden="true"></i></span> ¿Cuántas personas deberían asistir como mínimo?</div>
+        <div class="mt-quorum-picker">
+          <div class="mt-quorum-top">
+            <div class="mt-quorum-value"><output id="quorum-value" for="quorum-personal">—</output><span id="quorum-unit">personas</span></div>
+            <div class="mt-quorum-expected"><i class="fa-solid fa-users" aria-hidden="true"></i><span id="quorum-expected">Calculando invitados…</span></div>
+          </div>
+          <div class="mt-quorum-range">
+            <input id="quorum-personal" type="range" min="1" max="3" step="1" value="1" aria-label="Mínimo deseado de asistentes">
+            <div class="mt-quorum-marker" id="quorum-marker" aria-hidden="true"></div>
+          </div>
+          <div class="mt-quorum-endpoints"><span>1</span><span id="quorum-max-label">2</span><button type="button" class="mt-quorum-blank" id="quorum-blank" aria-pressed="false" title="Sin preferencia"><span aria-hidden="true">∞</span> Me da igual</button></div>
+        </div>
+      </section>
       <section class="card survey-intro-card" id="prioridades-card">
-        <div class="card-title">¿Qué te importa más del viaje?</div>
-        <p class="participants-note">Valora cada criterio. No modifica las restricciones ni obliga al grupo a aceptar un plan.</p>
+        <div class="card-title"><span class="num"><i class="fa-solid fa-scale-balanced" aria-hidden="true"></i></span> ¿Qué te importa más del viaje?</div>
         <div id="prioridades-choices"></div>
       </section>
       <section class="card survey-intro-card" id="decisiones-card" hidden></section>
       <!-- Resumen inicial: solo se muestra en la portada del cuestionario. -->
+      <section class="card survey-intro-card" id="census-card"></section>
       <section class="card survey-intro-card" id="participants-card">
         <div class="card-title"><span class="num"><i class="fa-solid fa-users" aria-hidden="true"></i></span> Participantes y votantes</div>
         <p class="participants-note">Personas registradas en el viaje y quiénes ya han enviado su respuesta.</p>
@@ -654,51 +670,52 @@
 </div><!-- /survey-screen -->
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="src/js/config.js?v=17.1"></script>
-<script src="src/js/shared/format.js"></script>
-<script src="src/js/shared/esquema.js?v=12"></script>
-<script src="src/js/engine/routeStudy.js?v=15"></script>
-<script src="src/js/engine/decisionModel.js?v=14.1"></script>
-<script src="src/js/crypto.js"></script>
-<script src="src/js/api.js?v=17.1"></script>
-<script src="src/js/state.js?v=17.1"></script>
-<script src="src/js/participants.js"></script>
-<script src="src/js/sesion.js?v=5"></script>
-<script src="src/js/perfil.js?v=6"></script>
-<script src="src/js/profileBackup.js?v=7"></script>
-<script src="src/js/access.js?v=13"></script>
-<script src="src/js/globalProfile.js?v=8"></script>
-<script src="src/js/dashboard.js?v=8"></script>
-<script src="src/js/geoProvider.js?v=14"></script>
-<script src="src/js/routeFields.js?v=15"></script>
-<script src="src/js/types.js?v=16"></script>
-<script src="src/js/optionEditor.js?v=8"></script>
-<script src="src/js/questionOrder.js?v=12"></script>
-<script src="src/js/questions.js?v=12"></script>
-<script src="src/js/proscontras.js"></script>
-<script src="src/js/ausencias.js?v=17.1"></script>
-<script src="src/js/forms.js?v=12"></script>
-<script src="src/js/answers.js?v=17.1"></script>
-<script src="src/js/engine/probabilidades.js"></script>
-<script src="src/js/engine/prioridades.js?v=1"></script>
-<script src="src/js/prioridades-ui.js?v=1"></script>
-<script src="src/js/decisiones.js?v=1"></script>
-<script src="src/js/engine/optimizador.js?v=17.1"></script>
-<script src="src/js/engine/index.js?v=17.1"></script>
-<script src="src/js/ui/transportView.js?v=16.1"></script>
-<script src="src/js/ui/consensusView.js?v=17.1"></script>
-<script src="src/js/ui/resultsWorkspace.js?v=17.1"></script>
-<script src="src/js/ui/reportajePDF.js?v=16.4"></script>
-<script src="src/js/secciones.js?v=17.1"></script>
-<script src="src/js/arbol.js?v=12"></script>
-<script src="src/js/mapa.js?v=15"></script>
-<script src="src/js/cuenta.js?v=5"></script>
-<script src="src/js/debate.js"></script>
-<script src="src/js/polling.js?v=17.1"></script>
-<script src="src/js/auth.js?v=17.1"></script>
-<script src="src/js/main.js?v=10.3"></script>
-<script src="src/js/guia-contenido.js?v=17.1"></script>
-<script src="src/js/guia-demo.js?v=1.1"></script>
-<script src="src/js/guia.js?v=2"></script>
+<script src="src/js/config.js?v=17.3.1"></script>
+<script src="src/js/shared/format.js?v=17.3.1"></script>
+<script src="src/js/shared/esquema.js?v=17.3.1"></script>
+<script src="src/js/engine/routeStudy.js?v=17.3.1"></script>
+<script src="src/js/engine/decisionModel.js?v=17.3.1"></script>
+<script src="src/js/crypto.js?v=17.3.1"></script>
+<script src="src/js/api.js?v=17.3.1"></script>
+<script src="src/js/state.js?v=17.3.1"></script>
+<script src="src/js/censo.js?v=17.3.1"></script>
+<script src="src/js/participants.js?v=17.3.1"></script>
+<script src="src/js/sesion.js?v=17.3.1"></script>
+<script src="src/js/perfil.js?v=17.3.1"></script>
+<script src="src/js/profileBackup.js?v=17.3.1"></script>
+<script src="src/js/access.js?v=17.3.1"></script>
+<script src="src/js/globalProfile.js?v=17.3.1"></script>
+<script src="src/js/dashboard.js?v=17.3.1"></script>
+<script src="src/js/geoProvider.js?v=17.3.1"></script>
+<script src="src/js/routeFields.js?v=17.3.1"></script>
+<script src="src/js/types.js?v=17.3.1"></script>
+<script src="src/js/optionEditor.js?v=17.3.1"></script>
+<script src="src/js/questionOrder.js?v=17.3.1"></script>
+<script src="src/js/questions.js?v=17.3.1"></script>
+<script src="src/js/proscontras.js?v=17.3.1"></script>
+<script src="src/js/ausencias.js?v=17.3.1"></script>
+<script src="src/js/forms.js?v=17.3.1"></script>
+<script src="src/js/answers.js?v=17.3.1"></script>
+<script src="src/js/engine/probabilidades.js?v=17.3.1"></script>
+<script src="src/js/engine/prioridades.js?v=17.3.1"></script>
+<script src="src/js/prioridades-ui.js?v=17.3.1"></script>
+<script src="src/js/decisiones.js?v=17.3.1"></script>
+<script src="src/js/engine/optimizador.js?v=17.3.1"></script>
+<script src="src/js/engine/index.js?v=17.3.1"></script>
+<script src="src/js/ui/transportView.js?v=17.3.1"></script>
+<script src="src/js/ui/consensusView.js?v=17.3.1"></script>
+<script src="src/js/ui/resultsWorkspace.js?v=17.3.1"></script>
+<script src="src/js/ui/reportajePDF.js?v=17.3.1"></script>
+<script src="src/js/secciones.js?v=17.3.1"></script>
+<script src="src/js/arbol.js?v=17.3.1"></script>
+<script src="src/js/mapa.js?v=17.3.1"></script>
+<script src="src/js/cuenta.js?v=17.3.1"></script>
+<script src="src/js/debate.js?v=17.3.1"></script>
+<script src="src/js/polling.js?v=17.3.1"></script>
+<script src="src/js/auth.js?v=17.3.1"></script>
+<script src="src/js/main.js?v=17.3.1"></script>
+<script src="src/js/guia-contenido.js?v=17.3.1"></script>
+<script src="src/js/guia-demo.js?v=17.3.1"></script>
+<script src="src/js/guia.js?v=17.3.1"></script>
 </body>
 </html>
