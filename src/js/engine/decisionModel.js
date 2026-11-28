@@ -104,7 +104,7 @@
     return schema.filter(q=>!q.config?.esEncabezado).map(q=>{
       const c=cohorts(q,rows,schema), kind=role(q);
       const s={qid:q.id,label:q.label,section:q.config?.seccion||'',kind,conditional:conditions(q,schema).length>0,applicable:c.applicable.length,answered:c.answered.length,missing:c.missing.length,excluded:c.excluded.length,unknown:c.unknown.length,pending};
-      if(kind==='transporte'){s.transport=transport(q,c.answered);const t=s.transport;if(q.config?.routeStudy)s.route=c.answered.length?root.RouteStudy.solve(q,c.answered,t):{status:"indeterminado",reason:"Todavía no hay respuestas de transporte en este estudio."};s.status=(!s.answered||s.missing||s.unknown||s.pending||t.unknown.length)?'indeterminado':t.balance>=0?'factible':'infactible';}
+      if(kind==='transporte'){s.transport=transport(q,c.answered);const t=s.transport;if(q.config?.routeStudy)s.route=c.answered.length?root.RouteStudy.solve(q,typeof censusDirectory==='function'?c.answered.map(r=>({...r,value:root.CensusModel.value(r.value,censusDirectory())})):c.answered,t):{status:"indeterminado",reason:"Todavía no hay respuestas de transporte en este estudio."};s.status=(!s.answered||s.missing||s.unknown||s.pending||t.unknown.length)?'indeterminado':t.balance>=0?'factible':'infactible';}
       else if(kind==='presupuesto'||q.tipo==='slider'){s.budget=budget(c.answered,kind==='presupuesto');s.status='descriptivo';}
       else if(kind==='fechas'||kind==='horarios'){s.dates=dateStudy(q,c.answered);s.status='descriptivo';}
       else if(['radio','checkbox','casas','voto-ponderado','probabilidad-opcion'].includes(q.tipo)){s.options=optionStudy(q,c.answered);s.prob=q.tipo==='probabilidad-opcion';s.points=q.tipo==='voto-ponderado';s.status='descriptivo';}

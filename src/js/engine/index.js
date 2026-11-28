@@ -16,7 +16,7 @@
   // Lectura única del mundo exterior → objeto plano.
   function snapshot() {
     return {
-      schema, respuestas, respondentes, ausencias,
+      schema, respuestas:typeof censusAnswerRows==='function'?censusAnswerRows(respuestas):respuestas, respondentes, ausencias:typeof censusAbsences==='function'?censusAbsences():ausencias,
       decisiones:typeof decisionesActuales==='function'?decisionesActuales():{},
       attendanceEnabled: typeof asistenciaActiva==='undefined' || asistenciaActiva,
       lastHorariosRange: (typeof lastHorariosRange !== 'undefined') ? lastHorariosRange : null,
@@ -44,7 +44,7 @@
     runScoped(questions, rows, registered = respondentes, options = {}) {
       const original = snapshot();
       const qs = questions.map(q => { const config={...q.config}; delete config.mostrarSi; delete config.seccion; return {...q,config}; });
-      const ctx = {...original, schema:qs, respuestas:rows, respondentes:registered,
+      const ctx = {...original, schema:qs, respuestas:typeof censusAnswerRows==='function'?censusAnswerRows(rows):rows, respondentes:registered,
         mcEmpirico: options.mcEmpirico ?? original.mcEmpirico,params:{...original.params,...(options.quorum!=null?{QUORUM:options.quorum}:{}),...(options.params||{})}};
       Core.configure(ctx);
       try {
@@ -82,6 +82,6 @@
   root.ejecutarMotorFactibilidad   = m => withCtx(() => Core.ejecutarMotorFactibilidad(m));
   root.computeTopologyAndSensitivity = (m, s) => Core.computeTopologyAndSensitivity(m, s);
   root.evaluarCatalogoProbabilidad = (q, v, incluirDeriva = false) => withCtx(() => Core.evaluarCatalogoProbabilidad(q, v, incluirDeriva));
-  root.getEffectiveProb = n => typeof asistenciaActiva!=='undefined'&&!asistenciaActiva ? 1 : Prob.efectiva(n, respondentes, ausencias);
-  root.userWeight       = n => typeof asistenciaActiva!=='undefined'&&!asistenciaActiva ? 1 : Prob.peso(n, respondentes, ausencias, weightByProb);
+  root.getEffectiveProb = n => typeof asistenciaActiva!=='undefined'&&!asistenciaActiva ? 1 : Prob.efectiva(n, respondentes, typeof censusAbsences==='function'?censusAbsences():ausencias);
+  root.userWeight       = n => typeof asistenciaActiva!=='undefined'&&!asistenciaActiva ? 1 : Prob.peso(n, respondentes, typeof censusAbsences==='function'?censusAbsences():ausencias, weightByProb);
 })(typeof window !== 'undefined' ? window : globalThis);

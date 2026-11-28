@@ -1148,7 +1148,10 @@ function ejecutarMotorFactibilidad(model) {
 
   const candidatosBrutos = [];
   const multi=!!root.PlanPrioridades && par('MULTI_CANDIDATES',true);
-  const quorum=Math.max(1,Math.floor(par('QUORUM',Math.ceil(Math.max(respondentes.length,viajeros.length)/2))));
+  const eligible=viajeros.filter(v=>v.conjuntoFechas.size>0);
+  const qSurvey=root.PlanPrioridades?.quorum(respuestas,eligible.map(v=>v.nombre))||{k:null,voters:0};
+  const quorum=Math.max(1,Math.floor(par('QUORUM',qSurvey.k??Math.ceil(Math.max(1,eligible.length)/2))));
+  const quorumSource=P.QUORUM!=null?'manual':qSurvey.k!=null?'declarado':'referencia provisional';
   const qFecha=schema.find(q=>root.DecisionModel.role(q)==='fechas');
   const fijaFecha=qFecha&&decisiones[qFecha.id]?.value;
   const fijaPlan=qOpts&&decisiones[qOpts.id]?.value;
@@ -1435,6 +1438,7 @@ function ejecutarMotorFactibilidad(model) {
       const selectedPlan=planesEvaluados[0];
       // A priori probabilities, not a product of conditional responses.
       const asistencia=multi?root.PlanPrioridades.attendance(dfAsig,quorum):null;
+      if(asistencia){const qCore=root.PlanPrioridades.quorum(respuestas,asistentesNucleo),qAll=root.PlanPrioridades.quorum(respuestas,dfAsig.map(v=>v.nombre));asistencia.quorumNucleo={...qCore,Q:qCore.k==null?null:root.PlanPrioridades.attendance(dfNucleo,qCore.k).Q};asistencia.quorumPlan={...qAll,Q:qAll.k==null?null:root.PlanPrioridades.attendance(dfAsig,qAll.k).Q};}
 
       const candidato={
         L,
@@ -1484,12 +1488,12 @@ function ejecutarMotorFactibilidad(model) {
     const nRes=Math.max(16,Math.min(64,Math.floor(16000/Math.max(1,candidatosBrutos.length))));
     const resCache=new Map();for(const c of candidatosBrutos){const key=JSON.stringify(c.asignacion);if(!resCache.has(key))resCache.set(key,attendanceEnabled?estimarResiliencia(c,nRes):null);c.resilienciaEstimacion=resCache.get(key);}
     if(!candidatosBrutos.length&&(fijaFecha||fijaCasa||fijaPlan))diagnosticos.push("No se encontró un candidato compatible con las decisiones fijadas y las restricciones evaluadas.");
-    const rank=root.PlanPrioridades.rank(candidatosBrutos,respuestas,attendanceEnabled);
+    const rank=root.PlanPrioridades.rank(candidatosBrutos,respuestas,attendanceEnabled,quorumSource!=='referencia provisional');
     const soluciones=[];const keep=c=>{if(c&&!soluciones.includes(c))soluciones.push(c);};
     for(const c of rank.ordered.slice(0,3))keep(c);keep(rank.extremes.Linf);if(rank.ordered[0])rank.ordered[0].ranking.etiquetas.unshift('Mejor compromiso según prioridades');
     for(const c of Object.values(rank.extremes))keep(c);
     for(const c of soluciones)c.fragilidad=simularFragilidad(c.asignacion,c.viajerosAsignados,250,.12,100,23,null,Object.fromEntries(c.viajerosAsignados.map(v=>[v.nombre,probRes(v)])));
-    return {soluciones,diagnosticos,ranking:{voters:rank.voters,weights:rank.weights,counts:rank.counts,defaultWeights:rank.defaultWeights,missing:rank.missing,quorum,evaluated,retained,candidates:candidatosBrutos.length,limited,resilienceSamples:nRes,method:"L1/Linf",asistenciaActiva:attendanceEnabled},...(par('RETURN_CANDIDATES',false)?{candidatos:candidatosBrutos}:{})};
+    return {soluciones,diagnosticos,ranking:{voters:rank.voters,weights:rank.weights,counts:rank.counts,defaultWeights:rank.defaultWeights,missing:rank.missing,quorum,quorumSource,quorumVoters:qSurvey.voters,evaluated,retained,candidates:candidatosBrutos.length,limited,resilienceSamples:nRes,method:"L1/Linf",asistenciaActiva:attendanceEnabled},...(par('RETURN_CANDIDATES',false)?{candidatos:candidatosBrutos}:{})};
   }
   candidatosBrutos.sort((a, b) =>
     (b.N - a.N) || (b.N_full - a.N_full) || (b.L - a.L) || (a.objetivo - b.objetivo)
