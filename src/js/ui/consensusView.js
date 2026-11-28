@@ -53,8 +53,19 @@ function renderResultados() {
   if (!container) return;
   if (container.querySelector('input[type=range]:active')) return;
   container.replaceChildren();
-  if (_renderConsensusGate(container)) return;
-  ResultsWorkspace.render(container);
+  try {
+    if (_renderConsensusGate(container)) return;
+    if (typeof ResultsWorkspace === 'undefined') throw new Error('No se ha cargado resultsWorkspace.js. Comprueba los archivos de la instalación.');
+    ResultsWorkspace.render(container);
+  } catch (error) {
+    console.error('[Metatio 17.3.1] Error al mostrar resultados:', error);
+    container.replaceChildren();
+    const card = document.createElement('div'); card.className = 'card';
+    const title = document.createElement('div'); title.className = 'card-title'; title.textContent = 'No se han podido mostrar los resultados';
+    const note = document.createElement('p'); note.textContent = 'Las respuestas guardadas no se han modificado. Comprueba que has extraído todos los archivos de esta versión. Si persiste, copia el primer error de Metatio en la consola.';
+    const retry = document.createElement('button'); retry.type = 'button'; retry.className = 'btn-pc'; retry.textContent = 'Reintentar'; retry.addEventListener('click', renderResultados);
+    card.append(title, note, retry); container.append(card);
+  }
 }
 
 function buildResultsOverview(studies,mode,integrated){
@@ -726,7 +737,7 @@ function buildFeasibleSolutionsSection(soluciones, diagnosticos, topo, scopeLabe
           ${sol.ranking?`<div class="mt-rank-note">${esc(sol.ranking.etiquetas.join(" · ")||"Alternativa del ranking")} · L¹ ${(100*sol.ranking.L1).toFixed(1)}% · L∞ ${(100*sol.ranking.Linf).toFixed(1)}%</div>`:""}<h3 class="sol-interval">${fmtShortDate(sol.fIni)} → ${fmtShortDate(sol.fFin)} (${sol.L} día${sol.L === 1 ? '' : 's'})${esc(cruceStr)}</h3>
         </div>
         <div class="sol-pills">
-          <span class="sol-pill">Total <b>${sol.N}</b></span>${sol.asistencia&&asistenciaActiva?`<span class="sol-pill">E <b>${sol.asistencia.E.toFixed(2)}</b></span><span class="sol-pill">Q${sol.asistencia.quorum} <b>${(100*sol.asistencia.Q).toFixed(1)}%</b></span><span class="sol-pill">Var <b>${sol.asistencia.variance.toFixed(2)}</b></span>`:""}
+          <span class="sol-pill">Total <b>${sol.N}</b></span>${sol.asistencia&&asistenciaActiva?`<span class="sol-pill">E <b>${sol.asistencia.E.toFixed(2)}</b></span><span class="sol-pill">Q común ${sol.asistencia.quorum} <b>${(100*sol.asistencia.Q).toFixed(1)}%</b></span><span class="sol-pill">Var <b>${sol.asistencia.variance.toFixed(2)}</b></span>${sol.asistencia.quorumNucleo?.k!=null?`<span class="sol-pill">Quórum núcleo ≥ ${sol.asistencia.quorumNucleo.k} <b>${(100*sol.asistencia.quorumNucleo.Q).toFixed(1)}%</b></span>`:''}`:""}
           <span class="sol-pill">Núcleo <b>${sol.N_full}</b></span>
           <span class="sol-pill">Satélites <b>${sol.N_convoy}</b></span>
           <span class="sol-pill" title="Presupuesto más bajo dentro del Núcleo">Mín. Núcleo: <b>${esc(strPresuNucleo)}</b></span>
@@ -874,6 +885,7 @@ function buildAnalyticalCard(q, idx, myAns, options={}) {
   const title = div('card-title');
   title.innerHTML = `<span class="num">${idx + 1}</span> ${esc(q.label)}`;
   card.appendChild(title);
+  if(typeof stabilityElement==='function'){const cert=stabilityElement(q);if(cert)card.append(cert);}
 
   const readOnly=!!options.readOnly;
   const study=options.study;
