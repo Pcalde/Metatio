@@ -58,7 +58,7 @@ function renderResultados() {
     if (typeof ResultsWorkspace === 'undefined') throw new Error('No se ha cargado resultsWorkspace.js. Comprueba los archivos de la instalación.');
     ResultsWorkspace.render(container);
   } catch (error) {
-    console.error('[Metatio 17.3.1] Error al mostrar resultados:', error);
+    console.error('[Metatio 17.3.2] Error al mostrar resultados:', error);
     container.replaceChildren();
     const card = document.createElement('div'); card.className = 'card';
     const title = document.createElement('div'); title.className = 'card-title'; title.textContent = 'No se han podido mostrar los resultados';
