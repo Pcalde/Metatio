@@ -723,10 +723,10 @@ function buildFeasibleSolutionsSection(soluciones, diagnosticos, topo, scopeLabe
       <div class="sol-card-head">
         <div>
           <span class="sol-tag">${scopeLabel ? "Ventana parcial" : "Solución propuesta"} #${idx + 1} · ${tagFinde}${esc(tagExcursion)}</span>
-          <h3 class="sol-interval">${fmtShortDate(sol.fIni)} → ${fmtShortDate(sol.fFin)} (${sol.L} día${sol.L === 1 ? '' : 's'})${esc(cruceStr)}</h3>
+          ${sol.ranking?`<div class="mt-rank-note">${esc(sol.ranking.etiquetas.join(" · ")||"Alternativa del ranking")} · L¹ ${(100*sol.ranking.L1).toFixed(1)}% · L∞ ${(100*sol.ranking.Linf).toFixed(1)}%</div>`:""}<h3 class="sol-interval">${fmtShortDate(sol.fIni)} → ${fmtShortDate(sol.fFin)} (${sol.L} día${sol.L === 1 ? '' : 's'})${esc(cruceStr)}</h3>
         </div>
         <div class="sol-pills">
-          <span class="sol-pill">Total <b>${sol.N}</b></span>
+          <span class="sol-pill">Total <b>${sol.N}</b></span>${sol.asistencia&&asistenciaActiva?`<span class="sol-pill">E <b>${sol.asistencia.E.toFixed(2)}</b></span><span class="sol-pill">Q${sol.asistencia.quorum} <b>${(100*sol.asistencia.Q).toFixed(1)}%</b></span><span class="sol-pill">Var <b>${sol.asistencia.variance.toFixed(2)}</b></span>`:""}
           <span class="sol-pill">Núcleo <b>${sol.N_full}</b></span>
           <span class="sol-pill">Satélites <b>${sol.N_convoy}</b></span>
           <span class="sol-pill" title="Presupuesto más bajo dentro del Núcleo">Mín. Núcleo: <b>${esc(strPresuNucleo)}</b></span>
