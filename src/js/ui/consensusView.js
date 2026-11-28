@@ -58,7 +58,7 @@ function renderResultados() {
     if (typeof ResultsWorkspace === 'undefined') throw new Error('No se ha cargado resultsWorkspace.js. Comprueba los archivos de la instalación.');
     ResultsWorkspace.render(container);
   } catch (error) {
-    console.error('[Metatio 17.3.2] Error al mostrar resultados:', error);
+    console.error('[Metatio] Error al mostrar resultados:', error);
     container.replaceChildren();
     const card = document.createElement('div'); card.className = 'card';
     const title = document.createElement('div'); title.className = 'card-title'; title.textContent = 'No se han podido mostrar los resultados';
@@ -885,7 +885,7 @@ function buildAnalyticalCard(q, idx, myAns, options={}) {
   const title = div('card-title');
   title.innerHTML = `<span class="num">${idx + 1}</span> ${esc(q.label)}`;
   card.appendChild(title);
-  if(typeof stabilityElement==='function'){const cert=stabilityElement(q);if(cert)card.append(cert);}
+  if(options.readOnly&&typeof stabilityElement==='function'){const cert=stabilityElement(q);if(cert)card.append(cert);}
 
   const readOnly=!!options.readOnly;
   const study=options.study;
