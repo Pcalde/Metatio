@@ -14,7 +14,12 @@ function globalAuthReturning() {
   const q = new URLSearchParams(location.search), hash = new URLSearchParams(location.hash.slice(1));
   return q.has('code') || q.has('error') || hash.has('access_token') || hash.has('error');
 }
-function globalRedirect() { return location.origin + location.pathname; }
+function globalRedirect() {
+  if (!['http:', 'https:'].includes(location.protocol)) {
+    throw new Error('Para iniciar sesión con Google o utilizar enlaces de correo en local, abre Metatio con iniciar-local.bat (http://127.0.0.1:8000/index.html), no directamente como archivo.');
+  }
+  return location.origin + location.pathname;
+}
 function globalMode(mode) {
   _globalMode=mode;
   const reg=mode==='register', reset=mode==='reset';
@@ -156,6 +161,7 @@ async function refreshGlobalProfile() {
       row.append(text,b); mtDecorateTrip(row,trip); host.append(row);
     }
     renderGlobalLocalChoices();
+    window.MetatioGuide?.welcome(_globalAccount.id);
   } catch(e) { if(version===_globalRefreshVersion) globalStatus(e.message); }
 }
 function renderGlobalLocalChoices() {

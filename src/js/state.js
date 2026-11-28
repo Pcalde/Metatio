@@ -98,7 +98,10 @@ function applyData(data) {
   if (cDeb) cDeb.textContent = debate.length + proscontras.length;
 
   if(typeof refreshDecisiones==='function')void refreshDecisiones();
+  if(typeof refreshCensus==='function')void refreshCensus();
   if (typeof renderParticipants === 'function') renderParticipants();
+  if (typeof renderCensus === 'function') renderCensus();
+  if (typeof refreshQuorumControl === 'function') refreshQuorumControl();
 
   // Si estamos viendo Consenso o Debate, repintar inmediatamente
   

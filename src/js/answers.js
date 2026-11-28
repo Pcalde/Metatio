@@ -58,7 +58,7 @@ function readState() {
     const card = cardFor(q.id), type = TIPOS[q.tipo];
     if (card && type) answers[q.id] = type.read(card, q);
   });
-  return Object.assign({ answers, prioridades: typeof readPrioridades==='function'?readPrioridades():{} }, (typeof readAusencias === 'function' && readAusencias()) || {});
+  return Object.assign({ answers, quorum_minimo:typeof readQuorum==='function'?readQuorum():null, prioridades: typeof readPrioridades==='function'?readPrioridades():{} }, (typeof readAusencias === 'function' && readAusencias()) || {});
 }
 
 // Borrador y envío comparten la misma lectura: la probabilidad personal y
@@ -67,7 +67,7 @@ function readStateForDraft() { return readState(); }
 
 function saveDraft() {
   if (!user) return;
-  try { localStorage.setItem(LS_DRAFT(user.eid), JSON.stringify(readStateForDraft())); } catch (e) {}
+  try { localStorage.setItem(LS_DRAFT(user.eid), JSON.stringify({...readStateForDraft(),quorum_auto:typeof quorumIsAutomatic==='function'&&quorumIsAutomatic()})); } catch (e) {}
 }
 
 function restoreDraft() {
@@ -88,6 +88,7 @@ function restoreDraft() {
     });
     if (typeof writeAusencias === 'function') writeAusencias(d);
     if(typeof writePrioridades==='function')writePrioridades(d.prioridades||{});
+    if(typeof writeQuorum==='function')writeQuorum(d.quorum_auto===true?undefined:d.quorum_minimo);
     setDraftDirty(true);
   } catch (e) {
     console.warn('Borrador ilegible, se ignora.', e);
@@ -118,6 +119,7 @@ function hydrateFromServerIfNoDraft() {
     });
   }
   if(typeof writePrioridades==='function')writePrioridades(mine.answers.prioridades||{});
+  if(typeof writeQuorum==='function')writeQuorum(mine.answers.quorum_minimo);
   setDraftDirty(false);
 }
 
@@ -145,6 +147,7 @@ function collectAnswers() {
     timestamp: new Date().toISOString(),
     values: {},
     prioridades: st.prioridades,
+    quorum_minimo: st.quorum_minimo,
   };
 
   schema.forEach(q => {

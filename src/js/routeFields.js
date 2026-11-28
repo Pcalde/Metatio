@@ -25,18 +25,19 @@ function buildRouteAnswerFields(card,q){
   function addWindow(v={}){if(extra.children.length>=8)return;const row=div('mt-route-window-row');row.innerHTML='<div class="mt-route-grid"><label>Desde<input type="time" data-window="from"></label><label>Hasta<input type="time" data-window="to"></label></div><button type="button" class="btn-pc" aria-label="Quitar franja">×</button>';row.querySelector('[data-window="from"]').value=v.desde||'';row.querySelector('[data-window="to"]').value=v.hasta||'';row.querySelector('button').onclick=()=>{row.remove();add.disabled=false;triggerSave();};extra.append(row);add.disabled=extra.children.length>=8;}
   add.onclick=()=>{addWindow();triggerSave();};get('flexible').onchange=()=>triggerSave();
   function refresh(snap=getGroupTransportSnapshot(q,card)){
-    const byName=new Map(snap.others.map(x=>[x.nombre,x]));
+    if(typeof censusCanonicalMap==='function')affinities=censusCanonicalMap(affinities);
+    const byName=new Map(snap.others.map(x=>[x.key||x.nombre,x]));
     const rows=new Map((typeof respuestas!=='undefined'?respuestas:[]).map(r=>[r.nombre,r]));
     for(const person of (typeof respondentes!=='undefined'?respondentes:[])){
       const row=rows.get(person.nombre);if(row&&DecisionModel.applicability(q,row.answers||{},schema)===0)continue;
-      if(!byName.has(person.nombre))byName.set(person.nombre,{nombre:person.nombre});
+      const key=typeof censusCanonical==='function'?censusCanonical(person.nombre):person.nombre;if(!byName.has(key))byName.set(key,{nombre:person.nombre,key});
     }
     for(const name of Object.keys(affinities)){const row=rows.get(name);if(row&&DecisionModel.applicability(q,row.answers||{},schema)===0)continue;if(!byName.has(name))byName.set(name,{nombre:name});}
-    const candidates=[...byName.values()].filter(x=>x.nombre&&x.nombre.toLowerCase()!==snap.myName.toLowerCase()&&(!rows.has(x.nombre)||DecisionModel.applicability(q,rows.get(x.nombre).answers||{},schema)!==0)).sort((a,b)=>Number(!!b.isDriver)-Number(!!a.isDriver)||Number(!!b.isPassenger)-Number(!!a.isPassenger)||a.nombre.localeCompare(b.nombre));
-    const key=JSON.stringify(candidates.map(x=>[x.nombre,!!x.isDriver,!!x.isPassenger,x.plazas||0,affinities[x.nombre]||0]));if(key===namesKey)return;namesKey=key;list.replaceChildren();
+    const candidates=[...byName.values()].filter(x=>x.nombre&&x.nombre.toLowerCase()!==snap.myName.toLowerCase()&&(x.key||x.nombre)!==(typeof censusCanonical==='function'?censusCanonical(snap.myName):snap.myName)&&(!rows.has(x.nombre)||DecisionModel.applicability(q,rows.get(x.nombre).answers||{},schema)!==0)).sort((a,b)=>Number(!!b.isDriver)-Number(!!a.isDriver)||Number(!!b.isPassenger)-Number(!!a.isPassenger)||a.nombre.localeCompare(b.nombre));
+    const key=JSON.stringify(candidates.map(x=>[x.nombre,!!x.isDriver,!!x.isPassenger,x.plazas||0,affinities[x.key||x.nombre]||0,x.label]));if(key===namesKey)return;namesKey=key;list.replaceChildren();
     if(!candidates.length){list.textContent='Todavía no hay otros participantes en este estudio.';return;}
-    for(const cand of candidates){const name=cand.nombre,chip=document.createElement('button');chip.type='button';chip.className='trans-chip mt-route-chip';
-      function paint(){const v=Number(affinities[name]||0);if(v)chip.dataset.pref=String(v);else delete chip.dataset.pref;const label=v===1?'Me gustaría viajar con esta persona':v===-1?'Prefiero no viajar con esta persona':'Me es indiferente';chip.title=label+' · Pulsa para cambiar';chip.setAttribute('aria-label',name+': '+label);chip.innerHTML=`<i class="fa-solid ${v===1?'fa-star':v===-1?'fa-minus':cand.isDriver?'fa-car-side':cand.isPassenger?'fa-person-walking':'fa-user'}"></i> <span>${esc(name)}</span><small>${cand.isDriver?`<i class="fa-solid fa-car"></i> ${cand.plazas||0} pl.`:cand.isPassenger?'<i class="fa-solid fa-person-walking"></i> Busca plaza':''}</small>`;}
+    for(const cand of candidates){const name=cand.key||cand.nombre,labelName=cand.label||(typeof censusLabel==='function'?censusLabel(name):name),chip=document.createElement('button');chip.type='button';chip.className='trans-chip mt-route-chip';
+      function paint(){const v=Number(affinities[name]||0);if(v)chip.dataset.pref=String(v);else delete chip.dataset.pref;const label=v===1?'Me gustaría viajar con esta persona':v===-1?'Prefiero no viajar con esta persona':'Me es indiferente';chip.title=label+' · Pulsa para cambiar';chip.setAttribute('aria-label',labelName+': '+label);chip.innerHTML=`<i class="fa-solid ${v===1?'fa-star':v===-1?'fa-minus':cand.isDriver?'fa-car-side':cand.isPassenger?'fa-person-walking':'fa-user'}"></i> <span>${esc(labelName)}</span><small>${cand.isDriver?`<i class="fa-solid fa-car"></i> ${cand.plazas||0} pl.`:cand.isPassenger?'<i class="fa-solid fa-person-walking"></i> Busca plaza':''}</small>`;}
       chip.onclick=()=>{const v=Number(affinities[name]||0),next=v===0?1:v===1?-1:0;if(next)affinities[name]=next;else delete affinities[name];paint();triggerSave();};paint();list.append(chip);
     }
   }
