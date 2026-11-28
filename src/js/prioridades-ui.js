@@ -5,9 +5,9 @@ function readPrioridades(){return {...prioridadesLocal};}
 function writePrioridades(v){prioridadesLocal=PlanPrioridades.normalize(v);bindPrioridades();}
 function bindPrioridades(){
  const host=$('prioridades-choices');if(!host)return;host.replaceChildren();
- for(const [k,title] of PlanPrioridades.criteria){
+ for(const [k,title,description] of PlanPrioridades.criteria){
   const row=document.createElement('fieldset'),legend=document.createElement('legend'),choices=document.createElement('div');
-  row.className='mt-priority-field';legend.append(priorityIcon(PRIORITY_ICONS[k]),document.createTextNode(title));choices.className='mt-priority-choices';
+  row.className='mt-priority-field';legend.append(priorityIcon(PRIORITY_ICONS[k]),document.createTextNode(title));const desc=document.createElement('span');desc.className='mt-priority-description';desc.textContent=description;legend.append(desc);choices.className='mt-priority-choices';
   for(const [v,t] of [...PlanPrioridades.levels.map((x,i)=>[String(i),x]),['','No sé']]){
    const lab=document.createElement('label'),inp=document.createElement('input'),chip=document.createElement('span');
    inp.type='radio';inp.name='mt-priority-'+k;inp.value=v;inp.checked=String(prioridadesLocal[k]??'')===v;chip.className='mt-priority-chip';
